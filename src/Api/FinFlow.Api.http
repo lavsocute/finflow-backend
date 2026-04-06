@@ -1,0 +1,6 @@
+@FinFlow.Api_HostAddress = http://localhost:5219
+
+GET {{FinFlow.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
