@@ -119,6 +119,9 @@ app.UseForwardedHeaders();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Audit Middleware phải chạy sau Authentication để lấy được thông tin User
+app.UseMiddleware<FinFlow.Infrastructure.Audit.AuditMiddleware>();
+
 app.MapGraphQL("/graphql");
 
 app.Run();

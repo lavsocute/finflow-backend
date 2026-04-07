@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();
 
         // Redis for Rate Limiting (Lazy + Fallback)
         var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";
