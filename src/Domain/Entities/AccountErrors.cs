@@ -17,4 +17,5 @@ public static class AccountErrors
     public static readonly Error AlreadyActive = new("Account.AlreadyActive", "The account is already active");
     public static readonly Error InvalidRole = new("Account.InvalidRole", "The account role data is invalid");
     public static readonly Error Unauthorized = new("Account.Unauthorized", "User is not authenticated or token is invalid");
+    public static readonly Error TooManyRequests = new("Account.TooManyRequests", "Too many login attempts. Please try again later.");
 }

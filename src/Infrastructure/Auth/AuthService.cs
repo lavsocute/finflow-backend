@@ -18,6 +18,7 @@ public class AuthService : IAuthService
     private readonly IRefreshTokenRepository _refreshTokenRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly JwtTokenService _tokenService;
+    private readonly ILoginRateLimiter _rateLimiter;
 
     public AuthService(
         IAccountRepository accountRepo,
@@ -25,7 +26,8 @@ public class AuthService : IAuthService
         IDepartmentRepository departmentRepo,
         IRefreshTokenRepository refreshTokenRepo,
         IUnitOfWork unitOfWork,
-        JwtTokenService tokenService)
+        JwtTokenService tokenService,
+        ILoginRateLimiter rateLimiter)
     {
         _accountRepo = accountRepo;
         _tenantRepo = tenantRepo;
@@ -33,14 +35,23 @@ public class AuthService : IAuthService
         _refreshTokenRepo = refreshTokenRepo;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
+        _rateLimiter = rateLimiter;
     }
 
-    public async Task<Result<AuthResponse>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<AuthResponse>> LoginAsync(LoginRequest request, string? clientIp, CancellationToken cancellationToken = default)
     {
+        if (await _rateLimiter.IsBlockedAsync(clientIp, request.Email))
+            return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
+
         var account = await _accountRepo.GetLoginInfoAsync(request.Email, cancellationToken);
 
         if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
+        {
+            await _rateLimiter.RecordFailureAsync(clientIp, request.Email);
             return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
+        }
+
+        await _rateLimiter.ResetAccountAsync(request.Email, clientIp);
 
         if (!account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);

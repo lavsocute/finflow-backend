@@ -3,7 +3,9 @@ using FinFlow.Api.GraphQL.Auth;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
+using System.Net;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +14,44 @@ var isDevelopment = builder.Environment.IsDevelopment();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// Cấu hình Forwarded Headers cho Reverse Proxy (Nginx/Ingress)
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    
+    // Đọc danh sách Proxy tin cậy từ cấu hình (Environment Variables trong Production)
+    var knownProxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
+    if (knownProxies != null)
+    {
+        foreach (var proxy in knownProxies)
+        {
+            if (System.Net.IPAddress.TryParse(proxy, out var ip))
+                options.KnownProxies.Add(ip);
+        }
+    }
+
+    // Đọc danh sách dải mạng tin cậy (CIDR)
+    var knownNetworks = builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>();
+    if (knownNetworks != null)
+    {
+        foreach (var network in knownNetworks)
+        {
+            var parts = network.Split('/');
+            if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var netIp) && int.TryParse(parts[1], out var prefix))
+            {
+                options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(netIp, prefix));
+            }
+        }
+    }
+    
+    // Trong development, cho phép tất cả (không an toàn cho production)
+    if (builder.Environment.IsDevelopment())
+    {
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    }
+});
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()!;
 
@@ -72,6 +112,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowAngular");
+
+// Forwarded Headers middleware phải chạy trước Authentication
+app.UseForwardedHeaders();
 
 app.UseAuthentication();
 app.UseAuthorization();

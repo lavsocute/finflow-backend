@@ -1,3 +1,4 @@
+using FinFlow.Api.Extensions;
 using FinFlow.Application.Auth.Dtos;
 using FinFlow.Application.Auth.Interfaces;
 using FinFlow.Domain.Enums;
@@ -29,9 +30,15 @@ public class AuthMutations
     public async Task<AuthPayload> LoginAsync(
         LoginInput input,
         [Service] IAuthService authService,
+        [Service] IHttpContextAccessor httpContextAccessor,
         CancellationToken cancellationToken)
     {
-        var result = await authService.LoginAsync(new LoginRequest(input.Email, input.Password), cancellationToken);
+        var clientIp = httpContextAccessor.HttpContext?.GetClientIpAddress();
+        // Nếu không xác định được IP, truyền null để RateLimiter bỏ qua bước chặn theo IP
+        // (tránh việc dùng Guid làm vô hiệu hóa cơ chế chặn theo IP).
+        if (clientIp == "unknown") clientIp = null;
+        
+        var result = await authService.LoginAsync(new LoginRequest(input.Email, input.Password), clientIp, cancellationToken);
         return HandleResult(result);
     }
 

@@ -7,6 +7,7 @@ using FinFlow.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace FinFlow.Infrastructure;
 
@@ -29,6 +30,12 @@ public static class DependencyInjection
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+        // Redis for Rate Limiting (Lazy + Fallback)
+        var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConnection)));
+        services.AddMemoryCache(); // Fallback khi Redis lỗi
+        services.AddSingleton<Auth.ILoginRateLimiter, Auth.RedisLoginRateLimiter>();
 
         services.AddSingleton<Auth.JwtTokenService>();
         services.AddScoped<FinFlow.Application.Auth.Interfaces.IAuthService, Auth.AuthService>();
