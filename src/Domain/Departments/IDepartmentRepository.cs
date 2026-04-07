@@ -1,12 +1,15 @@
-using FinFlow.Domain.Entities;
-
 namespace FinFlow.Domain.Departments;
+
+public record DepartmentSummary(Guid Id, string Name, Guid IdTenant, Guid? ParentId, bool IsActive);
 
 public interface IDepartmentRepository
 {
-    Task<Department?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<Department>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
-    void Add(Department department);
-    void Update(Department department);
-    void Remove(Department department);
+    // Read Methods (DTO)
+    Task<DepartmentSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DepartmentSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
+
+    // Write Methods (Entity)
+    void Add(FinFlow.Domain.Entities.Department department);
+    void Update(FinFlow.Domain.Entities.Department department);
+    void Remove(FinFlow.Domain.Entities.Department department);
 }

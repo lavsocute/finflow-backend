@@ -7,14 +7,11 @@ using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Tenants;
 using FinFlow.Domain.Departments;
 using FinFlow.Domain.RefreshTokens;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 
 namespace FinFlow.Infrastructure.Auth;
 
 public class AuthService : IAuthService
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAccountRepository _accountRepo;
     private readonly ITenantRepository _tenantRepo;
     private readonly IDepartmentRepository _departmentRepo;
@@ -23,7 +20,6 @@ public class AuthService : IAuthService
     private readonly JwtTokenService _tokenService;
 
     public AuthService(
-        IHttpContextAccessor httpContextAccessor,
         IAccountRepository accountRepo,
         ITenantRepository tenantRepo,
         IDepartmentRepository departmentRepo,
@@ -31,7 +27,6 @@ public class AuthService : IAuthService
         IUnitOfWork unitOfWork,
         JwtTokenService tokenService)
     {
-        _httpContextAccessor = httpContextAccessor;
         _accountRepo = accountRepo;
         _tenantRepo = tenantRepo;
         _departmentRepo = departmentRepo;
@@ -62,7 +57,8 @@ public class AuthService : IAuthService
         _refreshTokenRepo.Add(refreshToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var role = Enum.TryParse<RoleType>(account.Role, out var parsedRole) ? parsedRole : throw new InvalidOperationException($"Invalid role data: {account.Role}");
+        if (!Enum.TryParse<RoleType>(account.Role, out var role))
+            return Result.Failure<AuthResponse>(AccountErrors.InvalidRole);
 
         return Result.Success(new AuthResponse(
             accessToken, refreshTokenStr, account.Id, account.Email, role, account.IdTenant, account.IdDepartment));
@@ -70,7 +66,7 @@ public class AuthService : IAuthService
 
     public async Task<Result<AuthResponse>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
-        var existingAccount = await _accountRepo.ExistsByEmailAsync(request.Email, cancellationToken);
+        var existingAccount = await _accountRepo.ExistsByEmailIgnoringTenantAsync(request.Email, cancellationToken);
         if (existingAccount)
             return Result.Failure<AuthResponse>(AccountErrors.EmailAlreadyExists);
 
@@ -146,7 +142,8 @@ public class AuthService : IAuthService
 
         var newAccessToken = _tokenService.GenerateAccessToken(account.Id, account.Email, account.Role, account.IdTenant, account.IdDepartment);
 
-        var role = Enum.TryParse<RoleType>(account.Role, out var parsedRole) ? parsedRole : throw new InvalidOperationException($"Invalid role data: {account.Role}");
+        if (!Enum.TryParse<RoleType>(account.Role, out var role))
+            return Result.Failure<AuthResponse>(AccountErrors.InvalidRole);
 
         return Result.Success(new AuthResponse(
             newAccessToken, rawTokenForClient, account.Id, account.Email, role, account.IdTenant, account.IdDepartment));
@@ -154,15 +151,13 @@ public class AuthService : IAuthService
 
     public async Task<Result> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken = default)
     {
-        // Lấy AccountId từ JWT Claims (nguồn tin cậy), KHÔNG dùng từ client input
-        var accountIdClaim = _httpContextAccessor.HttpContext?.User.FindFirst("sub")?.Value;
-        if (!Guid.TryParse(accountIdClaim, out var accountIdFromToken))
-            return Result.Failure(AccountErrors.Unauthorized);
-
-        var accountInfo = await _accountRepo.GetLoginInfoByIdAsync(accountIdFromToken, cancellationToken);
+        var accountInfo = await _accountRepo.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
 
         if (accountInfo == null)
             return Result.Failure(AccountErrors.NotFound);
+
+        if (!accountInfo.IsActive)
+            return Result.Failure(AccountErrors.AlreadyDeactivated);
 
         if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, accountInfo.PasswordHash))
             return Result.Failure(AccountErrors.InvalidCurrentPassword);
@@ -172,7 +167,7 @@ public class AuthService : IAuthService
 
         var newPasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
 
-        var account = await _accountRepo.GetByIdAsync(accountInfo.Id, cancellationToken);
+        var account = await _accountRepo.GetByIdForUpdateAsync(accountInfo.Id, cancellationToken);
         if (account == null)
             return Result.Failure(AccountErrors.NotFound);
 

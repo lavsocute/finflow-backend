@@ -3,6 +3,9 @@ using FinFlow.Application.Auth.Interfaces;
 using FinFlow.Domain.Enums;
 using HotChocolate;
 using HotChocolate.Authorization;
+using HotChocolate.Resolvers;
+using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
 namespace FinFlow.Api.GraphQL.Auth;
 
@@ -23,45 +26,65 @@ public record AuthPayload(
 
 public class AuthMutations
 {
-    private readonly IAuthService _authService;
-
-    public AuthMutations(IAuthService authService) => _authService = authService;
-
-    public async Task<AuthPayload> LoginAsync(LoginInput input, CancellationToken cancellationToken)
+    public async Task<AuthPayload> LoginAsync(
+        LoginInput input,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
     {
-        var result = await _authService.LoginAsync(new LoginRequest(input.Email, input.Password), cancellationToken);
+        var result = await authService.LoginAsync(new LoginRequest(input.Email, input.Password), cancellationToken);
         return HandleResult(result);
     }
 
-    public async Task<AuthPayload> RegisterAsync(RegisterInput input, CancellationToken cancellationToken)
+    public async Task<AuthPayload> RegisterAsync(
+        RegisterInput input,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
     {
-        var result = await _authService.RegisterAsync(
+        var result = await authService.RegisterAsync(
             new RegisterRequest(input.Email, input.Password, input.Name, input.TenantCode, input.DepartmentName),
             cancellationToken);
         return HandleResult(result);
     }
 
-    public async Task<AuthPayload> RefreshTokenAsync(RefreshTokenInput input, CancellationToken cancellationToken)
+    public async Task<AuthPayload> RefreshTokenAsync(
+        RefreshTokenInput input,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
     {
-        var result = await _authService.RefreshTokenAsync(
+        var result = await authService.RefreshTokenAsync(
             new RefreshTokenRequest(input.RefreshToken), cancellationToken);
         return HandleResult(result);
     }
 
     [Authorize]
-    public async Task<bool> ChangePasswordAsync(ChangePasswordInput input, CancellationToken cancellationToken)
+    public async Task<bool> ChangePasswordAsync(
+        ChangePasswordInput input,
+        [Service] IAuthService authService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
     {
-        var result = await _authService.ChangePasswordAsync(
-            new ChangePasswordRequest(input.CurrentPassword, input.NewPassword), cancellationToken);
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+        var accountIdClaim = user?.FindFirst("sub")?.Value 
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        var result = await authService.ChangePasswordAsync(
+            new ChangePasswordRequest(accountId, input.CurrentPassword, input.NewPassword), cancellationToken);
         if (result.IsFailure)
             throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
         return true;
     }
 
     [Authorize]
-    public async Task<bool> LogoutAsync(string refreshToken, CancellationToken cancellationToken)
+    public async Task<bool> LogoutAsync(
+        string refreshToken,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
     {
-        var result = await _authService.LogoutAsync(refreshToken, cancellationToken);
+        var result = await authService.LogoutAsync(refreshToken, cancellationToken);
         if (result.IsFailure)
             throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
         return true;
