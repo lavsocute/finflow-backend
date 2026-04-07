@@ -3,6 +3,7 @@ using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Departments;
 using FinFlow.Domain.RefreshTokens;
 using FinFlow.Domain.Tenants;
+using FinFlow.Domain.TenantMemberships;
 using FinFlow.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -29,8 +30,12 @@ public static class DependencyInjection
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();
+
+        // Multi-tenancy
+        services.AddScoped<Domain.Interfaces.ICurrentTenant, Security.CurrentTenant>();
 
         // Redis for Rate Limiting (Lazy + Fallback)
         var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";

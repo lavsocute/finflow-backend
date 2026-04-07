@@ -8,9 +8,9 @@ namespace FinFlow.Infrastructure.Auth;
 
 public interface ILoginRateLimiter
 {
-    Task<bool> IsBlockedAsync(string? ip, string email);
-    Task RecordFailureAsync(string? ip, string email);
-    Task ResetAccountAsync(string email, string? ip);
+    Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null);
+    Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null);
+    Task ResetAccountAsync(string email, Guid? tenantId = null);
 }
 
 public class RedisLoginRateLimiter : ILoginRateLimiter
@@ -20,9 +20,9 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
     private readonly ILogger<RedisLoginRateLimiter> _logger;
     
     // Cấu hình giới hạn
-    private const int MaxAttemptsPerAccount = 5;      // Global limit (chống xoay IP)
-    private const int MaxAttemptsPerAccountPerIp = 5; // IP-specific limit (chống DoS)
-    private const int MaxAttemptsPerIp = 20;          // Global IP limit (chống DDoS)
+    private const int MaxAttemptsPerAccount = 5;
+    private const int MaxAttemptsPerAccountPerIp = 5;
+    private const int MaxAttemptsPerIp = 20;
     private const int BlockDurationMinutes = 15;
 
     // Lua script atomic
@@ -71,11 +71,14 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         }
     }
 
-    public async Task<bool> IsBlockedAsync(string? ip, string email)
+    private static string GetTenantPrefix(Guid? tenantId) => tenantId.HasValue ? $"{tenantId.Value}:" : "";
+
+    public async Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null)
     {
         var normalizedEmail = NormalizeEmail(email);
         var emailHash = HashKey(normalizedEmail);
         var ipHash = ip != null ? HashKey(ip) : null;
+        var tenantPrefix = GetTenantPrefix(tenantId);
 
         bool isBlocked = false;
         var redis = GetRedis();
@@ -84,18 +87,18 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         {
             try
             {
-                // 1. Global Account Block (Quan trọng nhất: chống xoay IP)
-                isBlocked = await redis.KeyExistsAsync($"Block:Acc:{emailHash}");
+                // 1. Global Account Block (Scoped by Tenant if available)
+                isBlocked = await redis.KeyExistsAsync($"Block:Acc:{tenantPrefix}{emailHash}");
                 if (isBlocked) return true;
 
-                // 2. IP-Specific Account Block (Chống DoS người dùng cụ thể)
+                // 2. IP-Specific Account Block
                 if (ipHash != null)
                 {
-                    isBlocked = await redis.KeyExistsAsync($"Block:Acc:{emailHash}:Ip:{ipHash}");
+                    isBlocked = await redis.KeyExistsAsync($"Block:Acc:{tenantPrefix}{emailHash}:Ip:{ipHash}");
                     if (isBlocked) return true;
                 }
                 
-                // 3. Global IP Block (Chống DDoS từ 1 nguồn)
+                // 3. Global IP Block
                 if (ipHash != null)
                 {
                     isBlocked = await redis.KeyExistsAsync($"Block:Ip:{ipHash}");
@@ -108,36 +111,37 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
             }
         }
 
-        // Fallback Memory Check (Logic tương tự)
-        if (_memoryCache.TryGetValue($"Block:Acc:{normalizedEmail}", out _)) return true;
-        if (ip != null && _memoryCache.TryGetValue($"Block:Acc:{normalizedEmail}:Ip:{ip}", out _)) return true;
+        // Fallback Memory Check
+        if (_memoryCache.TryGetValue($"Block:Acc:{tenantPrefix}{normalizedEmail}", out _)) return true;
+        if (ip != null && _memoryCache.TryGetValue($"Block:Acc:{tenantPrefix}{normalizedEmail}:Ip:{ip}", out _)) return true;
         if (ip != null && _memoryCache.TryGetValue($"Block:Ip:{ip}", out _)) return true;
 
         return isBlocked;
     }
 
-    public async Task RecordFailureAsync(string? ip, string email)
+    public async Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null)
     {
         var normalizedEmail = NormalizeEmail(email);
         var emailHash = HashKey(normalizedEmail);
         var ipHash = ip != null ? HashKey(ip) : null;
         var expirySeconds = BlockDurationMinutes * 60;
+        var tenantPrefix = GetTenantPrefix(tenantId);
 
         var redis = GetRedis();
         if (redis != null)
         {
             try
             {
-                // 1. Global Account Limit (Luôn chạy, kể cả khi IP = null)
+                // 1. Global Account Limit
                 await redis.ScriptEvaluateAsync(_recordScript, 
-                    new RedisKey[] { $"Fail:Acc:{emailHash}", $"Block:Acc:{emailHash}" }, 
+                    new RedisKey[] { $"Fail:Acc:{tenantPrefix}{emailHash}", $"Block:Acc:{tenantPrefix}{emailHash}" }, 
                     new RedisValue[] { MaxAttemptsPerAccount, expirySeconds });
 
-                // 2. IP-Specific Account Limit (Chỉ chạy khi có IP)
+                // 2. IP-Specific Account Limit
                 if (ipHash != null)
                 {
                     await redis.ScriptEvaluateAsync(_recordScript, 
-                        new RedisKey[] { $"Fail:Acc:{emailHash}:Ip:{ipHash}", $"Block:Acc:{emailHash}:Ip:{ipHash}" }, 
+                        new RedisKey[] { $"Fail:Acc:{tenantPrefix}{emailHash}:Ip:{ipHash}", $"Block:Acc:{tenantPrefix}{emailHash}:Ip:{ipHash}" }, 
                         new RedisValue[] { MaxAttemptsPerAccountPerIp, expirySeconds });
 
                     // 3. Global IP Limit
@@ -154,23 +158,20 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         }
 
         // Fallback Memory Logic
-        // 1. Global Account
-        var accKey = $"Fail:Acc:{normalizedEmail}";
+        var accKey = $"Fail:Acc:{tenantPrefix}{normalizedEmail}";
         var accCount = _memoryCache.TryGetValue<int>(accKey, out var c1) ? c1 + 1 : 1;
         _memoryCache.Set(accKey, accCount, TimeSpan.FromMinutes(BlockDurationMinutes));
         if (accCount >= MaxAttemptsPerAccount)
-            _memoryCache.Set($"Block:Acc:{normalizedEmail}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
+            _memoryCache.Set($"Block:Acc:{tenantPrefix}{normalizedEmail}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
 
         if (ip != null)
         {
-            // 2. IP-Specific Account
-            var accIpKey = $"Fail:Acc:{normalizedEmail}:Ip:{ip}";
+            var accIpKey = $"Fail:Acc:{tenantPrefix}{normalizedEmail}:Ip:{ip}";
             var accIpCount = _memoryCache.TryGetValue<int>(accIpKey, out var c2) ? c2 + 1 : 1;
             _memoryCache.Set(accIpKey, accIpCount, TimeSpan.FromMinutes(BlockDurationMinutes));
             if (accIpCount >= MaxAttemptsPerAccountPerIp)
-                _memoryCache.Set($"Block:Acc:{normalizedEmail}:Ip:{ip}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
+                _memoryCache.Set($"Block:Acc:{tenantPrefix}{normalizedEmail}:Ip:{ip}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
 
-            // 3. Global IP
             var ipKey = $"Fail:Ip:{ip}";
             var ipCount = _memoryCache.TryGetValue<int>(ipKey, out var c3) ? c3 + 1 : 1;
             _memoryCache.Set(ipKey, ipCount, TimeSpan.FromMinutes(BlockDurationMinutes));
@@ -179,11 +180,11 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         }
     }
 
-    public async Task ResetAccountAsync(string email, string? ip)
+    public async Task ResetAccountAsync(string email, Guid? tenantId = null)
     {
         var normalizedEmail = NormalizeEmail(email);
         var emailHash = HashKey(normalizedEmail);
-        var ipHash = ip != null ? HashKey(ip) : null;
+        var tenantPrefix = GetTenantPrefix(tenantId);
         var redis = GetRedis();
 
         // 1. Reset Global Account Keys
@@ -191,28 +192,15 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         {
             try
             {
-                await redis.KeyDeleteAsync($"Fail:Acc:{emailHash}");
-                await redis.KeyDeleteAsync($"Block:Acc:{emailHash}");
-                
-                // 2. Reset IP-Specific Account Keys (nếu có IP)
-                if (ipHash != null)
-                {
-                    await redis.KeyDeleteAsync($"Fail:Acc:{emailHash}:Ip:{ipHash}");
-                    await redis.KeyDeleteAsync($"Block:Acc:{emailHash}:Ip:{ipHash}");
-                }
+                await redis.KeyDeleteAsync($"Fail:Acc:{tenantPrefix}{emailHash}");
+                await redis.KeyDeleteAsync($"Block:Acc:{tenantPrefix}{emailHash}");
             }
             catch { /* Ignore */ }
         }
 
-        // 3. Reset Memory Fallback Keys
-        _memoryCache.Remove($"Fail:Acc:{normalizedEmail}");
-        _memoryCache.Remove($"Block:Acc:{normalizedEmail}");
-        
-        if (ip != null)
-        {
-            _memoryCache.Remove($"Fail:Acc:{normalizedEmail}:Ip:{ip}");
-            _memoryCache.Remove($"Block:Acc:{normalizedEmail}:Ip:{ip}");
-        }
+        // 2. Reset Memory Fallback Keys
+        _memoryCache.Remove($"Fail:Acc:{tenantPrefix}{normalizedEmail}");
+        _memoryCache.Remove($"Block:Acc:{tenantPrefix}{normalizedEmail}");
     }
 
     private static string NormalizeEmail(string email) => 

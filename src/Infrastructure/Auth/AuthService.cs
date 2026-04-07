@@ -5,6 +5,7 @@ using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Tenants;
+using FinFlow.Domain.TenantMemberships;
 using FinFlow.Domain.Departments;
 using FinFlow.Domain.RefreshTokens;
 
@@ -14,6 +15,7 @@ public class AuthService : IAuthService
 {
     private readonly IAccountRepository _accountRepo;
     private readonly ITenantRepository _tenantRepo;
+    private readonly ITenantMembershipRepository _membershipRepo;
     private readonly IDepartmentRepository _departmentRepo;
     private readonly IRefreshTokenRepository _refreshTokenRepo;
     private readonly IUnitOfWork _unitOfWork;
@@ -23,6 +25,7 @@ public class AuthService : IAuthService
     public AuthService(
         IAccountRepository accountRepo,
         ITenantRepository tenantRepo,
+        ITenantMembershipRepository membershipRepo,
         IDepartmentRepository departmentRepo,
         IRefreshTokenRepository refreshTokenRepo,
         IUnitOfWork unitOfWork,
@@ -31,6 +34,7 @@ public class AuthService : IAuthService
     {
         _accountRepo = accountRepo;
         _tenantRepo = tenantRepo;
+        _membershipRepo = membershipRepo;
         _departmentRepo = departmentRepo;
         _refreshTokenRepo = refreshTokenRepo;
         _unitOfWork = unitOfWork;
@@ -40,18 +44,27 @@ public class AuthService : IAuthService
 
     public async Task<Result<AuthResponse>> LoginAsync(LoginRequest request, string? clientIp, CancellationToken cancellationToken = default)
     {
-        if (await _rateLimiter.IsBlockedAsync(clientIp, request.Email))
+        var tenant = await _tenantRepo.GetByCodeAsync(request.TenantCode.Trim(), cancellationToken);
+        var tenantId = tenant?.Id;
+
+        if (await _rateLimiter.IsBlockedAsync(clientIp, request.Email, tenantId))
             return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
 
-        var account = await _accountRepo.GetLoginInfoAsync(request.Email, cancellationToken);
-
-        if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
+        if (tenant == null || !tenant.IsActive)
         {
-            await _rateLimiter.RecordFailureAsync(clientIp, request.Email);
+            await _rateLimiter.RecordFailureAsync(clientIp, request.Email, tenantId);
             return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
         }
 
-        await _rateLimiter.ResetAccountAsync(request.Email, clientIp);
+        var account = await _accountRepo.GetLoginInfoForTenantAsync(request.Email, tenant.Id, cancellationToken);
+
+        if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
+        {
+            await _rateLimiter.RecordFailureAsync(clientIp, request.Email, tenantId);
+            return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
+        }
+
+        await _rateLimiter.ResetAccountAsync(request.Email, tenant.Id);
 
         if (!account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
@@ -104,6 +117,12 @@ public class AuthService : IAuthService
 
         var account = accountResult.Value;
 
+        var membershipResult = TenantMembership.Create(account.Id, tenant.Id, RoleType.TenantAdmin);
+        if (membershipResult.IsFailure)
+            return Result.Failure<AuthResponse>(membershipResult.Error);
+
+        var membership = membershipResult.Value;
+
         var refreshTokenStr = _tokenService.GenerateRefreshToken();
         var refreshTokenResult = RefreshToken.Create(refreshTokenStr, account.Id, _tokenService.RefreshTokenExpirationDays);
         if (refreshTokenResult.IsFailure)
@@ -114,6 +133,7 @@ public class AuthService : IAuthService
         _tenantRepo.Add(tenant);
         _departmentRepo.Add(department);
         _accountRepo.Add(account);
+        _membershipRepo.Add(membership);
         _refreshTokenRepo.Add(refreshToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -147,7 +167,6 @@ public class AuthService : IAuthService
 
         var (newRefreshTokenEntity, rawTokenForClient) = replaceResult.Value;
         
-        _refreshTokenRepo.Update(storedToken);
         _refreshTokenRepo.Add(newRefreshTokenEntity);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -186,7 +205,6 @@ public class AuthService : IAuthService
         if (changeResult.IsFailure)
             return changeResult;
 
-        _accountRepo.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();

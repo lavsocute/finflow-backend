@@ -119,6 +119,9 @@ app.UseForwardedHeaders();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Multi-tenant Middleware (phải chạy sau Authentication để lấy được IdTenant từ JWT)
+app.UseMiddleware<FinFlow.Infrastructure.Middleware.TenantMiddleware>();
+
 // Audit Middleware phải chạy sau Authentication để lấy được thông tin User
 app.UseMiddleware<FinFlow.Infrastructure.Audit.AuditMiddleware>();
 

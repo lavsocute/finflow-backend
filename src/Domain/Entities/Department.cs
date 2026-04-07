@@ -1,9 +1,10 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Events;
+using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Department : Entity
+public sealed class Department : Entity, IMultiTenant
 {
     private Department(Guid id, string name, Guid idTenant, Guid? parentId)
     {

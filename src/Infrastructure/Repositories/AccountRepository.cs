@@ -18,13 +18,26 @@ internal sealed class AccountRepository : IAccountRepository
             .Select(a => new AccountSummary(a.Id, a.Email, a.Role, a.IdTenant, a.IdDepartment, a.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
-    // Read Method: Returns DTO via Select projection
-    public async Task<AccountLoginInfo?> GetLoginInfoAsync(string email, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>()
+    // Read Method: Returns DTO via Select projection 
+    // Login is always tenant-scoped in pre-auth flows to avoid cross-tenant ambiguity.
+    public async Task<AccountLoginInfo?> GetLoginInfoForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+
+        var accounts = await _dbContext.Set<Account>()
             .AsNoTracking()
-            .Where(a => a.Email == email.ToLowerInvariant())
+            .IgnoreQueryFilters()
+            .Where(a => a.Email == normalizedEmail && a.IdTenant == idTenant)
             .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.Role.ToString(), a.IdTenant, a.IdDepartment, a.IsActive))
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        if (accounts.Count > 1)
+        {
+            throw new InvalidOperationException($"Multiple accounts found for email '{normalizedEmail}' in tenant '{idTenant}'. Data integrity violation.");
+        }
+
+        return accounts.FirstOrDefault();
+    }
 
     // Read Method: Returns DTO via Select projection 
     public async Task<AccountLoginInfo?> GetLoginInfoByIdAsync(Guid id, CancellationToken cancellationToken = default) =>

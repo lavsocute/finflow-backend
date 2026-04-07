@@ -10,7 +10,7 @@ public interface IAccountRepository
 {
     // Read Methods (Trả về DTO, dùng Select projection - không materialize Entity)
     Task<AccountSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<AccountLoginInfo?> GetLoginInfoAsync(string email, CancellationToken cancellationToken = default);
+    Task<AccountLoginInfo?> GetLoginInfoForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default);
     Task<AccountLoginInfo?> GetLoginInfoByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> ExistsByEmailIgnoringTenantAsync(string email, CancellationToken cancellationToken = default);
     Task<bool> ExistsByEmailForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default);

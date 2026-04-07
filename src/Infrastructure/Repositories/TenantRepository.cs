@@ -20,12 +20,13 @@ internal sealed class TenantRepository : ITenantRepository
     public async Task<TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
-            .Where(t => t.TenantCode == tenantCode)
+            .Where(t => t.TenantCode == tenantCode.Trim().ToLowerInvariant())
             .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<bool> ExistsByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Tenant>().AnyAsync(t => t.TenantCode == tenantCode, cancellationToken);
+        await _dbContext.Set<Tenant>()
+            .AnyAsync(t => t.TenantCode == tenantCode.Trim().ToLowerInvariant(), cancellationToken);
 
     public async Task<IReadOnlyList<TenantSummary>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Tenant>()

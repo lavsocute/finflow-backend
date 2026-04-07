@@ -21,8 +21,6 @@ internal sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
-        builder.HasQueryFilter(x => x.IsActive);
-
         builder.HasIndex(x => x.Email).IsUnique();
         builder.HasIndex(x => x.IdTenant);
         builder.HasIndex(x => x.IdDepartment);

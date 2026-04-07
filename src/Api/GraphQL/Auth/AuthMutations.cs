@@ -10,7 +10,7 @@ using System.Security.Claims;
 
 namespace FinFlow.Api.GraphQL.Auth;
 
-public record LoginInput(string Email, string Password);
+public record LoginInput(string Email, string Password, string TenantCode);
 public record RegisterInput(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
 public record RefreshTokenInput(string RefreshToken);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
@@ -38,7 +38,7 @@ public class AuthMutations
         // (tránh việc dùng Guid làm vô hiệu hóa cơ chế chặn theo IP).
         if (clientIp == "unknown") clientIp = null;
         
-        var result = await authService.LoginAsync(new LoginRequest(input.Email, input.Password), clientIp, cancellationToken);
+        var result = await authService.LoginAsync(new LoginRequest(input.Email, input.Password, input.TenantCode), clientIp, cancellationToken);
         return HandleResult(result);
     }
 

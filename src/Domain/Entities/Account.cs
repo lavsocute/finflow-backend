@@ -1,10 +1,11 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Events;
+using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Account : Entity
+public sealed class Account : Entity, IMultiTenant
 {
     private Account(Guid id, string email, string passwordHash, RoleType role, Guid idTenant, Guid idDepartment)
     {

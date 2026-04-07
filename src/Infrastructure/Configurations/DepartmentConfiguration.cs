@@ -19,8 +19,6 @@ internal sealed class DepartmentConfiguration : IEntityTypeConfiguration<Departm
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
-        builder.HasQueryFilter(x => x.IsActive);
-
         builder.HasOne<Tenant>().WithMany().HasForeignKey(x => x.IdTenant).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Department>().WithMany().HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.Restrict);
 
