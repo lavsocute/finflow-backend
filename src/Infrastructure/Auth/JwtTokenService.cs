@@ -17,6 +17,8 @@ public class JwtTokenService
         _jwtSettings = jwtSettings.Value;
     }
 
+    public int RefreshTokenExpirationDays => _jwtSettings.RefreshTokenExpirationDays;
+
     public string GenerateAccessToken(Guid id, string email, string role, Guid idTenant, Guid idDepartment)
     {
         var claims = new[]

@@ -42,12 +42,11 @@ public sealed class Account : Entity
         return account;
     }
 
-    public Result ChangePassword(string currentPasswordHash, string newPasswordHash)
+    public Result ChangePassword(string newPasswordHash)
     {
-        if (currentPasswordHash != PasswordHash)
-            return Result.Failure(AccountErrors.InvalidCurrentPassword);
         if (string.IsNullOrWhiteSpace(newPasswordHash))
             return Result.Failure(AccountErrors.PasswordRequired);
+
         PasswordHash = newPasswordHash;
         return Result.Success();
     }
