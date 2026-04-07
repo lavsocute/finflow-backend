@@ -1,6 +1,7 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Departments;
+using FinFlow.Domain.RefreshTokens;
 using FinFlow.Domain.Tenants;
 using FinFlow.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +22,13 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString, b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
 
+        services.AddHttpContextAccessor();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         services.AddSingleton<Auth.JwtTokenService>();
         services.AddScoped<FinFlow.Application.Auth.Interfaces.IAuthService, Auth.AuthService>();

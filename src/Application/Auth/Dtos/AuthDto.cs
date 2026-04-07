@@ -4,7 +4,8 @@ namespace FinFlow.Application.Auth.Dtos;
 
 public record LoginRequest(string Email, string Password);
 public record RegisterRequest(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
-public record RefreshTokenRequest(string AccessToken, string RefreshToken);
+public record RefreshTokenRequest(string RefreshToken);
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public record AuthResponse(
     string AccessToken,
     string RefreshToken,

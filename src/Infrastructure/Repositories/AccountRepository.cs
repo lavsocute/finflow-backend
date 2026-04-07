@@ -10,15 +10,34 @@ internal sealed class AccountRepository : IAccountRepository
 
     public AccountRepository(ApplicationDbContext dbContext) => _dbContext = dbContext;
 
-    public async Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>()
+    public async Task<Account?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Account>().AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+    public async Task<AccountLoginInfo?> GetLoginInfoAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var account = await _dbContext.Set<Account>()
             .AsNoTracking()
-            .Where(a => a.Email == email.ToLowerInvariant())
-            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.Role, a.IdTenant, a.IdDepartment, a.IsActive))
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefaultAsync(a => a.Email == email.ToLowerInvariant(), cancellationToken);
+
+        if (account == null) return null;
+
+        return new AccountLoginInfo(account.Id, account.Email, account.PasswordHash, account.Role.ToString(), account.IdTenant, account.IdDepartment, account.IsActive);
+    }
+
+    public async Task<AccountLoginInfo?> GetLoginInfoByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var account = await _dbContext.Set<Account>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
+
+        if (account == null) return null;
+
+        return new AccountLoginInfo(account.Id, account.Email, account.PasswordHash, account.Role.ToString(), account.IdTenant, account.IdDepartment, account.IsActive);
+    }
 
     public async Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>().AnyAsync(a => a.Email == email.ToLowerInvariant(), cancellationToken);
+        await _dbContext.Set<Account>().IgnoreQueryFilters().AnyAsync(a => a.Email == email.ToLowerInvariant(), cancellationToken);
 
     public async Task<IReadOnlyList<Account>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Account>().AsNoTracking().Where(a => a.IdTenant == idTenant).ToListAsync(cancellationToken);
