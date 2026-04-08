@@ -114,15 +114,15 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         builder.Entity<Account>().HasQueryFilter(e => e.IsActive);
 
         builder.Entity<Department>().HasQueryFilter(e =>
-            e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<TenantMembership>().HasQueryFilter(e =>
-            e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<Invitation>().HasQueryFilter(e =>
-            e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<AuditLog>().HasQueryFilter(e =>
-            _currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value));
+            _currentTenant.IsSuperAdmin || (e.IdTenant == _currentTenant.Id));
     }
 }

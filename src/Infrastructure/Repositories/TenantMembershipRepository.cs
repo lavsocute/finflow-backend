@@ -13,6 +13,7 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
     public async Task<TenantMembershipSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()
+            .IgnoreQueryFilters()
             .Where(m => m.Id == id)
             .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
             .FirstOrDefaultAsync(cancellationToken);
