@@ -3,6 +3,8 @@
 [Rr]elease/
 [Bb]in/
 [Oo]bj/
+TestResults/
+.dotnet-cli/
 
 ## IDE files
 .vs/
