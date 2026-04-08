@@ -1,10 +1,9 @@
 using FinFlow.Domain.Entities;
-using FinFlow.Domain.Enums;
 
 namespace FinFlow.Domain.Accounts;
 
-public record AccountLoginInfo(Guid Id, string Email, string PasswordHash, Guid IdDepartment, bool IsActive);
-public record AccountSummary(Guid Id, string Email, RoleType Role, Guid IdTenant, Guid IdDepartment, bool IsActive);
+public record AccountLoginInfo(Guid Id, string Email, string PasswordHash, bool IsActive);
+public record AccountSummary(Guid Id, string Email, Guid IdDepartment, bool IsActive);
 
 public interface IAccountRepository
 {
@@ -13,8 +12,6 @@ public interface IAccountRepository
     Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task<AccountLoginInfo?> GetLoginInfoByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> ExistsByEmailIgnoringTenantAsync(string email, CancellationToken cancellationToken = default);
-    Task<bool> ExistsByEmailForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<AccountSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
 
     // Write Methods (Trả về Entity tracked - dùng cho update)
     Task<Account?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default);

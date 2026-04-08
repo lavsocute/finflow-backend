@@ -111,8 +111,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
-        builder.Entity<Account>().HasQueryFilter(e =>
-            e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
+        builder.Entity<Account>().HasQueryFilter(e => e.IsActive);
 
         builder.Entity<Department>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));

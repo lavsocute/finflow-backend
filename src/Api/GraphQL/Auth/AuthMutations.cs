@@ -15,6 +15,7 @@ public record RegisterInput(string Email, string Password, string Name, string T
 public record RefreshTokenInput(string RefreshToken);
 public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberInput(string Email, RoleType Role);
+public record AcceptInviteInput(string InviteToken, string Password);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
 
 public record AuthPayload(
@@ -24,8 +25,7 @@ public record AuthPayload(
     Guid MembershipId,
     string Email,
     RoleType Role,
-    Guid IdTenant,
-    Guid IdDepartment
+    Guid IdTenant
 );
 
 public record InvitationPayload(
@@ -135,6 +135,18 @@ public class AuthMutations
             result.Value.ExpiresAt);
     }
 
+    public async Task<AuthPayload> AcceptInviteAsync(
+        AcceptInviteInput input,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.AcceptInviteAsync(
+            new AcceptInviteRequest(input.InviteToken, input.Password),
+            cancellationToken);
+
+        return HandleResult(result);
+    }
+
     [Authorize]
     public async Task<bool> ChangePasswordAsync(
         ChangePasswordInput input,
@@ -178,5 +190,5 @@ public class AuthMutations
     }
 
     private static AuthPayload ToPayload(AuthResponse response) =>
-        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant, response.IdDepartment);
+        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant);
 }

@@ -7,6 +7,7 @@ public record RegisterRequest(string Email, string Password, string Name, string
 public record RefreshTokenRequest(string RefreshToken);
 public record SwitchWorkspaceRequest(Guid AccountId, Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberRequest(Guid InviterAccountId, Guid InviterMembershipId, string Email, RoleType Role);
+public record AcceptInviteRequest(string InviteToken, string Password);
 public record ChangePasswordRequest(Guid AccountId, string CurrentPassword, string NewPassword);
 public record InvitationResponse(
     Guid InvitationId,
@@ -23,6 +24,5 @@ public record AuthResponse(
     Guid MembershipId,
     string Email,
     RoleType Role,
-    Guid IdTenant,
-    Guid IdDepartment
+    Guid IdTenant
 );

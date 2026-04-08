@@ -15,17 +15,13 @@ internal sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
 
         builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(100).IsRequired();
         builder.Property(x => x.PasswordHash).HasColumnName("password_hash").IsRequired();
-        builder.Property(x => x.Role).HasColumnName("role").HasConversion<string>().HasMaxLength(50).IsRequired();
-        builder.Property(x => x.IdTenant).HasColumnName("id_tenant").IsRequired();
         builder.Property(x => x.IdDepartment).HasColumnName("id_department").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
         builder.HasIndex(x => x.Email).IsUnique();
-        builder.HasIndex(x => x.IdTenant);
         builder.HasIndex(x => x.IdDepartment);
 
-        builder.HasOne<Tenant>().WithMany().HasForeignKey(x => x.IdTenant).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Department>().WithMany().HasForeignKey(x => x.IdDepartment).OnDelete(DeleteBehavior.Restrict);
     }
 }

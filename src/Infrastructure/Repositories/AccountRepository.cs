@@ -15,7 +15,7 @@ internal sealed class AccountRepository : IAccountRepository
         await _dbContext.Set<Account>()
             .AsNoTracking()
             .Where(a => a.Id == id)
-            .Select(a => new AccountSummary(a.Id, a.Email, a.Role, a.IdTenant, a.IdDepartment, a.IsActive))
+            .Select(a => new AccountSummary(a.Id, a.Email, a.IdDepartment, a.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
     // Read Method: Returns DTO via Select projection 
@@ -28,7 +28,7 @@ internal sealed class AccountRepository : IAccountRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(a => a.Email == normalizedEmail)
-            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IdDepartment, a.IsActive))
+            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IsActive))
             .ToListAsync(cancellationToken);
 
         if (accounts.Count > 1)
@@ -45,26 +45,12 @@ internal sealed class AccountRepository : IAccountRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(a => a.Id == id)
-            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IdDepartment, a.IsActive))
+            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
     // Read Method: Exists check ignoring tenant scope 
     public async Task<bool> ExistsByEmailIgnoringTenantAsync(string email, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Account>().IgnoreQueryFilters().AnyAsync(a => a.Email == email.Trim().ToLowerInvariant(), cancellationToken);
-
-    // Read Method: Exists check scoped to tenant (includes deactivated accounts to prevent reuse)
-    public async Task<bool> ExistsByEmailForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>()
-            .IgnoreQueryFilters()
-            .AnyAsync(a => a.Email == email.Trim().ToLowerInvariant() && a.IdTenant == idTenant, cancellationToken);
-
-    // Read Method: Returns List of DTOs via Select projection
-    public async Task<IReadOnlyList<AccountSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>()
-            .AsNoTracking()
-            .Where(a => a.IdTenant == idTenant)
-            .Select(a => new AccountSummary(a.Id, a.Email, a.Role, a.IdTenant, a.IdDepartment, a.IsActive))
-            .ToListAsync(cancellationToken);
 
     // Write Method: Returns tracked Entity for updates
     public async Task<Account?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default) =>

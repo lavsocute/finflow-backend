@@ -18,4 +18,5 @@ public static class InvitationErrors
     public static readonly Error AlreadyAccepted = new("Invitation.AlreadyAccepted", "This invitation has already been accepted");
     public static readonly Error AlreadyRevoked = new("Invitation.AlreadyRevoked", "This invitation has already been revoked");
     public static readonly Error Expired = new("Invitation.Expired", "This invitation has expired");
+    public static readonly Error PasswordRequired = new("Invitation.PasswordRequired", "Password is required to accept this invitation");
 }

@@ -17,6 +17,16 @@ internal sealed class DepartmentRepository : IDepartmentRepository
             .Select(d => new DepartmentSummary(d.Id, d.Name, d.IdTenant, d.ParentId, d.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<DepartmentSummary?> GetDefaultByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Department>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(d => d.IdTenant == idTenant && d.IsActive)
+            .OrderBy(d => d.ParentId.HasValue)
+            .ThenBy(d => d.CreatedAt)
+            .Select(d => new DepartmentSummary(d.Id, d.Name, d.IdTenant, d.ParentId, d.IsActive))
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task<IReadOnlyList<DepartmentSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Department>()
             .AsNoTracking()

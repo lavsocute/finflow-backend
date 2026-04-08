@@ -1,19 +1,15 @@
 using FinFlow.Domain.Abstractions;
-using FinFlow.Domain.Enums;
 using FinFlow.Domain.Events;
-using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Account : Entity, IMultiTenant
+public sealed class Account : Entity
 {
-    private Account(Guid id, string email, string passwordHash, RoleType role, Guid idTenant, Guid idDepartment)
+    private Account(Guid id, string email, string passwordHash, Guid idDepartment)
     {
         Id = id;
         Email = email;
         PasswordHash = passwordHash;
-        Role = role;
-        IdTenant = idTenant;
         IdDepartment = idDepartment;
         IsActive = true;
         CreatedAt = DateTime.UtcNow;
@@ -23,13 +19,11 @@ public sealed class Account : Entity, IMultiTenant
 
     public string Email { get; private set; } = null!;
     public string PasswordHash { get; private set; } = null!;
-    public RoleType Role { get; private set; }
-    public Guid IdTenant { get; private set; }
     public Guid IdDepartment { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public bool IsActive { get; private set; }
 
-    public static Result<Account> Create(string email, string passwordHash, RoleType role, Guid idTenant, Guid idDepartment)
+    public static Result<Account> Create(string email, string passwordHash, Guid idDepartment)
     {
         if (string.IsNullOrWhiteSpace(email))
             return Result.Failure<Account>(AccountErrors.EmailRequired);
@@ -38,8 +32,8 @@ public sealed class Account : Entity, IMultiTenant
         if (string.IsNullOrWhiteSpace(passwordHash))
             return Result.Failure<Account>(AccountErrors.PasswordRequired);
 
-        var account = new Account(Guid.NewGuid(), email.ToLowerInvariant(), passwordHash, role, idTenant, idDepartment);
-        account.RaiseDomainEvent(new AccountCreatedDomainEvent(account.Id, account.Email, account.IdTenant));
+        var account = new Account(Guid.NewGuid(), email.ToLowerInvariant(), passwordHash, idDepartment);
+        account.RaiseDomainEvent(new AccountCreatedDomainEvent(account.Id, account.Email));
         return account;
     }
 
@@ -49,14 +43,6 @@ public sealed class Account : Entity, IMultiTenant
             return Result.Failure(AccountErrors.PasswordRequired);
 
         PasswordHash = newPasswordHash;
-        return Result.Success();
-    }
-
-    public Result ChangeRole(RoleType newRole)
-    {
-        if (Role == newRole) return Result.Failure(AccountErrors.SameRole);
-        Role = newRole;
-        RaiseDomainEvent(new AccountRoleChangedDomainEvent(Id, newRole));
         return Result.Success();
     }
 

@@ -6,6 +6,7 @@ public interface IDepartmentRepository
 {
     // Read Methods (DTO)
     Task<DepartmentSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<DepartmentSummary?> GetDefaultByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DepartmentSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
 
     // Write Methods (Entity)

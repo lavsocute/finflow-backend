@@ -146,6 +146,11 @@ public class AuditMiddleware
             action = "INVITE_MEMBER";
             entityType = "Invitation";
         }
+        else if (operationName.Equals("acceptInvite", StringComparison.OrdinalIgnoreCase))
+        {
+            action = "ACCEPT_INVITE";
+            entityType = "TenantMembership";
+        }
 
         if (action == null) return null;
 
