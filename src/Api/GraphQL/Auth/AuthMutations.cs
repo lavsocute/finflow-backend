@@ -13,6 +13,8 @@ namespace FinFlow.Api.GraphQL.Auth;
 public record LoginInput(string Email, string Password, string TenantCode);
 public record RegisterInput(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
 public record RefreshTokenInput(string RefreshToken);
+public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
+public record InviteMemberInput(string Email, RoleType Role);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
 
 public record AuthPayload(
@@ -24,6 +26,15 @@ public record AuthPayload(
     RoleType Role,
     Guid IdTenant,
     Guid IdDepartment
+);
+
+public record InvitationPayload(
+    Guid InvitationId,
+    string InviteToken,
+    string Email,
+    RoleType Role,
+    Guid IdTenant,
+    DateTime ExpiresAt
 );
 
 public class AuthMutations
@@ -62,6 +73,61 @@ public class AuthMutations
         var result = await authService.RefreshTokenAsync(
             new RefreshTokenRequest(input.RefreshToken), cancellationToken);
         return HandleResult(result);
+    }
+
+    [Authorize]
+    public async Task<AuthPayload> SwitchWorkspaceAsync(
+        SwitchWorkspaceInput input,
+        [Service] IAuthService authService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+        var accountIdClaim = user?.FindFirst("sub")?.Value
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        var result = await authService.SwitchWorkspaceAsync(
+            new SwitchWorkspaceRequest(accountId, input.MembershipId, input.CurrentRefreshToken),
+            cancellationToken);
+
+        return HandleResult(result);
+    }
+
+    [Authorize]
+    public async Task<InvitationPayload> InviteMemberAsync(
+        InviteMemberInput input,
+        [Service] IAuthService authService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+
+        var accountIdClaim = user?.FindFirst("sub")?.Value
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId) || !Guid.TryParse(membershipIdClaim, out var membershipId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        var result = await authService.InviteMemberAsync(
+            new InviteMemberRequest(accountId, membershipId, input.Email, input.Role),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        return new InvitationPayload(
+            result.Value.InvitationId,
+            result.Value.InviteToken,
+            result.Value.Email,
+            result.Value.Role,
+            result.Value.IdTenant,
+            result.Value.ExpiresAt);
     }
 
     [Authorize]

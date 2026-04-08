@@ -120,6 +120,9 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         builder.Entity<TenantMembership>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
 
+        builder.Entity<Invitation>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value)));
+
         builder.Entity<AuditLog>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || (_currentTenant.Id.HasValue && e.IdTenant == _currentTenant.Id.Value));
     }

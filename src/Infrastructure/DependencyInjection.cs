@@ -1,6 +1,7 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Departments;
+using FinFlow.Domain.Invitations;
 using FinFlow.Domain.RefreshTokens;
 using FinFlow.Domain.Tenants;
 using FinFlow.Domain.TenantMemberships;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
+        services.AddScoped<IInvitationRepository, InvitationRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();
 
