@@ -19,21 +19,21 @@ internal sealed class AccountRepository : IAccountRepository
             .FirstOrDefaultAsync(cancellationToken);
 
     // Read Method: Returns DTO via Select projection 
-    // Login is always tenant-scoped in pre-auth flows to avoid cross-tenant ambiguity.
-    public async Task<AccountLoginInfo?> GetLoginInfoForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default)
+    // Account identity is global; tenant/workspace resolution happens via TenantMembership.
+    public async Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.Trim().ToLowerInvariant();
 
         var accounts = await _dbContext.Set<Account>()
             .AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(a => a.Email == normalizedEmail && a.IdTenant == idTenant)
-            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.Role.ToString(), a.IdTenant, a.IdDepartment, a.IsActive))
+            .Where(a => a.Email == normalizedEmail)
+            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IdDepartment, a.IsActive))
             .ToListAsync(cancellationToken);
 
         if (accounts.Count > 1)
         {
-            throw new InvalidOperationException($"Multiple accounts found for email '{normalizedEmail}' in tenant '{idTenant}'. Data integrity violation.");
+            throw new InvalidOperationException($"Multiple accounts found for email '{normalizedEmail}'. Data integrity violation.");
         }
 
         return accounts.FirstOrDefault();
@@ -45,18 +45,18 @@ internal sealed class AccountRepository : IAccountRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(a => a.Id == id)
-            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.Role.ToString(), a.IdTenant, a.IdDepartment, a.IsActive))
+            .Select(a => new AccountLoginInfo(a.Id, a.Email, a.PasswordHash, a.IdDepartment, a.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
     // Read Method: Exists check ignoring tenant scope 
     public async Task<bool> ExistsByEmailIgnoringTenantAsync(string email, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Account>().IgnoreQueryFilters().AnyAsync(a => a.Email == email.ToLowerInvariant(), cancellationToken);
+        await _dbContext.Set<Account>().IgnoreQueryFilters().AnyAsync(a => a.Email == email.Trim().ToLowerInvariant(), cancellationToken);
 
     // Read Method: Exists check scoped to tenant (includes deactivated accounts to prevent reuse)
     public async Task<bool> ExistsByEmailForTenantAsync(string email, Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Account>()
             .IgnoreQueryFilters()
-            .AnyAsync(a => a.Email == email.ToLowerInvariant() && a.IdTenant == idTenant, cancellationToken);
+            .AnyAsync(a => a.Email == email.Trim().ToLowerInvariant() && a.IdTenant == idTenant, cancellationToken);
 
     // Read Method: Returns List of DTOs via Select projection
     public async Task<IReadOnlyList<AccountSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>

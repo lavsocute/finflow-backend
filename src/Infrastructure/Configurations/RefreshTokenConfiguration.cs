@@ -22,6 +22,10 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
             .HasColumnName("account_id")
             .IsRequired();
 
+        builder.Property(x => x.MembershipId)
+            .HasColumnName("membership_id")
+            .IsRequired();
+
         builder.Property(x => x.ExpiresAt)
             .HasColumnName("expires_at")
             .IsRequired();
@@ -45,7 +49,9 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
 
         builder.HasIndex(x => x.Token).IsUnique();
         builder.HasIndex(x => x.AccountId);
+        builder.HasIndex(x => x.MembershipId);
 
         builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<TenantMembership>().WithMany().HasForeignKey(x => x.MembershipId).OnDelete(DeleteBehavior.Restrict);
     }
 }

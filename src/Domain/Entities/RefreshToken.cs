@@ -15,7 +15,7 @@ public sealed class RefreshToken : Entity
         return Convert.ToBase64String(bytes);
     }
 
-    public static Result<RefreshToken> Create(string token, Guid accountId, int expirationDays)
+    public static Result<RefreshToken> Create(string token, Guid accountId, Guid membershipId, int expirationDays)
     {
         if (string.IsNullOrWhiteSpace(token))
             return Result.Failure<RefreshToken>(new Error("RefreshToken.Invalid", "Token cannot be empty"));
@@ -23,6 +23,8 @@ public sealed class RefreshToken : Entity
         var hashedToken = HashToken(token);
         if (accountId == Guid.Empty)
             return Result.Failure<RefreshToken>(new Error("RefreshToken.Invalid", "Account ID cannot be empty"));
+        if (membershipId == Guid.Empty)
+            return Result.Failure<RefreshToken>(new Error("RefreshToken.Invalid", "Membership ID cannot be empty"));
         if (expirationDays <= 0)
             return Result.Failure<RefreshToken>(new Error("RefreshToken.Invalid", "Expiration days must be positive"));
 
@@ -30,6 +32,7 @@ public sealed class RefreshToken : Entity
             Guid.NewGuid(),
             hashedToken,
             accountId,
+            membershipId,
             DateTime.UtcNow.AddDays(expirationDays)));
     }
 
@@ -53,7 +56,7 @@ public sealed class RefreshToken : Entity
         ReplacedByToken = HashToken(newToken);
         
         // Tạo entity mới (sẽ tự hash token bên trong)
-        var createResult = Create(newToken, AccountId, expirationDays);
+        var createResult = Create(newToken, AccountId, MembershipId, expirationDays);
         if (createResult.IsFailure)
             return Result.Failure<(RefreshToken, string)>(createResult.Error);
 
@@ -64,11 +67,12 @@ public sealed class RefreshToken : Entity
         return Result.Success((createResult.Value, newToken));
     }
 
-    private RefreshToken(Guid id, string token, Guid accountId, DateTime expiresAt)
+    private RefreshToken(Guid id, string token, Guid accountId, Guid membershipId, DateTime expiresAt)
     {
         Id = id;
         Token = token;
         AccountId = accountId;
+        MembershipId = membershipId;
         ExpiresAt = expiresAt;
         CreatedAt = DateTime.UtcNow;
         IsRevoked = false;
@@ -78,6 +82,7 @@ public sealed class RefreshToken : Entity
 
     public string Token { get; private set; } = null!;
     public Guid AccountId { get; private set; }
+    public Guid MembershipId { get; private set; }
     public DateTime ExpiresAt { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public bool IsRevoked { get; private set; }

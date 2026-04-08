@@ -19,6 +19,7 @@ public record AuthPayload(
     string AccessToken,
     string RefreshToken,
     Guid Id,
+    Guid MembershipId,
     string Email,
     RoleType Role,
     Guid IdTenant,
@@ -106,5 +107,5 @@ public class AuthMutations
     }
 
     private static AuthPayload ToPayload(AuthResponse response) =>
-        new(response.AccessToken, response.RefreshToken, response.Id, response.Email, response.Role, response.IdTenant, response.IdDepartment);
+        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant, response.IdDepartment);
 }

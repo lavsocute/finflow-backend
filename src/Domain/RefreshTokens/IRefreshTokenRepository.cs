@@ -1,6 +1,6 @@
 namespace FinFlow.Domain.RefreshTokens;
 
-public record RefreshTokenSummary(Guid Id, Guid AccountId, DateTime ExpiresAt, bool IsRevoked, bool IsActive);
+public record RefreshTokenSummary(Guid Id, Guid AccountId, Guid MembershipId, DateTime ExpiresAt, bool IsRevoked, bool IsActive);
 
 public interface IRefreshTokenRepository
 {

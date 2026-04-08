@@ -17,6 +17,22 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
             .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<TenantMembershipSummary?> GetActiveByAccountAndTenantAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<TenantMembership>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(m => m.AccountId == accountId && m.IdTenant == idTenant && m.IsActive)
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<TenantMembershipSummary>> GetActiveByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<TenantMembership>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(m => m.AccountId == accountId && m.IsActive)
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<TenantMembershipSummary>> GetByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()

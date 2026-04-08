@@ -19,12 +19,13 @@ public class JwtTokenService
 
     public int RefreshTokenExpirationDays => _jwtSettings.RefreshTokenExpirationDays;
 
-    public string GenerateAccessToken(Guid id, string email, string role, Guid idTenant, Guid idDepartment)
+    public string GenerateAccessToken(Guid id, string email, string role, Guid idTenant, Guid idDepartment, Guid membershipId)
     {
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, email),
+            new Claim("MembershipId", membershipId.ToString()),
             new Claim("IdTenant", idTenant.ToString()),
             new Claim("IdDepartment", idDepartment.ToString()),
             new Claim(ClaimTypes.Role, role),

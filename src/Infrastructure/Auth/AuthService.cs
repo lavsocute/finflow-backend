@@ -56,7 +56,7 @@ public class AuthService : IAuthService
             return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
         }
 
-        var account = await _accountRepo.GetLoginInfoForTenantAsync(request.Email, tenant.Id, cancellationToken);
+        var account = await _accountRepo.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
 
         if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
         {
@@ -69,11 +69,18 @@ public class AuthService : IAuthService
         if (!account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
 
+        var membership = await _membershipRepo.GetActiveByAccountAndTenantAsync(account.Id, tenant.Id, cancellationToken);
+        if (membership == null)
+        {
+            await _rateLimiter.RecordFailureAsync(clientIp, request.Email, tenantId);
+            return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
+        }
+
         var accessToken = _tokenService.GenerateAccessToken(
-            account.Id, account.Email, account.Role, account.IdTenant, account.IdDepartment);
+            account.Id, account.Email, membership.Role.ToString(), membership.IdTenant, account.IdDepartment, membership.Id);
         var refreshTokenStr = _tokenService.GenerateRefreshToken();
 
-        var refreshTokenResult = RefreshToken.Create(refreshTokenStr, account.Id, _tokenService.RefreshTokenExpirationDays);
+        var refreshTokenResult = RefreshToken.Create(refreshTokenStr, account.Id, membership.Id, _tokenService.RefreshTokenExpirationDays);
         if (refreshTokenResult.IsFailure)
             return Result.Failure<AuthResponse>(refreshTokenResult.Error);
 
@@ -81,11 +88,8 @@ public class AuthService : IAuthService
         _refreshTokenRepo.Add(refreshToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        if (!Enum.TryParse<RoleType>(account.Role, out var role))
-            return Result.Failure<AuthResponse>(AccountErrors.InvalidRole);
-
         return Result.Success(new AuthResponse(
-            accessToken, refreshTokenStr, account.Id, account.Email, role, account.IdTenant, account.IdDepartment));
+            accessToken, refreshTokenStr, account.Id, membership.Id, account.Email, membership.Role, membership.IdTenant, account.IdDepartment));
     }
 
     public async Task<Result<AuthResponse>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
@@ -124,7 +128,7 @@ public class AuthService : IAuthService
         var membership = membershipResult.Value;
 
         var refreshTokenStr = _tokenService.GenerateRefreshToken();
-        var refreshTokenResult = RefreshToken.Create(refreshTokenStr, account.Id, _tokenService.RefreshTokenExpirationDays);
+        var refreshTokenResult = RefreshToken.Create(refreshTokenStr, account.Id, membership.Id, _tokenService.RefreshTokenExpirationDays);
         if (refreshTokenResult.IsFailure)
             return Result.Failure<AuthResponse>(refreshTokenResult.Error);
 
@@ -138,10 +142,10 @@ public class AuthService : IAuthService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var accessToken = _tokenService.GenerateAccessToken(
-            account.Id, account.Email, account.Role.ToString(), account.IdTenant, account.IdDepartment);
+            account.Id, account.Email, membership.Role.ToString(), membership.IdTenant, account.IdDepartment, membership.Id);
 
         return Result.Success(new AuthResponse(
-            accessToken, refreshTokenStr, account.Id, account.Email, account.Role, account.IdTenant, account.IdDepartment));
+            accessToken, refreshTokenStr, account.Id, membership.Id, account.Email, membership.Role, membership.IdTenant, account.IdDepartment));
     }
 
     public async Task<Result<AuthResponse>> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
@@ -160,6 +164,10 @@ public class AuthService : IAuthService
         if (account == null || !account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
 
+        var membership = await _membershipRepo.GetByIdAsync(storedToken.MembershipId, cancellationToken);
+        if (membership == null || !membership.IsActive)
+            return Result.Failure<AuthResponse>(TenantMembershipErrors.NotFound);
+
         var newRawToken = _tokenService.GenerateRefreshToken();
         var replaceResult = storedToken.ReplaceWith(newRawToken, _tokenService.RefreshTokenExpirationDays);
         if (replaceResult.IsFailure)
@@ -170,13 +178,11 @@ public class AuthService : IAuthService
         _refreshTokenRepo.Add(newRefreshTokenEntity);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var newAccessToken = _tokenService.GenerateAccessToken(account.Id, account.Email, account.Role, account.IdTenant, account.IdDepartment);
-
-        if (!Enum.TryParse<RoleType>(account.Role, out var role))
-            return Result.Failure<AuthResponse>(AccountErrors.InvalidRole);
+        var newAccessToken = _tokenService.GenerateAccessToken(
+            account.Id, account.Email, membership.Role.ToString(), membership.IdTenant, account.IdDepartment, membership.Id);
 
         return Result.Success(new AuthResponse(
-            newAccessToken, rawTokenForClient, account.Id, account.Email, role, account.IdTenant, account.IdDepartment));
+            newAccessToken, rawTokenForClient, account.Id, membership.Id, account.Email, membership.Role, membership.IdTenant, account.IdDepartment));
     }
 
     public async Task<Result> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken = default)

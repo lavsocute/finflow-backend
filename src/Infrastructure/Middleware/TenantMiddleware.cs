@@ -25,6 +25,7 @@ public class TenantMiddleware
 
         // 2. Check for specific Tenant ID (IdTenant claim)
         var tenantIdClaim = user.FindFirst("IdTenant")?.Value;
+        var membershipIdClaim = user.FindFirst("MembershipId")?.Value;
 
         if (Guid.TryParse(tenantIdClaim, out var tenantId))
         {
@@ -40,6 +41,10 @@ public class TenantMiddleware
             }
             // Nếu là Super Admin và không có IdTenant -> IsSuperAdmin = true, Id = null -> Xem tất cả
         }
+
+        currentTenant.MembershipId = Guid.TryParse(membershipIdClaim, out var membershipId)
+            ? membershipId
+            : null;
 
         await _next(context);
     }

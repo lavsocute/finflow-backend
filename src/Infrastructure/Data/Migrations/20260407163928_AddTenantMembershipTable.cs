@@ -54,6 +54,18 @@ namespace FinFlow.Infrastructure.Data.Migrations
                 name: "IX_tenant_membership_id_tenant",
                 table: "tenant_membership",
                 column: "id_tenant");
+
+            migrationBuilder.Sql("""
+                INSERT INTO tenant_membership ("Id", account_id, id_tenant, role, created_at, is_active)
+                SELECT a."Id", a."Id", a.id_tenant, a.role, a.created_at, a.is_active
+                FROM account AS a
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM tenant_membership AS tm
+                    WHERE tm.account_id = a."Id"
+                      AND tm.id_tenant = a.id_tenant
+                );
+                """);
         }
 
         /// <inheritdoc />

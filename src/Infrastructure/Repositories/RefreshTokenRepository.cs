@@ -17,7 +17,7 @@ internal sealed class RefreshTokenRepository : IRefreshTokenRepository
         return await _dbContext.Set<RefreshToken>()
             .AsNoTracking()
             .Where(rt => rt.Token == hashedToken)
-            .Select(rt => new RefreshTokenSummary(rt.Id, rt.AccountId, rt.ExpiresAt, rt.IsRevoked, rt.IsActive))
+            .Select(rt => new RefreshTokenSummary(rt.Id, rt.AccountId, rt.MembershipId, rt.ExpiresAt, rt.IsRevoked, rt.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -27,7 +27,7 @@ internal sealed class RefreshTokenRepository : IRefreshTokenRepository
             .AsNoTracking()
             .Where(rt => rt.AccountId == accountId && !rt.IsRevoked)
             .OrderByDescending(rt => rt.CreatedAt)
-            .Select(rt => new RefreshTokenSummary(rt.Id, rt.AccountId, rt.ExpiresAt, rt.IsRevoked, rt.IsActive))
+            .Select(rt => new RefreshTokenSummary(rt.Id, rt.AccountId, rt.MembershipId, rt.ExpiresAt, rt.IsRevoked, rt.IsActive))
             .ToListAsync(cancellationToken);
 
     // Write Method: Returns tracked Entity for updates

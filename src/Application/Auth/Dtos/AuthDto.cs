@@ -10,6 +10,7 @@ public record AuthResponse(
     string AccessToken,
     string RefreshToken,
     Guid Id,
+    Guid MembershipId,
     string Email,
     RoleType Role,
     Guid IdTenant,
