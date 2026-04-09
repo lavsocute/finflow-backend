@@ -4,6 +4,7 @@ using FinFlow.Domain.Departments;
 using FinFlow.Domain.Invitations;
 using FinFlow.Domain.RefreshTokens;
 using FinFlow.Domain.Tenants;
+using FinFlow.Domain.TenantApprovals;
 using FinFlow.Domain.TenantMemberships;
 using FinFlow.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
+        services.AddScoped<ITenantApprovalRequestRepository, TenantApprovalRequestRepository>();
         services.AddScoped<IInvitationRepository, InvitationRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();

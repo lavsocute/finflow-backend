@@ -16,6 +16,7 @@ internal sealed class TenantMembershipConfiguration : IEntityTypeConfiguration<T
         builder.Property(x => x.AccountId).HasColumnName("account_id").IsRequired();
         builder.Property(x => x.IdTenant).HasColumnName("id_tenant").IsRequired();
         builder.Property(x => x.Role).HasColumnName("role").HasConversion<string>().HasMaxLength(50).IsRequired();
+        builder.Property(x => x.IsOwner).HasColumnName("is_owner").HasDefaultValue(false).IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 

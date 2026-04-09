@@ -18,6 +18,8 @@ internal sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(x => x.TenancyModel).HasColumnName("tenancy_model").HasMaxLength(20).HasConversion<string>().IsRequired();
         builder.Property(x => x.ConnectionString).HasColumnName("connection_string");
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).HasDefaultValue("VND");
+        builder.Property(x => x.CompanyName).HasColumnName("company_name").HasMaxLength(150);
+        builder.Property(x => x.TaxCode).HasColumnName("tax_code").HasMaxLength(14);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 

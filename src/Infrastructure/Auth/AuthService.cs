@@ -162,7 +162,7 @@ public class AuthService : IAuthService
 
         var account = accountResult.Value;
 
-        var membershipResult = TenantMembership.Create(account.Id, tenant.Id, RoleType.TenantAdmin);
+        var membershipResult = TenantMembership.Create(account.Id, tenant.Id, RoleType.TenantAdmin, isOwner: true);
         if (membershipResult.IsFailure)
         {
             await _rateLimiter.RecordFailureAsync(clientIp, request.Email);
@@ -194,7 +194,7 @@ public class AuthService : IAuthService
 
         return Result.Success(CreateAuthResponse(
             new AccountLoginInfo(account.Id, account.Email, account.PasswordHash, account.IsActive),
-            new TenantMembershipSummary(membership.Id, membership.AccountId, membership.IdTenant, membership.Role, membership.IsActive, membership.CreatedAt),
+            new TenantMembershipSummary(membership.Id, membership.AccountId, membership.IdTenant, membership.Role, membership.IsOwner, membership.IsActive, membership.CreatedAt),
             accessToken,
             refreshTokenStr));
     }
@@ -462,7 +462,7 @@ public class AuthService : IAuthService
 
         return Result.Success(CreateAuthResponse(
             accountInfo,
-            new TenantMembershipSummary(membership.Id, membership.AccountId, membership.IdTenant, membership.Role, membership.IsActive, membership.CreatedAt),
+            new TenantMembershipSummary(membership.Id, membership.AccountId, membership.IdTenant, membership.Role, membership.IsOwner, membership.IsActive, membership.CreatedAt),
             accessToken,
             refreshTokenRaw));
     }

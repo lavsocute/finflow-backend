@@ -15,7 +15,7 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(m => m.Id == id)
-            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsOwner, m.IsActive, m.CreatedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<TenantMembershipSummary?> GetActiveByAccountAndTenantAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default) =>
@@ -23,7 +23,7 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(m => m.AccountId == accountId && m.IdTenant == idTenant && m.IsActive)
-            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsOwner, m.IsActive, m.CreatedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<IReadOnlyList<TenantMembershipSummary>> GetActiveByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) =>
@@ -31,27 +31,32 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(m => m.AccountId == accountId && m.IsActive)
-            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsOwner, m.IsActive, m.CreatedAt))
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<TenantMembershipSummary>> GetByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()
             .Where(m => m.AccountId == accountId)
-            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsOwner, m.IsActive, m.CreatedAt))
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<TenantMembershipSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()
             .Where(m => m.IdTenant == idTenant)
-            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsActive, m.CreatedAt))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.Role, m.IsOwner, m.IsActive, m.CreatedAt))
             .ToListAsync(cancellationToken);
 
     public async Task<bool> ExistsAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .IgnoreQueryFilters()
             .AnyAsync(m => m.AccountId == accountId && m.IdTenant == idTenant, cancellationToken);
+
+    public async Task<bool> ExistsOwnerByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<TenantMembership>()
+            .IgnoreQueryFilters()
+            .AnyAsync(m => m.AccountId == accountId && m.IsOwner, cancellationToken);
 
     public async Task<TenantMembership?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>().FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
