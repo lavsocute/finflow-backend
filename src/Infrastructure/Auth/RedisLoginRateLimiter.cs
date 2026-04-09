@@ -3,15 +3,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 using System.Text;
+using FinFlow.Application.Common.Abstractions;
 
 namespace FinFlow.Infrastructure.Auth;
-
-public interface ILoginRateLimiter
-{
-    Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null);
-    Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null);
-    Task ResetAccountAsync(string email, Guid? tenantId = null);
-}
 
 public class RedisLoginRateLimiter : ILoginRateLimiter
 {

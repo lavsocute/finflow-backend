@@ -2,11 +2,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Infrastructure;
-using FinFlow.Infrastructure.Auth;
 using FinFlow.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -28,6 +28,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
 
         builder.ConfigureServices(services =>
         {

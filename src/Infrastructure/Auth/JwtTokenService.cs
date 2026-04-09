@@ -5,10 +5,11 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using FinFlow.Application.Common.Abstractions;
 
 namespace FinFlow.Infrastructure.Auth;
 
-public class JwtTokenService
+public class JwtTokenService : ITokenService
 {
     private readonly JwtSettings _jwtSettings;
 

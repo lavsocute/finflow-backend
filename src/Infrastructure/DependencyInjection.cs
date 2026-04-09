@@ -7,6 +7,7 @@ using FinFlow.Domain.Tenants;
 using FinFlow.Domain.TenantApprovals;
 using FinFlow.Domain.TenantMemberships;
 using FinFlow.Infrastructure.Repositories;
+using FinFlow.Application.Common.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,9 +46,10 @@ public static class DependencyInjection
         var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";
         services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConnection)));
         services.AddMemoryCache(); // Fallback khi Redis lỗi
-        services.AddSingleton<Auth.ILoginRateLimiter, Auth.RedisLoginRateLimiter>();
-
-        services.AddSingleton<Auth.JwtTokenService>();
+        services.AddSingleton<ILoginRateLimiter, Auth.RedisLoginRateLimiter>();
+        services.AddSingleton<ITokenService, Auth.JwtTokenService>();
+        services.AddSingleton<Auth.JwtTokenService>(sp => (Auth.JwtTokenService)sp.GetRequiredService<ITokenService>());
+        services.AddSingleton<IPasswordHasher, Auth.BcryptPasswordHasher>();
         services.AddScoped<FinFlow.Application.Auth.Interfaces.IAuthService, Auth.AuthService>();
 
         return services;

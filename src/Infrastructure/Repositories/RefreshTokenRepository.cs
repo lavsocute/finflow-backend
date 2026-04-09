@@ -42,14 +42,14 @@ internal sealed class RefreshTokenRepository : IRefreshTokenRepository
     public async Task<bool> RevokeByTokenAsync(string token, string reason, CancellationToken cancellationToken = default)
     {
         var hashedToken = RefreshToken.HashToken(token);
-        var affected = await _dbContext.Set<RefreshToken>()
-            .Where(rt => rt.Token == hashedToken && !rt.IsRevoked)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(rt => rt.IsRevoked, true)
-                .SetProperty(rt => rt.ReasonRevoked, reason),
-                cancellationToken);
+        var refreshToken = await _dbContext.Set<RefreshToken>()
+            .FirstOrDefaultAsync(rt => rt.Token == hashedToken && !rt.IsRevoked, cancellationToken);
 
-        return affected > 0;
+        if (refreshToken == null)
+            return false;
+
+        refreshToken.Revoke(reason);
+        return true;
     }
 
     public void Add(RefreshToken refreshToken) => _dbContext.Set<RefreshToken>().Add(refreshToken);
