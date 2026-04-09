@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Domain\FinFlow.Domain.csproj" />
     <ProjectReference Include="..\..\src\Application\FinFlow.Application.csproj" />
+    <ProjectReference Include="..\..\src\Api\FinFlow.Api.csproj" />
   </ItemGroup>
 
 </Project>

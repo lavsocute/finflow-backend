@@ -7,6 +7,7 @@ using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
+using DomainError = FinFlow.Domain.Abstractions.Error;
 
 namespace FinFlow.Api.GraphQL.Auth;
 
@@ -14,14 +15,14 @@ public record LoginInput(string Email, string Password, string TenantCode);
 public record RegisterInput(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
 public record CreateSharedTenantInput(string Name, string TenantCode, string Currency = "VND");
 public record CompanyInfoInput(
-    string CompanyName,
-    string TaxCode,
+    string? CompanyName,
+    string? TaxCode,
     string? Address = null,
     string? Phone = null,
     string? ContactPerson = null,
     string? BusinessType = null,
     int? EmployeeCount = null);
-public record CreateIsolatedTenantInput(string Name, string TenantCode, string Currency, CompanyInfoInput CompanyInfo);
+public record CreateIsolatedTenantInput(string Name, string TenantCode, string Currency, CompanyInfoInput? CompanyInfo);
 public record RefreshTokenInput(string RefreshToken);
 public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberInput(string Email, RoleType Role);
@@ -144,6 +145,12 @@ public class AuthMutations
             ? parsedMembershipId
             : null;
 
+        var companyInfoValidationError = CreateTenantInputValidation.ValidateIsolatedCompanyInfo(input.CompanyInfo);
+        if (companyInfoValidationError is not null)
+            throw ToGraphQlException(companyInfoValidationError);
+
+        var companyInfo = input.CompanyInfo!;
+
         var result = await authService.CreateIsolatedTenantAsync(
             new CreateIsolatedTenantRequest(
                 accountId,
@@ -152,13 +159,13 @@ public class AuthMutations
                 input.TenantCode,
                 input.Currency,
                 new CompanyInfoRequest(
-                    input.CompanyInfo.CompanyName,
-                    input.CompanyInfo.TaxCode,
-                    input.CompanyInfo.Address,
-                    input.CompanyInfo.Phone,
-                    input.CompanyInfo.ContactPerson,
-                    input.CompanyInfo.BusinessType,
-                    input.CompanyInfo.EmployeeCount)),
+                    companyInfo.CompanyName!,
+                    companyInfo.TaxCode!,
+                    companyInfo.Address,
+                    companyInfo.Phone,
+                    companyInfo.ContactPerson,
+                    companyInfo.BusinessType,
+                    companyInfo.EmployeeCount)),
             cancellationToken);
 
         if (result.IsFailure)
@@ -276,10 +283,14 @@ public class AuthMutations
     public async Task<AuthPayload> AcceptInviteAsync(
         AcceptInviteInput input,
         [Service] IAuthService authService,
+        [Service] IHttpContextAccessor httpContextAccessor,
         CancellationToken cancellationToken)
     {
+        var clientIp = httpContextAccessor.HttpContext?.GetClientIpAddress();
+        if (clientIp == "unknown") clientIp = null;
+
         var result = await authService.AcceptInviteAsync(
-            new AcceptInviteRequest(input.InviteToken, input.Password),
+            new AcceptInviteRequest(input.InviteToken, input.Password, clientIp),
             cancellationToken);
 
         return HandleResult(result);
@@ -322,10 +333,13 @@ public class AuthMutations
     private static AuthPayload HandleResult(FinFlow.Domain.Abstractions.Result<AuthResponse> result)
     {
         if (result.IsFailure)
-            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+            throw ToGraphQlException(result.Error);
 
         return ToPayload(result.Value);
     }
+
+    private static GraphQLException ToGraphQlException(DomainError error) =>
+        new(new HotChocolate.Error(error.Description, error.Code));
 
     private static AuthPayload ToPayload(AuthResponse response) =>
         new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant);

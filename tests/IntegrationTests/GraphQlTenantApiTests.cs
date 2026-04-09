@@ -132,6 +132,92 @@ public sealed class GraphQlTenantApiTests
     }
 
     [Fact]
+    public async Task CreateIsolatedTenant_Mutation_ReturnsValidationErrors_ForMissingCompanyInfoFields()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var currentTenant = Tenant.Create("Current Workspace", "http-iso-validation-current").Value;
+        var currentDepartment = Department.Create("Root", currentTenant.Id).Value;
+        var account = Account.Create("http.iso.validation@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), currentDepartment.Id).Value;
+        var membership = TenantMembership.Create(account.Id, currentTenant.Id, RoleType.TenantAdmin).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(currentTenant);
+            db.Add(currentDepartment);
+            db.Add(account);
+            db.Add(membership);
+        });
+
+        using var tenantAdminClient = factory.CreateAuthenticatedClient(
+            account.Id,
+            account.Email,
+            RoleType.TenantAdmin,
+            currentTenant.Id,
+            membership.Id);
+
+        const string mutation = """
+            mutation($input: CreateIsolatedTenantInput!) {
+              createIsolatedTenant(input: $input) {
+                requestId
+                status
+                message
+              }
+            }
+            """;
+
+        using var missingCompanyInfoJson = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(tenantAdminClient, mutation, new
+        {
+            input = new
+            {
+                name = "HTTP Invalid Isolated Workspace",
+                tenantCode = "http-invalid-iso-company",
+                currency = "VND",
+                companyInfo = (object?)null
+            }
+        });
+
+        var missingCompanyInfoErrors = missingCompanyInfoJson.RootElement.GetProperty("errors");
+        Assert.Equal("Tenant.CompanyInfoRequired", missingCompanyInfoErrors[0].GetProperty("extensions").GetProperty("code").GetString());
+
+        using var blankCompanyNameJson = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(tenantAdminClient, mutation, new
+        {
+            input = new
+            {
+                name = "HTTP Invalid Isolated Workspace",
+                tenantCode = "http-invalid-iso-name",
+                currency = "VND",
+                companyInfo = new
+                {
+                    companyName = "   ",
+                    taxCode = "1234567890"
+                }
+            }
+        });
+
+        var blankCompanyNameErrors = blankCompanyNameJson.RootElement.GetProperty("errors");
+        Assert.Equal("Tenant.CompanyNameRequired", blankCompanyNameErrors[0].GetProperty("extensions").GetProperty("code").GetString());
+
+        using var blankTaxCodeJson = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(tenantAdminClient, mutation, new
+        {
+            input = new
+            {
+                name = "HTTP Invalid Isolated Workspace",
+                tenantCode = "http-invalid-iso-tax",
+                currency = "VND",
+                companyInfo = new
+                {
+                    companyName = "FinFlow Company",
+                    taxCode = "   "
+                }
+            }
+        });
+
+        var blankTaxCodeErrors = blankTaxCodeJson.RootElement.GetProperty("errors");
+        Assert.Equal("Tenant.TaxCodeRequired", blankTaxCodeErrors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task PendingTenantRequests_Query_Works_ThroughHttpPipeline()
     {
         await using var factory = new GraphQlApiTestFactory();

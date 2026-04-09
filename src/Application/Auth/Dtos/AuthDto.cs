@@ -23,7 +23,7 @@ public record CreateIsolatedTenantRequest(
 public record RefreshTokenRequest(string RefreshToken);
 public record SwitchWorkspaceRequest(Guid AccountId, Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberRequest(Guid InviterAccountId, Guid InviterMembershipId, string Email, RoleType Role);
-public record AcceptInviteRequest(string InviteToken, string Password);
+public record AcceptInviteRequest(string InviteToken, string Password, string? ClientIp = null);
 public record ChangePasswordRequest(Guid AccountId, string CurrentPassword, string NewPassword);
 public record TenantApprovalResponse(Guid RequestId, TenantApprovalStatus Status, string Message, DateTime ExpiresAt);
 public record PendingTenantApprovalResponse(

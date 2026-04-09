@@ -99,6 +99,12 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
 
+    public static async Task<JsonDocument> PostGraphQlAllowingErrorsAsync(HttpClient client, string query, object? variables = null)
+    {
+        using var response = await client.PostAsJsonAsync("/graphql", new { query, variables });
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+
     private sealed class NoOpLoginRateLimiter : ILoginRateLimiter
     {
         public Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null) => Task.FromResult(false);

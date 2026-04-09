@@ -159,6 +159,41 @@ public sealed class TenantApprovalIntegrationTests
     }
 
     [Fact]
+    public async Task ApproveTenant_Fails_WhenTenantCodeIsBlockedByRecentRejection()
+    {
+        using var scope = _fixture.CreateScope();
+
+        var sourceTenant = scope.SeedTenant("Source Workspace", "source-blocked-approve");
+        var sourceDepartment = scope.SeedDepartment("Root", sourceTenant.Id);
+        var requester = scope.SeedAccount("approve-blocked@finflow.test", "P@ssw0rd!", sourceDepartment.Id);
+
+        var rejectedRequest = scope.SeedTenantApprovalRequest(
+            "cooldown-enterprise",
+            "Cooldown Enterprise",
+            "Cooldown Co",
+            "1234567890",
+            Guid.NewGuid(),
+            DateTime.UtcNow.AddDays(7));
+        Assert.True(rejectedRequest.Reject("Rejected recently").IsSuccess);
+
+        var pendingRequest = scope.SeedTenantApprovalRequest(
+            "cooldown-enterprise",
+            "Pending Cooldown Enterprise",
+            "Pending Cooldown Co",
+            "1234567891",
+            requester.Id,
+            DateTime.UtcNow.AddDays(7));
+
+        await scope.SaveSeedAsync();
+        scope.ActAsSuperAdmin();
+
+        var result = await scope.AuthService.ApproveTenantAsync(pendingRequest.Id);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(TenantErrors.CodeBlocked.Code, result.Error.Code);
+    }
+
+    [Fact]
     public async Task CreateIsolatedTenant_Fails_WhenTenantCodeIsBlockedByRecentRejection()
     {
         using var scope = _fixture.CreateScope();
@@ -191,5 +226,31 @@ public sealed class TenantApprovalIntegrationTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(TenantErrors.CodeBlocked.Code, result.Error.Code);
+    }
+
+    [Fact]
+    public async Task CreateIsolatedTenant_Fails_WhenRequesterAccountIsInactive()
+    {
+        using var scope = _fixture.CreateScope();
+
+        var currentTenant = scope.SeedTenant("Current Workspace", "current-inactive-requester");
+        var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
+        var account = scope.SeedAccount("inactive-requester@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
+
+        Assert.True(account.Deactivate().IsSuccess);
+        await scope.SaveSeedAsync();
+
+        var result = await scope.AuthService.CreateIsolatedTenantAsync(
+            new CreateIsolatedTenantRequest(
+                account.Id,
+                currentMembership.Id,
+                "Inactive Requester Workspace",
+                "inactive-requester-workspace",
+                "VND",
+                new CompanyInfoRequest("Inactive Requester Co", "1234567890")));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AccountErrors.Unauthorized.Code, result.Error.Code);
     }
 }

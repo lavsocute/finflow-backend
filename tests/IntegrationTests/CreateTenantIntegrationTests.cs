@@ -38,6 +38,9 @@ public sealed class CreateTenantIntegrationTests
         var membership = await scope.DbContext.Set<TenantMembership>()
             .IgnoreQueryFilters()
             .SingleAsync(x => x.AccountId == account.Id && x.IdTenant == tenant.Id);
+        var defaultDepartment = await scope.DbContext.Set<Department>()
+            .IgnoreQueryFilters()
+            .SingleOrDefaultAsync(x => x.IdTenant == tenant.Id && x.Name == "Root");
 
         var refreshToken = await scope.DbContext.Set<RefreshToken>()
             .SingleAsync(x => x.AccountId == account.Id && x.MembershipId == membership.Id);
@@ -47,6 +50,8 @@ public sealed class CreateTenantIntegrationTests
         Assert.Equal(tenant.Id, result.Value.IdTenant);
         Assert.Equal(membership.Id, result.Value.MembershipId);
         Assert.True(refreshToken.IsActive);
+        Assert.NotNull(defaultDepartment);
+        Assert.True(defaultDepartment!.IsActive);
     }
 
     [Fact]

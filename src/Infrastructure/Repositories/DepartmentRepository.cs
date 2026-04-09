@@ -21,7 +21,7 @@ internal sealed class DepartmentRepository : IDepartmentRepository
         await _dbContext.Set<Department>()
             .AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(d => d.IdTenant == idTenant && d.IsActive)
+            .Where(d => d.IdTenant == idTenant)
             .OrderBy(d => d.ParentId.HasValue)
             .ThenBy(d => d.CreatedAt)
             .Select(d => new DepartmentSummary(d.Id, d.Name, d.IdTenant, d.ParentId, d.IsActive))

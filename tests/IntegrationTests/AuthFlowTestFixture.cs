@@ -26,6 +26,7 @@ internal sealed class AuthFlowTestFixture
     public TestScope CreateScope()
     {
         var currentTenant = new CurrentTenant();
+        var rateLimiter = new TestLoginRateLimiter();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
@@ -41,24 +42,26 @@ internal sealed class AuthFlowTestFixture
             new RefreshTokenRepository(dbContext),
             dbContext,
             new JwtTokenService(_jwtOptions),
-            new TestLoginRateLimiter(),
+            rateLimiter,
             currentTenant);
 
-        return new TestScope(dbContext, currentTenant, authService);
+        return new TestScope(dbContext, currentTenant, authService, rateLimiter);
     }
 
     internal sealed class TestScope : IDisposable
     {
-        public TestScope(ApplicationDbContext dbContext, CurrentTenant currentTenant, AuthService authService)
+        public TestScope(ApplicationDbContext dbContext, CurrentTenant currentTenant, AuthService authService, TestLoginRateLimiter rateLimiter)
         {
             DbContext = dbContext;
             CurrentTenant = currentTenant;
             AuthService = authService;
+            RateLimiter = rateLimiter;
         }
 
         public ApplicationDbContext DbContext { get; }
         public CurrentTenant CurrentTenant { get; }
         public AuthService AuthService { get; }
+        public TestLoginRateLimiter RateLimiter { get; }
 
         public Tenant SeedTenant(string name, string code)
         {
@@ -161,10 +164,16 @@ internal sealed class AuthFlowTestFixture
         public void Dispose() => DbContext.Dispose();
     }
 
-    private sealed class TestLoginRateLimiter : ILoginRateLimiter
+    internal sealed class TestLoginRateLimiter : ILoginRateLimiter
     {
+        public List<(string? Ip, string Email, Guid? TenantId)> RecordedFailures { get; } = new();
+
         public Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null) => Task.FromResult(false);
-        public Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null) => Task.CompletedTask;
+        public Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null)
+        {
+            RecordedFailures.Add((ip, email, tenantId));
+            return Task.CompletedTask;
+        }
         public Task ResetAccountAsync(string email, Guid? tenantId = null) => Task.CompletedTask;
     }
 }

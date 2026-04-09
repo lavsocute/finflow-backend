@@ -253,6 +253,12 @@ public class AuthService : IAuthService
 
         var tenant = tenantResult.Value;
 
+        var departmentResult = Department.Create("Root", tenant.Id);
+        if (departmentResult.IsFailure)
+            return Result.Failure<AuthResponse>(departmentResult.Error);
+
+        var department = departmentResult.Value;
+
         var membershipResult = TenantMembership.Create(account.Id, tenant.Id, RoleType.TenantAdmin, isOwner: true);
         if (membershipResult.IsFailure)
             return Result.Failure<AuthResponse>(membershipResult.Error);
@@ -280,6 +286,7 @@ public class AuthService : IAuthService
             _currentTenant.IsSuperAdmin = false;
 
             _tenantRepo.Add(tenant);
+            _departmentRepo.Add(department);
             _membershipRepo.Add(membership);
             _refreshTokenRepo.Add(refreshTokenResult.Value);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -384,6 +391,9 @@ public class AuthService : IAuthService
         var approvalRequest = await _tenantApprovalRequestRepo.GetByIdForUpdateAsync(requestId, cancellationToken);
         if (approvalRequest == null)
             return Result.Failure<TenantApprovalDecisionResponse>(TenantApprovalRequestErrors.NotFound);
+
+        if (await _tenantApprovalRequestRepo.IsTenantCodeBlockedAsync(approvalRequest.TenantCode, DateTime.UtcNow, cancellationToken))
+            return Result.Failure<TenantApprovalDecisionResponse>(TenantErrors.CodeBlocked);
 
         if (await _tenantRepo.ExistsByCodeAsync(approvalRequest.TenantCode, cancellationToken))
             return Result.Failure<TenantApprovalDecisionResponse>(TenantErrors.CodeAlreadyExists);
@@ -517,6 +527,15 @@ public class AuthService : IAuthService
         if (currentRefreshToken.AccountId != request.AccountId)
             return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
 
+        if (!_currentTenant.IsSuperAdmin)
+        {
+            if (!_currentTenant.MembershipId.HasValue)
+                return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
+
+            if (currentRefreshToken.MembershipId != _currentTenant.MembershipId.Value)
+                return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
+        }
+
         var revokeResult = currentRefreshToken.Revoke("Workspace switched");
         if (revokeResult.IsFailure)
             return Result.Failure<AuthResponse>(revokeResult.Error);
@@ -633,7 +652,10 @@ public class AuthService : IAuthService
                 return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
 
             if (!BCrypt.Net.BCrypt.Verify(request.Password, existingAccount.PasswordHash))
+            {
+                await _rateLimiter.RecordFailureAsync(request.ClientIp, invitation.Email, invitation.IdTenant);
                 return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
+            }
 
             var alreadyMember = await _membershipRepo.ExistsAsync(existingAccount.Id, invitation.IdTenant, cancellationToken);
             if (alreadyMember)
@@ -650,6 +672,8 @@ public class AuthService : IAuthService
             var defaultDepartment = await _departmentRepo.GetDefaultByTenantIdAsync(invitation.IdTenant, cancellationToken);
             if (defaultDepartment == null)
                 return Result.Failure<AuthResponse>(DepartmentErrors.NotFound);
+            if (!defaultDepartment.IsActive)
+                return Result.Failure<AuthResponse>(DepartmentErrors.Inactive);
 
             var createAccountResult = Account.Create(
                 invitation.Email,
