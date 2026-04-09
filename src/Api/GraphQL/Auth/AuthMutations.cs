@@ -12,6 +12,16 @@ namespace FinFlow.Api.GraphQL.Auth;
 
 public record LoginInput(string Email, string Password, string TenantCode);
 public record RegisterInput(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
+public record CreateSharedTenantInput(string Name, string TenantCode, string Currency = "VND");
+public record CompanyInfoInput(
+    string CompanyName,
+    string TaxCode,
+    string? Address = null,
+    string? Phone = null,
+    string? ContactPerson = null,
+    string? BusinessType = null,
+    int? EmployeeCount = null);
+public record CreateIsolatedTenantInput(string Name, string TenantCode, string Currency, CompanyInfoInput CompanyInfo);
 public record RefreshTokenInput(string RefreshToken);
 public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberInput(string Email, RoleType Role);
@@ -35,6 +45,21 @@ public record InvitationPayload(
     RoleType Role,
     Guid IdTenant,
     DateTime ExpiresAt
+);
+
+public record TenantApprovalPayload(
+    Guid RequestId,
+    string Status,
+    string Message,
+    DateTime ExpiresAt
+);
+
+public record TenantApprovalDecisionPayload(
+    Guid RequestId,
+    string Status,
+    Guid? TenantId,
+    string? TenantCode,
+    string? Name
 );
 
 public class AuthMutations
@@ -68,6 +93,82 @@ public class AuthMutations
             clientIp,
             cancellationToken);
         return HandleResult(result);
+    }
+
+    [Authorize]
+    public async Task<AuthPayload> CreateSharedTenantAsync(
+        CreateSharedTenantInput input,
+        [Service] IAuthService authService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+
+        var accountIdClaim = user?.FindFirst("sub")?.Value
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        Guid? membershipId = Guid.TryParse(membershipIdClaim, out var parsedMembershipId)
+            ? parsedMembershipId
+            : null;
+
+        var result = await authService.CreateSharedTenantAsync(
+            new CreateSharedTenantRequest(accountId, membershipId, input.Name, input.TenantCode, input.Currency),
+            cancellationToken);
+
+        return HandleResult(result);
+    }
+
+    [Authorize]
+    public async Task<TenantApprovalPayload> CreateIsolatedTenantAsync(
+        CreateIsolatedTenantInput input,
+        [Service] IAuthService authService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+
+        var accountIdClaim = user?.FindFirst("sub")?.Value
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        Guid? membershipId = Guid.TryParse(membershipIdClaim, out var parsedMembershipId)
+            ? parsedMembershipId
+            : null;
+
+        var result = await authService.CreateIsolatedTenantAsync(
+            new CreateIsolatedTenantRequest(
+                accountId,
+                membershipId,
+                input.Name,
+                input.TenantCode,
+                input.Currency,
+                new CompanyInfoRequest(
+                    input.CompanyInfo.CompanyName,
+                    input.CompanyInfo.TaxCode,
+                    input.CompanyInfo.Address,
+                    input.CompanyInfo.Phone,
+                    input.CompanyInfo.ContactPerson,
+                    input.CompanyInfo.BusinessType,
+                    input.CompanyInfo.EmployeeCount)),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        return new TenantApprovalPayload(
+            result.Value.RequestId,
+            result.Value.Status.ToString(),
+            result.Value.Message,
+            result.Value.ExpiresAt);
     }
 
     public async Task<AuthPayload> RefreshTokenAsync(
@@ -133,6 +234,43 @@ public class AuthMutations
             result.Value.Role,
             result.Value.IdTenant,
             result.Value.ExpiresAt);
+    }
+
+    [Authorize]
+    public async Task<TenantApprovalDecisionPayload> ApproveTenantAsync(
+        Guid requestId,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.ApproveTenantAsync(requestId, cancellationToken);
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        return new TenantApprovalDecisionPayload(
+            result.Value.RequestId,
+            result.Value.Status.ToString(),
+            result.Value.TenantId,
+            result.Value.TenantCode,
+            result.Value.Name);
+    }
+
+    [Authorize]
+    public async Task<TenantApprovalDecisionPayload> RejectTenantAsync(
+        Guid requestId,
+        string reason,
+        [Service] IAuthService authService,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.RejectTenantAsync(requestId, reason, cancellationToken);
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        return new TenantApprovalDecisionPayload(
+            result.Value.RequestId,
+            result.Value.Status.ToString(),
+            result.Value.TenantId,
+            result.Value.TenantCode,
+            result.Value.Name);
     }
 
     public async Task<AuthPayload> AcceptInviteAsync(

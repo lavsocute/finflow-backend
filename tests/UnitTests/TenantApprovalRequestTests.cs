@@ -99,4 +99,28 @@ public sealed class TenantApprovalRequestTests
         Assert.True(result.IsFailure);
         Assert.Equal(TenantApprovalRequestErrors.RejectionReasonRequired.Code, result.Error.Code);
     }
+
+    [Fact]
+    public void Reject_SetsRejectedAt_WhenSuccessful()
+    {
+        var request = TenantApprovalRequest.Create(
+            "acme-enterprise",
+            "Acme Enterprise",
+            "Acme Enterprise Ltd",
+            "1234567890",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "VND",
+            Guid.NewGuid(),
+            DateTime.UtcNow.AddDays(7)).Value;
+
+        var result = request.Reject("Need more documents");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(TenantApprovalStatus.Rejected, request.Status);
+        Assert.NotNull(request.RejectedAt);
+    }
 }

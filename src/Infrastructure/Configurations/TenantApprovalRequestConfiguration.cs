@@ -26,6 +26,7 @@ internal sealed class TenantApprovalRequestConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.TenancyModel).HasColumnName("tenancy_model").HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(x => x.RequestedById).HasColumnName("requested_by_id").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(x => x.RejectedAt).HasColumnName("rejected_at");
         builder.Property(x => x.RejectionReason).HasColumnName("rejection_reason").HasMaxLength(500);
         builder.Property(x => x.ExpiresAt).HasColumnName("expires_at").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();

@@ -121,6 +121,16 @@ public class AuditMiddleware
             action = "REGISTER";
             entityType = "Tenant";
         }
+        else if (operationName.Equals("createSharedTenant", StringComparison.OrdinalIgnoreCase))
+        {
+            action = "TENANT_CREATED";
+            entityType = "Tenant";
+        }
+        else if (operationName.Equals("createIsolatedTenant", StringComparison.OrdinalIgnoreCase))
+        {
+            action = "TENANT_APPROVAL_REQUESTED";
+            entityType = "TenantApprovalRequest";
+        }
         else if (operationName.Equals("logout", StringComparison.OrdinalIgnoreCase))
         {
             action = "LOGOUT";
@@ -150,6 +160,16 @@ public class AuditMiddleware
         {
             action = "ACCEPT_INVITE";
             entityType = "TenantMembership";
+        }
+        else if (operationName.Equals("approveTenant", StringComparison.OrdinalIgnoreCase))
+        {
+            action = "TENANT_APPROVED";
+            entityType = "TenantApprovalRequest";
+        }
+        else if (operationName.Equals("rejectTenant", StringComparison.OrdinalIgnoreCase))
+        {
+            action = "TENANT_REJECTED";
+            entityType = "TenantApprovalRequest";
         }
 
         if (action == null) return null;

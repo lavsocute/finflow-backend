@@ -58,6 +58,7 @@ public sealed class TenantApprovalRequest : Entity
     public Guid RequestedById { get; private set; }
     public TenantApprovalStatus Status { get; private set; }
     public string? RejectionReason { get; private set; }
+    public DateTime? RejectedAt { get; private set; }
     public DateTime ExpiresAt { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
@@ -145,6 +146,7 @@ public sealed class TenantApprovalRequest : Entity
 
         Status = TenantApprovalStatus.Approved;
         RejectionReason = null;
+        RejectedAt = null;
         UpdatedAt = DateTime.UtcNow;
         return Result.Success();
     }
@@ -162,6 +164,7 @@ public sealed class TenantApprovalRequest : Entity
 
         Status = TenantApprovalStatus.Rejected;
         RejectionReason = normalizedReason;
+        RejectedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
         return Result.Success();
     }

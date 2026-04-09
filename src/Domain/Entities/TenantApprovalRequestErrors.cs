@@ -21,6 +21,7 @@ public static class TenantApprovalRequestErrors
     public static readonly Error RequestedByRequired = new("TenantApproval.RequestedByRequired", "RequestedBy is required");
     public static readonly Error ExpirationRequired = new("TenantApproval.ExpirationRequired", "Expiration must be in the future");
     public static readonly Error AlreadyProcessed = new("TenantApproval.AlreadyProcessed", "This request has already been processed");
+    public static readonly Error Unauthorized = new("TenantApproval.Unauthorized", "Only SuperAdmin can perform this action");
     public static readonly Error RejectionReasonRequired = new("TenantApproval.RejectionReasonRequired", "Rejection reason is required");
     public static readonly Error RejectionReasonTooLong = new("TenantApproval.RejectionReasonTooLong", "Rejection reason cannot exceed 500 characters");
     public static readonly Error Expired = new("TenantApproval.Expired", "This request has expired");

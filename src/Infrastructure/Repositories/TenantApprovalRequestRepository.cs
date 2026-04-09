@@ -20,6 +20,7 @@ internal sealed class TenantApprovalRequestRepository : ITenantApprovalRequestRe
                 x.Name,
                 x.CompanyName,
                 x.TaxCode,
+                x.EmployeeCount,
                 x.Currency,
                 x.TenancyModel,
                 x.RequestedById,
@@ -39,6 +40,7 @@ internal sealed class TenantApprovalRequestRepository : ITenantApprovalRequestRe
                 x.Name,
                 x.CompanyName,
                 x.TaxCode,
+                x.EmployeeCount,
                 x.Currency,
                 x.TenancyModel,
                 x.RequestedById,
@@ -53,6 +55,20 @@ internal sealed class TenantApprovalRequestRepository : ITenantApprovalRequestRe
                 x => x.TenantCode == tenantCode.Trim().ToLowerInvariant()
                   && x.Status == FinFlow.Domain.Enums.TenantApprovalStatus.Pending,
                 cancellationToken);
+
+    public async Task<bool> IsTenantCodeBlockedAsync(string tenantCode, DateTime asOfUtc, CancellationToken cancellationToken = default)
+    {
+        var normalizedTenantCode = tenantCode.Trim().ToLowerInvariant();
+        var blockedSince = asOfUtc.AddDays(-30);
+
+        return await _dbContext.Set<TenantApprovalRequest>()
+            .AnyAsync(
+                x => x.TenantCode == normalizedTenantCode
+                  && x.Status == FinFlow.Domain.Enums.TenantApprovalStatus.Rejected
+                  && x.RejectedAt.HasValue
+                  && x.RejectedAt.Value >= blockedSince,
+                cancellationToken);
+    }
 
     public async Task<bool> ExistsPendingByRequestedByAsync(Guid requestedById, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantApprovalRequest>()

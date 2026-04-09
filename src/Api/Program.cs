@@ -89,6 +89,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
+    .AddTypeExtension<AuthQueries>()
     .AddMutationType<AuthMutations>()
     .AddAuthorization()
     .AddErrorFilter(error =>
@@ -132,4 +133,8 @@ app.Run();
 public class Query
 {
     public string Health() => "OK";
+}
+
+public partial class Program
+{
 }
