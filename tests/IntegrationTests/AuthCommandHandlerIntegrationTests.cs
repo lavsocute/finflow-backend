@@ -3,6 +3,7 @@ using FinFlow.Application.Auth.Commands.Login;
 using FinFlow.Application.Auth.Commands.Logout;
 using FinFlow.Application.Auth.Commands.RefreshToken;
 using FinFlow.Application.Auth.Commands.Register;
+using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,7 @@ public sealed class AuthCommandHandlerIntegrationTests
         var handler = scope.CreateLoginHandler();
 
         var result = await handler.Handle(
-            new LoginCommand(account.Email, "P@ssw0rd!", tenant.TenantCode, "127.0.0.1"),
+            new LoginCommand(new LoginRequest(account.Email, "P@ssw0rd!", tenant.TenantCode, "127.0.0.1")),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -45,7 +46,7 @@ public sealed class AuthCommandHandlerIntegrationTests
         var handler = scope.CreateRegisterHandler();
 
         var result = await handler.Handle(
-            new RegisterCommand("handler.register@finflow.test", "P@ssw0rd!", "FinFlow Team", "handler-register", "Root", "127.0.0.1"),
+            new RegisterCommand(new RegisterRequest("handler.register@finflow.test", "P@ssw0rd!", "FinFlow Team", "handler-register", "Root", "127.0.0.1")),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -84,7 +85,7 @@ public sealed class AuthCommandHandlerIntegrationTests
 
         var handler = scope.CreateRefreshTokenHandler();
 
-        var result = await handler.Handle(new RefreshTokenCommand(rawRefreshToken), CancellationToken.None);
+        var result = await handler.Handle(new RefreshTokenCommand(new RefreshTokenRequest(rawRefreshToken)), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(membership.Id, result.Value.MembershipId);
@@ -108,7 +109,7 @@ public sealed class AuthCommandHandlerIntegrationTests
         var handler = scope.CreateChangePasswordHandler();
 
         var result = await handler.Handle(
-            new ChangePasswordCommand(account.Id, "P@ssw0rd!", "N3wP@ssword!"),
+            new ChangePasswordCommand(new ChangePasswordRequest(account.Id, "P@ssw0rd!", "N3wP@ssword!")),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -141,7 +142,7 @@ public sealed class AuthCommandHandlerIntegrationTests
 
         var handler = scope.CreateLogoutHandler();
 
-        var result = await handler.Handle(new LogoutCommand(rawRefreshToken), CancellationToken.None);
+        var result = await handler.Handle(new LogoutCommand(new LogoutRequest(rawRefreshToken)), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
 

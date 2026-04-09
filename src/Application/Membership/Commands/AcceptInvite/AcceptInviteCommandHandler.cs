@@ -1,6 +1,7 @@
-using FinFlow.Application.Auth.Responses;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Auth.Support;
 using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Membership.DTOs.Requests;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Departments;
@@ -53,8 +54,10 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
         _currentTenant = currentTenant;
     }
 
-    public async Task<Result<AuthResponse>> Handle(AcceptInviteCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponse>> Handle(AcceptInviteCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var invitation = await _invitationRepository.GetByTokenForUpdateAsync(request.InviteToken, cancellationToken);
         if (invitation == null)
             return Result.Failure<AuthResponse>(InvitationErrors.NotFound);

@@ -1,4 +1,4 @@
-using FinFlow.Application.Auth.Responses;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
@@ -30,8 +30,10 @@ public sealed class RefreshTokenCommandHandler : MediatR.IRequestHandler<Refresh
         _tokenService = tokenService;
     }
 
-    public async Task<Result<AuthResponse>> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponse>> Handle(RefreshTokenCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var storedToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
         if (storedToken == null)
             return Result.Failure<AuthResponse>(RefreshTokenErrors.NotFound);

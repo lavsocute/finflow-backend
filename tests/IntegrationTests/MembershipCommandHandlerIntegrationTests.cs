@@ -1,6 +1,7 @@
 using FinFlow.Application.Membership.Commands.AcceptInvite;
 using FinFlow.Application.Membership.Commands.InviteMember;
 using FinFlow.Application.Membership.Commands.SwitchWorkspace;
+using FinFlow.Application.Membership.DTOs.Requests;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +35,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var handler = scope.CreateSwitchWorkspaceHandler();
 
         var result = await handler.Handle(
-            new SwitchWorkspaceCommand(account.Id, membershipB.Id, rawRefreshToken),
+            new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membershipB.Id, rawRefreshToken)),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -70,7 +71,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var handler = scope.CreateInviteMemberHandler();
 
         var result = await handler.Handle(
-            new InviteMemberCommand(inviterAccount.Id, inviterMembership.Id, "invited.user@finflow.test", RoleType.Staff),
+            new InviteMemberCommand(new InviteMemberRequest(inviterAccount.Id, inviterMembership.Id, "invited.user@finflow.test", RoleType.Staff)),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -109,7 +110,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var handler = scope.CreateAcceptInviteHandler();
 
         var result = await handler.Handle(
-            new AcceptInviteCommand(rawInviteToken, "P@ssw0rd!"),
+            new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "P@ssw0rd!")),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);

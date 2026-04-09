@@ -1,5 +1,6 @@
 using FinFlow.Application.Common.Abstractions;
-using FinFlow.Application.Membership.Responses;
+using FinFlow.Application.Membership.DTOs.Requests;
+using FinFlow.Application.Membership.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Entities;
@@ -38,8 +39,10 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
         _currentTenant = currentTenant;
     }
 
-    public async Task<Result<InvitationResponse>> Handle(InviteMemberCommand request, CancellationToken cancellationToken)
+    public async Task<Result<InvitationResponse>> Handle(InviteMemberCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var inviterAccount = await _accountRepository.GetLoginInfoByIdAsync(request.InviterAccountId, cancellationToken);
         if (inviterAccount == null || !inviterAccount.IsActive)
             return Result.Failure<InvitationResponse>(AccountErrors.Unauthorized);

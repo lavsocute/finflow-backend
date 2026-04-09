@@ -7,7 +7,7 @@ public sealed class AcceptInviteCommandValidator : AbstractValidator<AcceptInvit
 {
     public AcceptInviteCommandValidator()
     {
-        RuleFor(x => x.InviteToken).NotEmpty();
-        RuleFor(x => x.Password).NotEmpty();
+        RuleFor(x => x.Request.InviteToken).NotEmpty();
+        RuleFor(x => x.Request.Password).NotEmpty();
     }
 }

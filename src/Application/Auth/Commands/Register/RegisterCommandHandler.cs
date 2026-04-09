@@ -1,4 +1,5 @@
-using FinFlow.Application.Auth.Responses;
+using FinFlow.Application.Auth.DTOs.Requests;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Auth.Support;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
@@ -49,8 +50,10 @@ public sealed class RegisterCommandHandler : MediatR.IRequestHandler<RegisterCom
         _rateLimiter = rateLimiter;
     }
 
-    public async Task<Result<AuthResponse>> Handle(RegisterCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponse>> Handle(RegisterCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         if (await _rateLimiter.IsBlockedAsync(request.ClientIp, request.Email))
             return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
 

@@ -3,6 +3,7 @@ using FinFlow.Application.Auth.Commands.Login;
 using FinFlow.Application.Auth.Commands.Logout;
 using FinFlow.Application.Auth.Commands.RefreshToken;
 using FinFlow.Application.Auth.Commands.Register;
+using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Application.Auth.Validators;
 
 namespace FinFlow.UnitTests.Application.Auth;
@@ -13,28 +14,28 @@ public sealed class AuthCommandValidatorTests
     public void LoginCommandValidator_ReturnsErrors_ForEmptyFields()
     {
         var validator = new LoginCommandValidator();
-        var command = new LoginCommand("", "", "");
+        var command = new LoginCommand(new LoginRequest("", "", "", null));
 
         var result = validator.Validate(command);
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(LoginCommand.Email));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(LoginCommand.Password));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(LoginCommand.TenantCode));
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.Email");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.Password");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.TenantCode");
     }
 
     [Fact]
     public void RegisterCommandValidator_ReturnsErrors_ForInvalidFields()
     {
         var validator = new RegisterCommandValidator();
-        var command = new RegisterCommand("not-an-email", "", "", "", "");
+        var command = new RegisterCommand(new RegisterRequest("not-an-email", "", "", "", "", null));
 
         var result = validator.Validate(command);
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(RegisterCommand.Email));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(RegisterCommand.Password));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(RegisterCommand.Name));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(RegisterCommand.TenantCode));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(RegisterCommand.DepartmentName));
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.Email");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.Password");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.Name");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.TenantCode");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.DepartmentName");
     }
 
     [Fact]
@@ -43,23 +44,23 @@ public sealed class AuthCommandValidatorTests
         var refreshValidator = new RefreshTokenCommandValidator();
         var logoutValidator = new LogoutCommandValidator();
 
-        var refreshResult = refreshValidator.Validate(new RefreshTokenCommand(""));
-        var logoutResult = logoutValidator.Validate(new LogoutCommand(""));
+        var refreshResult = refreshValidator.Validate(new RefreshTokenCommand(new RefreshTokenRequest("")));
+        var logoutResult = logoutValidator.Validate(new LogoutCommand(new LogoutRequest("")));
 
-        Assert.Contains(refreshResult.Errors, x => x.PropertyName == nameof(RefreshTokenCommand.RefreshToken));
-        Assert.Contains(logoutResult.Errors, x => x.PropertyName == nameof(LogoutCommand.RefreshToken));
+        Assert.Contains(refreshResult.Errors, x => x.PropertyName == "Request.RefreshToken");
+        Assert.Contains(logoutResult.Errors, x => x.PropertyName == "Request.RefreshToken");
     }
 
     [Fact]
     public void ChangePasswordCommandValidator_ReturnsErrors_ForMissingFields()
     {
         var validator = new ChangePasswordCommandValidator();
-        var command = new ChangePasswordCommand(Guid.Empty, "", "");
+        var command = new ChangePasswordCommand(new ChangePasswordRequest(Guid.Empty, "", ""));
 
         var result = validator.Validate(command);
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(ChangePasswordCommand.AccountId));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(ChangePasswordCommand.CurrentPassword));
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(ChangePasswordCommand.NewPassword));
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.AccountId");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.CurrentPassword");
+        Assert.Contains(result.Errors, x => x.PropertyName == "Request.NewPassword");
     }
 }

@@ -1,4 +1,6 @@
-using FinFlow.Application.Auth.Dtos;
+using FinFlow.Application.Membership.Commands.AcceptInvite;
+using FinFlow.Application.Membership.Commands.SwitchWorkspace;
+using FinFlow.Application.Membership.DTOs.Requests;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Infrastructure.Repositories;
@@ -31,8 +33,8 @@ public sealed class AuthFlowIntegrationTests
 
         await scope.SaveSeedAsync();
 
-        var result = await scope.AuthService.AcceptInviteAsync(
-            new AcceptInviteRequest(rawInviteToken, "P@ssw0rd!"));
+        var result = await scope.Mediator.Send(
+            new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "P@ssw0rd!")));
 
         Assert.True(result.IsSuccess);
         Assert.Equal(existingAccount.Id, result.Value.Id);
@@ -75,8 +77,8 @@ public sealed class AuthFlowIntegrationTests
 
         await scope.SaveSeedAsync();
 
-        var result = await scope.AuthService.AcceptInviteAsync(
-            new AcceptInviteRequest(rawInviteToken, "WrongPassword!", "127.0.0.1"));
+        var result = await scope.Mediator.Send(
+            new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "WrongPassword!", "127.0.0.1")));
 
         Assert.True(result.IsFailure);
         Assert.Equal(AccountErrors.InvalidCurrentPassword.Code, result.Error.Code);
@@ -99,8 +101,8 @@ public sealed class AuthFlowIntegrationTests
 
         await scope.SaveSeedAsync();
 
-        var result = await scope.AuthService.AcceptInviteAsync(
-            new AcceptInviteRequest(rawInviteToken, "N3wP@ssword!"));
+        var result = await scope.Mediator.Send(
+            new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "N3wP@ssword!")));
 
         Assert.True(result.IsSuccess);
         Assert.Equal("new.user@finflow.test", result.Value.Email);
@@ -142,8 +144,8 @@ public sealed class AuthFlowIntegrationTests
 
         await scope.SaveSeedAsync();
 
-        var result = await scope.AuthService.AcceptInviteAsync(
-            new AcceptInviteRequest(rawInviteToken, "N3wP@ssword!"));
+        var result = await scope.Mediator.Send(
+            new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "N3wP@ssword!")));
 
         Assert.True(result.IsFailure);
         Assert.Equal(DepartmentErrors.Inactive.Code, result.Error.Code);
@@ -169,8 +171,8 @@ public sealed class AuthFlowIntegrationTests
         scope.CurrentTenant.Id = tenantA.Id;
         scope.CurrentTenant.MembershipId = membershipA.Id;
 
-        var result = await scope.AuthService.SwitchWorkspaceAsync(
-            new SwitchWorkspaceRequest(account.Id, membershipB.Id, currentRefreshToken));
+        var result = await scope.Mediator.Send(
+            new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membershipB.Id, currentRefreshToken)));
 
         Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "Expected success.");
         Assert.Equal(membershipB.Id, result.Value.MembershipId);
@@ -211,8 +213,8 @@ public sealed class AuthFlowIntegrationTests
         scope.CurrentTenant.Id = tenantB.Id;
         scope.CurrentTenant.MembershipId = membershipB.Id;
 
-        var result = await scope.AuthService.SwitchWorkspaceAsync(
-            new SwitchWorkspaceRequest(account.Id, membershipA.Id, refreshTokenForMembershipA));
+        var result = await scope.Mediator.Send(
+            new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membershipA.Id, refreshTokenForMembershipA)));
 
         Assert.True(result.IsFailure);
         Assert.Equal(AccountErrors.Unauthorized.Code, result.Error.Code);

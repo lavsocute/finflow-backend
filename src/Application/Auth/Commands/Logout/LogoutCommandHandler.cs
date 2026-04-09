@@ -14,8 +14,10 @@ public sealed class LogoutCommandHandler : MediatR.IRequestHandler<LogoutCommand
         _refreshTokenRepository = refreshTokenRepository;
     }
 
-    public async Task<Result> Handle(LogoutCommand request, CancellationToken cancellationToken)
+    public async Task<Result> Handle(LogoutCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var revoked = await _refreshTokenRepository.RevokeByTokenAsync(request.RefreshToken, "User logout", cancellationToken);
         if (!revoked)
             return Result.Failure(RefreshTokenErrors.NotFound);

@@ -1,6 +1,6 @@
 using FinFlow.Domain.Enums;
 
-namespace FinFlow.Application.Membership.Responses;
+namespace FinFlow.Application.Membership.DTOs.Responses;
 
 public record InvitationResponse(
     Guid InvitationId,

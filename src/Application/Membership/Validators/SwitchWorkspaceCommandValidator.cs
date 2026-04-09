@@ -1,4 +1,5 @@
 using FinFlow.Application.Membership.Commands.SwitchWorkspace;
+using FinFlow.Application.Membership.DTOs.Requests;
 using FluentValidation;
 
 namespace FinFlow.Application.Membership.Validators;
@@ -7,8 +8,8 @@ public sealed class SwitchWorkspaceCommandValidator : AbstractValidator<SwitchWo
 {
     public SwitchWorkspaceCommandValidator()
     {
-        RuleFor(x => x.AccountId).NotEmpty();
-        RuleFor(x => x.MembershipId).NotEmpty();
-        RuleFor(x => x.CurrentRefreshToken).NotEmpty();
+        RuleFor(x => x.Request.AccountId).NotEmpty();
+        RuleFor(x => x.Request.MembershipId).NotEmpty();
+        RuleFor(x => x.Request.CurrentRefreshToken).NotEmpty();
     }
 }

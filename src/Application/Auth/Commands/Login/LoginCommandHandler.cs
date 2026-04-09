@@ -1,4 +1,5 @@
-using FinFlow.Application.Auth.Responses;
+using FinFlow.Application.Auth.DTOs.Requests;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
@@ -42,8 +43,10 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
         _rateLimiter = rateLimiter;
     }
 
-    public async Task<Result<AuthResponse>> Handle(LoginCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponse>> Handle(LoginCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var tenant = await _tenantRepository.GetByCodeAsync(request.TenantCode.Trim(), cancellationToken);
         var tenantId = tenant?.Id;
 

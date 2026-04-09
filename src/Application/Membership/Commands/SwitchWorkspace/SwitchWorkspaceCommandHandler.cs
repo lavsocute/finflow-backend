@@ -1,4 +1,4 @@
-using FinFlow.Application.Auth.Responses;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
@@ -34,8 +34,10 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
         _currentTenant = currentTenant;
     }
 
-    public async Task<Result<AuthResponse>> Handle(SwitchWorkspaceCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponse>> Handle(SwitchWorkspaceCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var account = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (account == null || !account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);

@@ -1,6 +1,6 @@
 using FinFlow.Domain.Enums;
 
-namespace FinFlow.Application.Auth.Responses;
+namespace FinFlow.Application.Auth.DTOs.Responses;
 
 public record AuthResponse(
     string AccessToken,

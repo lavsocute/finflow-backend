@@ -1,4 +1,5 @@
 using FinFlow.Application.Membership.Commands.InviteMember;
+using FinFlow.Application.Membership.DTOs.Requests;
 using FluentValidation;
 
 namespace FinFlow.Application.Membership.Validators;
@@ -7,8 +8,8 @@ public sealed class InviteMemberCommandValidator : AbstractValidator<InviteMembe
 {
     public InviteMemberCommandValidator()
     {
-        RuleFor(x => x.InviterAccountId).NotEmpty();
-        RuleFor(x => x.InviterMembershipId).NotEmpty();
-        RuleFor(x => x.Email).NotEmpty().EmailAddress();
+        RuleFor(x => x.Request.InviterAccountId).NotEmpty();
+        RuleFor(x => x.Request.InviterMembershipId).NotEmpty();
+        RuleFor(x => x.Request.Email).NotEmpty().EmailAddress();
     }
 }

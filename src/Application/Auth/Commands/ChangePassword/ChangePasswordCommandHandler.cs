@@ -1,3 +1,4 @@
+using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Application.Auth.Support;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
@@ -26,8 +27,10 @@ public sealed class ChangePasswordCommandHandler : MediatR.IRequestHandler<Chang
         _passwordHasher = passwordHasher;
     }
 
-    public async Task<Result> Handle(ChangePasswordCommand request, CancellationToken cancellationToken)
+    public async Task<Result> Handle(ChangePasswordCommand command, CancellationToken cancellationToken)
     {
+        var request = command.Request;
+        
         var accountInfo = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (accountInfo == null)
             return Result.Failure(AccountErrors.NotFound);
