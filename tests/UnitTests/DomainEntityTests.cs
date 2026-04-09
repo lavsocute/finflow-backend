@@ -84,4 +84,13 @@ public sealed class DomainEntityTests
         Assert.True(activateResult.IsSuccess);
         Assert.True(membership.IsActive);
     }
+
+    [Fact]
+    public void TenantMembership_Create_Fails_WhenOwnerIsNotTenantAdmin()
+    {
+        var result = TenantMembership.Create(Guid.NewGuid(), Guid.NewGuid(), RoleType.Manager, isOwner: true);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(TenantMembershipErrors.OwnerMustBeTenantAdmin.Code, result.Error.Code);
+    }
 }

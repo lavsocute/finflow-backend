@@ -80,9 +80,9 @@ internal sealed class AuthFlowTestFixture
             return account;
         }
 
-        public TenantMembership SeedMembership(Guid accountId, Guid tenantId, RoleType role)
+        public TenantMembership SeedMembership(Guid accountId, Guid tenantId, RoleType role, bool isOwner = false)
         {
-            var membership = TenantMembership.Create(accountId, tenantId, role).Value;
+            var membership = TenantMembership.Create(accountId, tenantId, role, isOwner).Value;
             DbContext.Add(membership);
             return membership;
         }
