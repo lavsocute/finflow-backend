@@ -21,7 +21,7 @@ public sealed class TenantCommandHandlerIntegrationTests
 
         var currentTenant = scope.SeedTenant("Current Workspace", "tenant-handler-current");
         var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
-        var account = scope.SeedAccount("tenant.shared@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var account = scope.SeedAccount("tenant.shared@finflow.test", "P@ssw0rd!");
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
@@ -58,7 +58,7 @@ public sealed class TenantCommandHandlerIntegrationTests
 
         var currentTenant = scope.SeedTenant("Current Workspace", "tenant-handler-iso-current");
         var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
-        var account = scope.SeedAccount("tenant.isolated@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var account = scope.SeedAccount("tenant.isolated@finflow.test", "P@ssw0rd!");
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
@@ -94,7 +94,7 @@ public sealed class TenantCommandHandlerIntegrationTests
     {
         using var scope = _fixture.CreateScope();
 
-        var requester = scope.SeedAccount("tenant.pending@finflow.test", "P@ssw0rd!", Guid.NewGuid());
+        var requester = scope.SeedAccount("tenant.pending@finflow.test", "P@ssw0rd!");
         var request = scope.SeedTenantApprovalRequest(
             "tenant-pending-handler",
             "Pending Handler Workspace",
@@ -120,7 +120,7 @@ public sealed class TenantCommandHandlerIntegrationTests
 
         var requesterTenant = scope.SeedTenant("Requester Workspace", "tenant-approve-current");
         var requesterDepartment = scope.SeedDepartment("Root", requesterTenant.Id);
-        var requester = scope.SeedAccount("tenant.approve@finflow.test", "P@ssw0rd!", requesterDepartment.Id);
+        var requester = scope.SeedAccount("tenant.approve@finflow.test", "P@ssw0rd!");
         var request = scope.SeedTenantApprovalRequest(
             "tenant-approve-handler",
             "Approve Handler Workspace",
@@ -154,7 +154,7 @@ public sealed class TenantCommandHandlerIntegrationTests
 
         var requesterTenant = scope.SeedTenant("Requester Workspace", "tenant-reject-current");
         var requesterDepartment = scope.SeedDepartment("Root", requesterTenant.Id);
-        var requester = scope.SeedAccount("tenant.reject@finflow.test", "P@ssw0rd!", requesterDepartment.Id);
+        var requester = scope.SeedAccount("tenant.reject@finflow.test", "P@ssw0rd!");
         var request = scope.SeedTenantApprovalRequest(
             "tenant-reject-handler",
             "Reject Handler Workspace",

@@ -1,3 +1,5 @@
+using FinFlow.Application.Auth.Commands.Register;
+using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Application.Membership.Commands.AcceptInvite;
 using FinFlow.Application.Membership.Commands.SwitchWorkspace;
 using FinFlow.Application.Membership.DTOs.Requests;
@@ -18,14 +20,12 @@ public sealed class AuthFlowIntegrationTests
         using var scope = _fixture.CreateScope();
 
         var sourceTenant = scope.SeedTenant("Source", "source-team");
-        var sourceDepartment = scope.SeedDepartment("Source Root", sourceTenant.Id);
         var targetTenant = scope.SeedTenant("Target", "target-team");
-        var targetDepartment = scope.SeedDepartment("Target Root", targetTenant.Id);
 
-        var existingAccount = scope.SeedAccount("member@finflow.test", "P@ssw0rd!", sourceDepartment.Id);
+        var existingAccount = scope.SeedAccount("member@finflow.test", "P@ssw0rd!");
         scope.SeedMembership(existingAccount.Id, sourceTenant.Id, RoleType.Staff);
 
-        var inviterAccount = scope.SeedAccount("admin@finflow.test", "P@ssw0rd!", targetDepartment.Id);
+        var inviterAccount = scope.SeedAccount("admin@finflow.test", "P@ssw0rd!");
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, targetTenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-existing-invite-token";
@@ -62,14 +62,12 @@ public sealed class AuthFlowIntegrationTests
         using var scope = _fixture.CreateScope();
 
         var sourceTenant = scope.SeedTenant("Source", "source-rate-limit");
-        var sourceDepartment = scope.SeedDepartment("Source Root", sourceTenant.Id);
         var targetTenant = scope.SeedTenant("Target", "target-rate-limit");
-        var targetDepartment = scope.SeedDepartment("Target Root", targetTenant.Id);
 
-        var existingAccount = scope.SeedAccount("member.rate@finflow.test", "P@ssw0rd!", sourceDepartment.Id);
+        var existingAccount = scope.SeedAccount("member.rate@finflow.test", "P@ssw0rd!");
         scope.SeedMembership(existingAccount.Id, sourceTenant.Id, RoleType.Staff);
 
-        var inviterAccount = scope.SeedAccount("admin.rate@finflow.test", "P@ssw0rd!", targetDepartment.Id);
+        var inviterAccount = scope.SeedAccount("admin.rate@finflow.test", "P@ssw0rd!");
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, targetTenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-existing-invalid-password-token";
@@ -92,8 +90,7 @@ public sealed class AuthFlowIntegrationTests
         using var scope = _fixture.CreateScope();
 
         var tenant = scope.SeedTenant("Workspace", "workspace-main");
-        var department = scope.SeedDepartment("Root", tenant.Id);
-        var inviterAccount = scope.SeedAccount("owner@finflow.test", "P@ssw0rd!", department.Id);
+        var inviterAccount = scope.SeedAccount("owner@finflow.test", "P@ssw0rd!");
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, tenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-new-user-invite-token";
@@ -128,16 +125,13 @@ public sealed class AuthFlowIntegrationTests
     }
 
     [Fact]
-    public async Task AcceptInvite_WithNewAccount_Fails_WhenDefaultDepartmentIsInactive()
+    public async Task AcceptInvite_WithNewAccount_DoesNotRequireDefaultDepartment()
     {
         using var scope = _fixture.CreateScope();
 
-        var tenant = scope.SeedTenant("Workspace", "workspace-inactive-root");
-        var department = scope.SeedDepartment("Root", tenant.Id);
-        var inviterAccount = scope.SeedAccount("owner.inactive@finflow.test", "P@ssw0rd!", department.Id);
+        var tenant = scope.SeedTenant("Workspace", "workspace-no-default-department");
+        var inviterAccount = scope.SeedAccount("owner.inactive@finflow.test", "P@ssw0rd!");
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, tenant.Id, RoleType.TenantAdmin);
-
-        Assert.True(department.Deactivate().IsSuccess);
 
         const string rawInviteToken = "raw-inactive-department-invite-token";
         scope.SeedInvitation("inactive.department@finflow.test", tenant.Id, inviterMembership.Id, RoleType.Staff, rawInviteToken);
@@ -147,8 +141,44 @@ public sealed class AuthFlowIntegrationTests
         var result = await scope.Mediator.Send(
             new AcceptInviteCommand(new AcceptInviteRequest(rawInviteToken, "N3wP@ssword!")));
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(DepartmentErrors.Inactive.Code, result.Error.Code);
+        Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "Expected success.");
+
+        var createdAccount = await scope.DbContext.Set<Account>()
+            .IgnoreQueryFilters()
+            .SingleAsync(x => x.Email == "inactive.department@finflow.test");
+
+        var createdMembership = await scope.DbContext.Set<TenantMembership>()
+            .IgnoreQueryFilters()
+            .SingleAsync(x => x.AccountId == createdAccount.Id && x.IdTenant == tenant.Id);
+
+        Assert.Equal(result.Value.Id, createdAccount.Id);
+        Assert.Equal(result.Value.MembershipId, createdMembership.Id);
+    }
+
+    [Fact]
+    public async Task Register_CreatesAccountWithoutAnySeededDepartment()
+    {
+        using var scope = _fixture.CreateScope();
+
+        var result = await scope.Mediator.Send(
+            new RegisterCommand(
+                new RegisterRequest(
+                    "register.no.department@finflow.test",
+                    "Str0ngP@ssword!",
+                    "Register Workspace",
+                    "127.0.0.1")));
+
+        Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "Expected success.");
+
+        var createdAccount = await scope.DbContext.Set<Account>()
+            .IgnoreQueryFilters()
+            .SingleAsync(x => x.Email == "register.no.department@finflow.test");
+
+        Assert.Equal(result.Value.Id, createdAccount.Id);
+        Assert.Equal("account", result.Value.SessionKind);
+        Assert.Equal(0, await scope.DbContext.Set<Tenant>().IgnoreQueryFilters().CountAsync());
+        Assert.Equal(0, await scope.DbContext.Set<Department>().IgnoreQueryFilters().CountAsync());
+        Assert.Equal(0, await scope.DbContext.Set<TenantMembership>().IgnoreQueryFilters().CountAsync());
     }
 
     [Fact]
@@ -157,11 +187,9 @@ public sealed class AuthFlowIntegrationTests
         using var scope = _fixture.CreateScope();
 
         var tenantA = scope.SeedTenant("Tenant A", "tenant-a");
-        var deptA = scope.SeedDepartment("Root A", tenantA.Id);
         var tenantB = scope.SeedTenant("Tenant B", "tenant-b");
-        var deptB = scope.SeedDepartment("Root B", tenantB.Id);
 
-        var account = scope.SeedAccount("switch@finflow.test", "P@ssw0rd!", deptA.Id);
+        var account = scope.SeedAccount("switch@finflow.test", "P@ssw0rd!");
         var membershipA = scope.SeedMembership(account.Id, tenantA.Id, RoleType.TenantAdmin);
         var membershipB = scope.SeedMembership(account.Id, tenantB.Id, RoleType.Manager);
         const string currentRefreshToken = "current-refresh-token";
@@ -193,16 +221,50 @@ public sealed class AuthFlowIntegrationTests
     }
 
     [Fact]
+    public async Task SwitchWorkspace_AllowsAccountScopedSession_ToBridgeIntoExistingMembership()
+    {
+        using var scope = _fixture.CreateScope();
+
+        var tenant = scope.SeedTenant("Bridge Tenant", "bridge-tenant");
+        var account = scope.SeedAccount("switch.bridge@finflow.test", "P@ssw0rd!");
+        var membership = scope.SeedMembership(account.Id, tenant.Id, RoleType.Staff);
+        const string currentRefreshToken = "account-session-refresh-token";
+        scope.SeedAccountRefreshToken(currentRefreshToken, account.Id);
+
+        await scope.SaveSeedAsync();
+
+        var result = await scope.Mediator.Send(
+            new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membership.Id, currentRefreshToken)));
+
+        Assert.True(result.IsSuccess, result.IsFailure ? $"{result.Error.Code}: {result.Error.Description}" : "Expected success.");
+        Assert.Equal("workspace", result.Value.SessionKind);
+        Assert.Equal(membership.Id, result.Value.MembershipId);
+        Assert.Equal(tenant.Id, result.Value.IdTenant);
+        Assert.Equal(RoleType.Staff, result.Value.Role);
+        Assert.NotEqual(currentRefreshToken, result.Value.RefreshToken);
+
+        var tokens = await scope.DbContext.Set<RefreshToken>()
+            .IgnoreQueryFilters()
+            .Where(x => x.AccountId == account.Id)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync();
+
+        Assert.Equal(2, tokens.Count);
+        Assert.True(tokens[0].IsRevoked);
+        Assert.Null(tokens[0].MembershipId);
+        Assert.True(tokens[1].IsActive);
+        Assert.Equal(membership.Id, tokens[1].MembershipId);
+    }
+
+    [Fact]
     public async Task SwitchWorkspace_Fails_WhenRefreshTokenDoesNotBelongToCurrentMembershipContext()
     {
         using var scope = _fixture.CreateScope();
 
         var tenantA = scope.SeedTenant("Tenant A", "tenant-a-mismatch");
-        var deptA = scope.SeedDepartment("Root A", tenantA.Id);
         var tenantB = scope.SeedTenant("Tenant B", "tenant-b-mismatch");
-        var deptB = scope.SeedDepartment("Root B", tenantB.Id);
 
-        var account = scope.SeedAccount("switch.mismatch@finflow.test", "P@ssw0rd!", deptA.Id);
+        var account = scope.SeedAccount("switch.mismatch@finflow.test", "P@ssw0rd!");
         var membershipA = scope.SeedMembership(account.Id, tenantA.Id, RoleType.TenantAdmin);
         var membershipB = scope.SeedMembership(account.Id, tenantB.Id, RoleType.Manager);
 

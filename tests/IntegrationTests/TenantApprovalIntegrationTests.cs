@@ -20,7 +20,7 @@ public sealed class TenantApprovalIntegrationTests
 
         var currentTenant = scope.SeedTenant("Current Workspace", "current-iso");
         var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
-        var account = scope.SeedAccount("iso@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var account = scope.SeedAccount("iso@finflow.test", "P@ssw0rd!");
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
@@ -79,7 +79,7 @@ public sealed class TenantApprovalIntegrationTests
 
         var sourceTenant = scope.SeedTenant("Source Workspace", "source-approve");
         var sourceDepartment = scope.SeedDepartment("Root", sourceTenant.Id);
-        var requester = scope.SeedAccount("approve@finflow.test", "P@ssw0rd!", sourceDepartment.Id);
+        var requester = scope.SeedAccount("approve@finflow.test", "P@ssw0rd!");
 
         var request = scope.SeedTenantApprovalRequest(
             "approved-enterprise",
@@ -170,7 +170,7 @@ public sealed class TenantApprovalIntegrationTests
 
         var sourceTenant = scope.SeedTenant("Source Workspace", "source-blocked-approve");
         var sourceDepartment = scope.SeedDepartment("Root", sourceTenant.Id);
-        var requester = scope.SeedAccount("approve-blocked@finflow.test", "P@ssw0rd!", sourceDepartment.Id);
+        var requester = scope.SeedAccount("approve-blocked@finflow.test", "P@ssw0rd!");
 
         var rejectedRequest = scope.SeedTenantApprovalRequest(
             "cooldown-enterprise",
@@ -205,10 +205,10 @@ public sealed class TenantApprovalIntegrationTests
 
         var currentTenant = scope.SeedTenant("Current Workspace", "current-block");
         var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
-        var account = scope.SeedAccount("blocked@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var account = scope.SeedAccount("blocked@finflow.test", "P@ssw0rd!");
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
-        var oldRequester = scope.SeedAccount("old@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var oldRequester = scope.SeedAccount("old@finflow.test", "P@ssw0rd!");
         var rejectedRequest = scope.SeedTenantApprovalRequest(
             "blocked-code",
             "Blocked Enterprise",
@@ -241,7 +241,7 @@ public sealed class TenantApprovalIntegrationTests
 
         var currentTenant = scope.SeedTenant("Current Workspace", "current-inactive-requester");
         var currentDepartment = scope.SeedDepartment("Root", currentTenant.Id);
-        var account = scope.SeedAccount("inactive-requester@finflow.test", "P@ssw0rd!", currentDepartment.Id);
+        var account = scope.SeedAccount("inactive-requester@finflow.test", "P@ssw0rd!");
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         Assert.True(account.Deactivate().IsSuccess);

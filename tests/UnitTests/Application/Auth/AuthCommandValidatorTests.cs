@@ -14,28 +14,25 @@ public sealed class AuthCommandValidatorTests
     public void LoginCommandValidator_ReturnsErrors_ForEmptyFields()
     {
         var validator = new LoginCommandValidator();
-        var command = new LoginCommand(new LoginRequest("", "", "", null));
+        var command = new LoginCommand(new LoginRequest("", "", null));
 
         var result = validator.Validate(command);
 
         Assert.Contains(result.Errors, x => x.PropertyName == "Request.Email");
         Assert.Contains(result.Errors, x => x.PropertyName == "Request.Password");
-        Assert.Contains(result.Errors, x => x.PropertyName == "Request.TenantCode");
     }
 
     [Fact]
     public void RegisterCommandValidator_ReturnsErrors_ForInvalidFields()
     {
         var validator = new RegisterCommandValidator();
-        var command = new RegisterCommand(new RegisterRequest("not-an-email", "", "", "", "", null));
+        var command = new RegisterCommand(new RegisterRequest("not-an-email", "", "", null));
 
         var result = validator.Validate(command);
 
         Assert.Contains(result.Errors, x => x.PropertyName == "Request.Email");
         Assert.Contains(result.Errors, x => x.PropertyName == "Request.Password");
         Assert.Contains(result.Errors, x => x.PropertyName == "Request.Name");
-        Assert.Contains(result.Errors, x => x.PropertyName == "Request.TenantCode");
-        Assert.Contains(result.Errors, x => x.PropertyName == "Request.DepartmentName");
     }
 
     [Fact]
