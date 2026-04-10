@@ -16,7 +16,7 @@ public sealed class GraphQlTenantApiTests
 
         var currentTenant = Tenant.Create("Current Workspace", "http-shared-current").Value;
         var currentDepartment = Department.Create("Root", currentTenant.Id).Value;
-        var account = Account.Create("http.shared@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), currentDepartment.Id).Value;
+        var account = Account.Create("http.shared@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
         var membership = TenantMembership.Create(account.Id, currentTenant.Id, RoleType.TenantAdmin).Value;
 
         await factory.SeedAsync(db =>
@@ -68,13 +68,62 @@ public sealed class GraphQlTenantApiTests
     }
 
     [Fact]
+    public async Task CreateSharedTenant_Mutation_Works_ForAccountOnlySession()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var account = Account.Create("http.account.only@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+
+        await factory.SeedAsync(db => db.Add(account));
+
+        using var client = factory.CreateAuthenticatedClient(
+            account.Id,
+            account.Email,
+            RoleType.Staff);
+
+        const string query = """
+            mutation($input: CreateSharedTenantInput!) {
+              createSharedTenant(input: $input) {
+                id
+                membershipId
+                idTenant
+                role
+                email
+                sessionKind
+              }
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(client, query, new
+        {
+            input = new { name = "HTTP First Workspace", tenantCode = "http-first-workspace", currency = "VND" }
+        });
+
+        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
+
+        var payload = json.RootElement.GetProperty("data").GetProperty("createSharedTenant");
+        Assert.Equal(account.Email, payload.GetProperty("email").GetString());
+        Assert.Equal("TENANT_ADMIN", payload.GetProperty("role").GetString());
+        Assert.Equal("workspace", payload.GetProperty("sessionKind").GetString());
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createdTenant = await dbContext.Set<Tenant>().SingleAsync(x => x.TenantCode == "http-first-workspace");
+        var ownerMembership = await dbContext.Set<TenantMembership>()
+            .IgnoreQueryFilters()
+            .SingleAsync(x => x.AccountId == account.Id && x.IdTenant == createdTenant.Id);
+
+        Assert.True(ownerMembership.IsOwner);
+    }
+
+    [Fact]
     public async Task CreateIsolatedTenant_Mutation_Works_ThroughHttpPipeline()
     {
         await using var factory = new GraphQlApiTestFactory();
 
         var currentTenant = Tenant.Create("Current Workspace", "http-iso-current").Value;
         var currentDepartment = Department.Create("Root", currentTenant.Id).Value;
-        var account = Account.Create("http.iso@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), currentDepartment.Id).Value;
+        var account = Account.Create("http.iso@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
         var membership = TenantMembership.Create(account.Id, currentTenant.Id, RoleType.TenantAdmin).Value;
 
         await factory.SeedAsync(db =>
@@ -138,7 +187,7 @@ public sealed class GraphQlTenantApiTests
 
         var currentTenant = Tenant.Create("Current Workspace", "http-iso-validation-current").Value;
         var currentDepartment = Department.Create("Root", currentTenant.Id).Value;
-        var account = Account.Create("http.iso.validation@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), currentDepartment.Id).Value;
+        var account = Account.Create("http.iso.validation@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
         var membership = TenantMembership.Create(account.Id, currentTenant.Id, RoleType.TenantAdmin).Value;
 
         await factory.SeedAsync(db =>
@@ -224,7 +273,7 @@ public sealed class GraphQlTenantApiTests
 
         var requesterTenant = Tenant.Create("Requester Workspace", "http-pending-source").Value;
         var requesterDepartment = Department.Create("Root", requesterTenant.Id).Value;
-        var requester = Account.Create("pending@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), requesterDepartment.Id).Value;
+        var requester = Account.Create("pending@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
         var request = TenantApprovalRequest.Create(
             "http-pending-target",
             "Pending Target",
@@ -275,7 +324,7 @@ public sealed class GraphQlTenantApiTests
 
         var sourceTenant = Tenant.Create("Source Workspace", "http-approval-source").Value;
         var sourceDepartment = Department.Create("Root", sourceTenant.Id).Value;
-        var requester = Account.Create("requester@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!"), sourceDepartment.Id).Value;
+        var requester = Account.Create("requester@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
         var approveRequest = TenantApprovalRequest.Create(
             "http-approve-target",
             "Approve Target",

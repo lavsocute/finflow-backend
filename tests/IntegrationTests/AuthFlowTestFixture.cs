@@ -115,9 +115,9 @@ internal sealed class AuthFlowTestFixture
             return department;
         }
 
-        public Account SeedAccount(string email, string password, Guid departmentId)
+        public Account SeedAccount(string email, string password)
         {
-            var account = Account.Create(email, BCrypt.Net.BCrypt.HashPassword(password), departmentId).Value;
+            var account = Account.Create(email, BCrypt.Net.BCrypt.HashPassword(password)).Value;
             DbContext.Add(account);
             return account;
         }
@@ -174,9 +174,19 @@ internal sealed class AuthFlowTestFixture
             return request;
         }
 
-        public RefreshToken SeedRefreshToken(string rawToken, Guid accountId, Guid membershipId, int expirationDays = 7)
+        public RefreshToken SeedRefreshToken(string rawToken, Guid accountId, Guid? membershipId = null, int expirationDays = 7)
         {
-            var refreshToken = RefreshToken.Create(rawToken, accountId, membershipId, expirationDays).Value;
+            if (!membershipId.HasValue)
+                return SeedAccountRefreshToken(rawToken, accountId, expirationDays);
+
+            var refreshToken = RefreshToken.Create(rawToken, accountId, membershipId.Value, expirationDays).Value;
+            DbContext.Add(refreshToken);
+            return refreshToken;
+        }
+
+        public RefreshToken SeedAccountRefreshToken(string rawToken, Guid accountId, int expirationDays = 7)
+        {
+            var refreshToken = RefreshToken.CreateAccountSession(rawToken, accountId, expirationDays).Value;
             DbContext.Add(refreshToken);
             return refreshToken;
         }

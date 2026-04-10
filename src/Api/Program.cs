@@ -1,19 +1,34 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
+using FinFlow.Api.Observability;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Serilog;
 using System.Net;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext();
+});
+
 var isDevelopment = builder.Environment.IsDevelopment();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy("Application is running"), tags: ["live"])
+    .AddDbContextCheck<ApplicationDbContext>("database", tags: ["ready"]);
 
 // Cấu hình Forwarded Headers cho Reverse Proxy (Nginx/Ingress)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -106,6 +121,11 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = RequestLogEnricher.Enrich;
+});
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -125,6 +145,18 @@ app.UseMiddleware<FinFlow.Infrastructure.Middleware.TenantMiddleware>();
 
 // Audit Middleware phải chạy sau Authentication để lấy được thông tin User
 app.UseMiddleware<FinFlow.Infrastructure.Audit.AuditMiddleware>();
+
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = HealthCheckResponseWriter.Write
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = _ => true,
+    ResponseWriter = HealthCheckResponseWriter.Write
+});
 
 app.MapGraphQL("/graphql");
 

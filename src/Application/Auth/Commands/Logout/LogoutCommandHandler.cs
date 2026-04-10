@@ -8,10 +8,14 @@ namespace FinFlow.Application.Auth.Commands.Logout;
 public sealed class LogoutCommandHandler : MediatR.IRequestHandler<LogoutCommand, Result>
 {
     private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public LogoutCommandHandler(IRefreshTokenRepository refreshTokenRepository)
+    public LogoutCommandHandler(
+        IRefreshTokenRepository refreshTokenRepository,
+        IUnitOfWork unitOfWork)
     {
         _refreshTokenRepository = refreshTokenRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result> Handle(LogoutCommand command, CancellationToken cancellationToken)
@@ -22,6 +26,7 @@ public sealed class LogoutCommandHandler : MediatR.IRequestHandler<LogoutCommand
         if (!revoked)
             return Result.Failure(RefreshTokenErrors.NotFound);
 
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
 }

@@ -5,6 +5,8 @@
 [Oo]bj/
 TestResults/
 .dotnet-cli/
+.dotnet-cli*/
+.nuget-packages*/
 
 ## IDE files
 .vs/
