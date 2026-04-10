@@ -8,7 +8,7 @@ using FinFlow.Domain.TenantMemberships;
 
 namespace FinFlow.Application.Auth.Commands.RefreshToken;
 
-public sealed class RefreshTokenCommandHandler : MediatR.IRequestHandler<RefreshTokenCommand, Result<AuthResponse>>
+public sealed class RefreshTokenCommandHandler : MediatR.IRequestHandler<RefreshTokenCommand, Result<RefreshSessionResponse>>
 {
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IAccountRepository _accountRepository;
@@ -30,51 +30,68 @@ public sealed class RefreshTokenCommandHandler : MediatR.IRequestHandler<Refresh
         _tokenService = tokenService;
     }
 
-    public async Task<Result<AuthResponse>> Handle(RefreshTokenCommand command, CancellationToken cancellationToken)
+    public async Task<Result<RefreshSessionResponse>> Handle(RefreshTokenCommand command, CancellationToken cancellationToken)
     {
         var request = command.Request;
         
         var storedToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
         if (storedToken == null)
-            return Result.Failure<AuthResponse>(RefreshTokenErrors.NotFound);
+            return Result.Failure<RefreshSessionResponse>(RefreshTokenErrors.NotFound);
 
         if (!storedToken.IsActive)
         {
             return storedToken.IsRevoked
-                ? Result.Failure<AuthResponse>(RefreshTokenErrors.Revoked)
-                : Result.Failure<AuthResponse>(RefreshTokenErrors.Expired);
+                ? Result.Failure<RefreshSessionResponse>(RefreshTokenErrors.Revoked)
+                : Result.Failure<RefreshSessionResponse>(RefreshTokenErrors.Expired);
         }
 
         var account = await _accountRepository.GetLoginInfoByIdAsync(storedToken.AccountId, cancellationToken);
         if (account == null || !account.IsActive)
-            return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
+            return Result.Failure<RefreshSessionResponse>(AccountErrors.AlreadyDeactivated);
 
-        var membership = await _membershipRepository.GetByIdAsync(storedToken.MembershipId, cancellationToken);
-        if (membership == null || !membership.IsActive)
-            return Result.Failure<AuthResponse>(TenantMembershipErrors.NotFound);
+        TenantMembershipSummary? membership = null;
+        if (storedToken.MembershipId.HasValue)
+        {
+            membership = await _membershipRepository.GetByIdAsync(storedToken.MembershipId.Value, cancellationToken);
+            if (membership == null || !membership.IsActive)
+                return Result.Failure<RefreshSessionResponse>(TenantMembershipErrors.NotFound);
+        }
 
         var newRawToken = _tokenService.GenerateRefreshToken();
         var replaceResult = storedToken.ReplaceWith(newRawToken, _tokenService.RefreshTokenExpirationDays);
         if (replaceResult.IsFailure)
-            return Result.Failure<AuthResponse>(replaceResult.Error);
+            return Result.Failure<RefreshSessionResponse>(replaceResult.Error);
 
         var (newRefreshTokenEntity, rawTokenForClient) = replaceResult.Value;
         _refreshTokenRepository.Add(newRefreshTokenEntity);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        if (!storedToken.MembershipId.HasValue)
+        {
+            var accountAccessToken = _tokenService.GenerateAccountAccessToken(account.Id, account.Email);
+
+            return Result.Success(new RefreshSessionResponse(
+                accountAccessToken,
+                rawTokenForClient,
+                account.Id,
+                account.Email,
+                "account"));
+        }
+
         var accessToken = _tokenService.GenerateAccessToken(
             account.Id,
             account.Email,
-            membership.Role.ToString(),
+            membership!.Role.ToString(),
             membership.IdTenant,
             membership.Id);
 
-        return Result.Success(new AuthResponse(
+        return Result.Success(new RefreshSessionResponse(
             accessToken,
             rawTokenForClient,
             account.Id,
-            membership.Id,
             account.Email,
+            "workspace",
+            membership.Id,
             membership.Role,
             membership.IdTenant));
     }

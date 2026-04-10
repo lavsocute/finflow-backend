@@ -33,7 +33,7 @@ public sealed class TenantCreationActorAuthorizationService
             return Result.Success();
 
         if (!currentMembershipId.HasValue)
-            return Result.Failure(AccountErrors.Unauthorized);
+            return Result.Success();
 
         var currentMembership = await _membershipRepository.GetByIdAsync(currentMembershipId.Value, cancellationToken);
         if (currentMembership == null || !currentMembership.IsActive)

@@ -10,6 +10,5 @@ public sealed class LoginCommandValidator : AbstractValidator<LoginCommand>
     {
         RuleFor(x => x.Request.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Request.Password).NotEmpty();
-        RuleFor(x => x.Request.TenantCode).NotEmpty();
     }
 }

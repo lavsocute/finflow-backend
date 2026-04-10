@@ -6,4 +6,4 @@ using FinFlow.Domain.Abstractions;
 namespace FinFlow.Application.Auth.Commands.Login;
 
 public record LoginCommand(LoginRequest Request)
-    : ICommand<Result<AuthResponse>>;
+    : ICommand<Result<AccountSessionResponse>>;

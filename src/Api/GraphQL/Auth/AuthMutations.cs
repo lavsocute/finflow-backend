@@ -1,11 +1,12 @@
 using FinFlow.Api.Extensions;
-using FinFlow.Application.Auth.DTOs.Requests;
-using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Auth.Commands.ChangePassword;
 using FinFlow.Application.Auth.Commands.Login;
 using FinFlow.Application.Auth.Commands.Logout;
 using FinFlow.Application.Auth.Commands.RefreshToken;
 using FinFlow.Application.Auth.Commands.Register;
+using FinFlow.Application.Auth.Commands.SelectWorkspace;
+using FinFlow.Application.Auth.DTOs.Requests;
+using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Membership.Commands.AcceptInvite;
 using FinFlow.Application.Membership.Commands.InviteMember;
 using FinFlow.Application.Membership.Commands.SwitchWorkspace;
@@ -24,11 +25,14 @@ using MediatR;
 using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using DomainError = FinFlow.Domain.Abstractions.Error;
+using DomainResultOfAccountSession = FinFlow.Domain.Abstractions.Result<FinFlow.Application.Auth.DTOs.Responses.AccountSessionResponse>;
+using DomainResultOfAuthResponse = FinFlow.Domain.Abstractions.Result<FinFlow.Application.Auth.DTOs.Responses.AuthResponse>;
+using DomainResultOfRefreshSession = FinFlow.Domain.Abstractions.Result<FinFlow.Application.Auth.DTOs.Responses.RefreshSessionResponse>;
 
 namespace FinFlow.Api.GraphQL.Auth;
 
-public record LoginInput(string Email, string Password, string TenantCode);
-public record RegisterInput(string Email, string Password, string Name, string TenantCode, string DepartmentName = "Root");
+public record LoginInput(string Email, string Password);
+public record RegisterInput(string Email, string Password, string Name);
 public record CreateSharedTenantInput(string Name, string TenantCode, string Currency = "VND");
 public record CompanyInfoInput(
     string? CompanyName,
@@ -40,10 +44,19 @@ public record CompanyInfoInput(
     int? EmployeeCount = null);
 public record CreateIsolatedTenantInput(string Name, string TenantCode, string Currency, CompanyInfoInput? CompanyInfo);
 public record RefreshTokenInput(string RefreshToken);
+public record SelectWorkspaceInput(Guid MembershipId);
 public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
 public record InviteMemberInput(string Email, RoleType Role);
 public record AcceptInviteInput(string InviteToken, string Password);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
+
+public record AccountSessionPayload(
+    string AccessToken,
+    string RefreshToken,
+    Guid Id,
+    string Email,
+    string SessionKind
+);
 
 public record AuthPayload(
     string AccessToken,
@@ -52,7 +65,30 @@ public record AuthPayload(
     Guid MembershipId,
     string Email,
     RoleType Role,
-    Guid IdTenant
+    Guid IdTenant,
+    string SessionKind
+);
+
+public record WorkspaceSessionPayload(
+    string AccessToken,
+    string RefreshToken,
+    Guid AccountId,
+    Guid MembershipId,
+    string Email,
+    RoleType Role,
+    Guid TenantId,
+    string SessionKind
+);
+
+public record RefreshSessionPayload(
+    string AccessToken,
+    string RefreshToken,
+    Guid Id,
+    string Email,
+    string SessionKind,
+    Guid? MembershipId,
+    RoleType? Role,
+    Guid? IdTenant
 );
 
 public record InvitationPayload(
@@ -81,24 +117,22 @@ public record TenantApprovalDecisionPayload(
 
 public class AuthMutations
 {
-    public async Task<AuthPayload> LoginAsync(
+    public async Task<AccountSessionPayload> LoginAsync(
         LoginInput input,
         [Service] IMediator mediator,
         [Service] IHttpContextAccessor httpContextAccessor,
         CancellationToken cancellationToken)
     {
         var clientIp = httpContextAccessor.HttpContext?.GetClientIpAddress();
-        // Nếu không xác định được IP, truyền null để RateLimiter bỏ qua bước chặn theo IP
-        // (tránh việc dùng Guid làm vô hiệu hóa cơ chế chặn theo IP).
         if (clientIp == "unknown") clientIp = null;
-        
+
         var result = await mediator.Send(
-            new LoginCommand(new LoginRequest(input.Email, input.Password, input.TenantCode, clientIp)),
+            new LoginCommand(new LoginRequest(input.Email, input.Password, clientIp)),
             cancellationToken);
-        return HandleResult(result);
+        return HandleAccountSessionResult(result);
     }
 
-    public async Task<AuthPayload> RegisterAsync(
+    public async Task<AccountSessionPayload> RegisterAsync(
         RegisterInput input,
         [Service] IMediator mediator,
         [Service] IHttpContextAccessor httpContextAccessor,
@@ -108,9 +142,49 @@ public class AuthMutations
         if (clientIp == "unknown") clientIp = null;
 
         var result = await mediator.Send(
-            new RegisterCommand(new RegisterRequest(input.Email, input.Password, input.Name, input.TenantCode, input.DepartmentName, clientIp)),
+            new RegisterCommand(new RegisterRequest(input.Email, input.Password, input.Name, clientIp)),
             cancellationToken);
-        return HandleResult(result);
+        return HandleAccountSessionResult(result);
+    }
+
+    [Authorize]
+    public async Task<WorkspaceSessionPayload> SelectWorkspaceAsync(
+        SelectWorkspaceInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var accountId = GetAuthenticatedAccountId(context);
+        var result = await mediator.Send(
+            new SelectWorkspaceCommand(new SelectWorkspaceRequest(accountId, input.MembershipId)),
+            cancellationToken);
+
+        return HandleWorkspaceResult(result);
+    }
+
+    [Authorize]
+    public async Task<WorkspaceSessionPayload> CreateWorkspaceAsync(
+        CreateSharedTenantInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+        var accountId = GetAuthenticatedAccountId(context);
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+        Guid? currentMembershipId = Guid.TryParse(membershipIdClaim, out var parsedMembershipId)
+            ? parsedMembershipId
+            : null;
+
+        var result = await mediator.Send(
+            new CreateSharedTenantCommand(new CreateSharedTenantRequest(accountId, currentMembershipId, input.Name, input.TenantCode, input.Currency)),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return ToWorkspacePayload(result.Value);
     }
 
     [Authorize]
@@ -196,7 +270,7 @@ public class AuthMutations
             result.Value.ExpiresAt);
     }
 
-    public async Task<AuthPayload> RefreshTokenAsync(
+    public async Task<RefreshSessionPayload> RefreshTokenAsync(
         RefreshTokenInput input,
         [Service] IMediator mediator,
         CancellationToken cancellationToken)
@@ -204,7 +278,7 @@ public class AuthMutations
         var result = await mediator.Send(
             new RefreshTokenCommand(new RefreshTokenRequest(input.RefreshToken)),
             cancellationToken);
-        return HandleResult(result);
+        return HandleRefreshResult(result);
     }
 
     [Authorize]
@@ -324,7 +398,7 @@ public class AuthMutations
     {
         var httpContextAccessor = context.Service<IHttpContextAccessor>();
         var user = httpContextAccessor.HttpContext?.User;
-        var accountIdClaim = user?.FindFirst("sub")?.Value 
+        var accountIdClaim = user?.FindFirst("sub")?.Value
                           ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
 
         if (!Guid.TryParse(accountIdClaim, out var accountId))
@@ -350,7 +424,44 @@ public class AuthMutations
         return true;
     }
 
-    private static AuthPayload HandleResult(FinFlow.Domain.Abstractions.Result<FinFlow.Application.Auth.DTOs.Responses.AuthResponse> result)
+    private static AccountSessionPayload HandleAccountSessionResult(DomainResultOfAccountSession result)
+    {
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return new AccountSessionPayload(
+            result.Value.AccessToken,
+            result.Value.RefreshToken,
+            result.Value.Id,
+            result.Value.Email,
+            result.Value.SessionKind);
+    }
+
+    private static WorkspaceSessionPayload HandleWorkspaceResult(FinFlow.Domain.Abstractions.Result<WorkspaceSessionResponse> result)
+    {
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return new WorkspaceSessionPayload(
+            result.Value.AccessToken,
+            result.Value.RefreshToken,
+            result.Value.AccountId,
+            result.Value.MembershipId,
+            result.Value.Email,
+            result.Value.Role,
+            result.Value.TenantId,
+            result.Value.SessionKind);
+    }
+
+    private static AuthPayload HandleResult(DomainResultOfAuthResponse result)
+    {
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return ToPayload(result.Value);
+    }
+
+    private static RefreshSessionPayload HandleRefreshResult(DomainResultOfRefreshSession result)
     {
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
@@ -361,6 +472,25 @@ public class AuthMutations
     private static GraphQLException ToGraphQlException(DomainError error) =>
         new(new HotChocolate.Error(error.Description, error.Code));
 
-    private static AuthPayload ToPayload(FinFlow.Application.Auth.DTOs.Responses.AuthResponse response) =>
-        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant);
+    private static AuthPayload ToPayload(AuthResponse response) =>
+        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant, response.SessionKind);
+
+    private static RefreshSessionPayload ToPayload(RefreshSessionResponse response) =>
+        new(response.AccessToken, response.RefreshToken, response.Id, response.Email, response.SessionKind, response.MembershipId, response.Role, response.IdTenant);
+
+    private static WorkspaceSessionPayload ToWorkspacePayload(AuthResponse response) =>
+        new(response.AccessToken, response.RefreshToken, response.Id, response.MembershipId, response.Email, response.Role, response.IdTenant, response.SessionKind);
+
+    private static Guid GetAuthenticatedAccountId(IResolverContext context)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+        var accountIdClaim = user?.FindFirst("sub")?.Value
+                          ?? user?.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+
+        if (!Guid.TryParse(accountIdClaim, out var accountId))
+            throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
+
+        return accountId;
+    }
 }

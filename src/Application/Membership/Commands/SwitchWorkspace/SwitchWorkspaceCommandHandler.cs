@@ -65,11 +65,18 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
 
         if (!_currentTenant.IsSuperAdmin)
         {
-            if (!_currentTenant.MembershipId.HasValue)
-                return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
+            if (currentRefreshToken.MembershipId.HasValue)
+            {
+                if (!_currentTenant.MembershipId.HasValue)
+                    return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
 
-            if (currentRefreshToken.MembershipId != _currentTenant.MembershipId.Value)
+                if (currentRefreshToken.MembershipId != _currentTenant.MembershipId.Value)
+                    return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
+            }
+            else if (_currentTenant.MembershipId.HasValue)
+            {
                 return Result.Failure<AuthResponse>(AccountErrors.Unauthorized);
+            }
         }
 
         var revokeResult = currentRefreshToken.Revoke("Workspace switched");

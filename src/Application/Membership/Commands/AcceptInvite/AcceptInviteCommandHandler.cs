@@ -4,7 +4,6 @@ using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.DTOs.Requests;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
-using FinFlow.Domain.Departments;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.Invitations;
@@ -20,7 +19,6 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
     private readonly ITenantRepository _tenantRepository;
     private readonly IAccountRepository _accountRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
-    private readonly IDepartmentRepository _departmentRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
@@ -33,7 +31,6 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
         ITenantRepository tenantRepository,
         IAccountRepository accountRepository,
         ITenantMembershipRepository membershipRepository,
-        IDepartmentRepository departmentRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
         ITokenService tokenService,
@@ -45,7 +42,6 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
         _tenantRepository = tenantRepository;
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
-        _departmentRepository = departmentRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
@@ -93,16 +89,9 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
             if (!PasswordRules.IsStrong(request.Password))
                 return Result.Failure<AuthResponse>(AccountErrors.PasswordTooWeak);
 
-            var defaultDepartment = await _departmentRepository.GetDefaultByTenantIdAsync(invitation.IdTenant, cancellationToken);
-            if (defaultDepartment == null)
-                return Result.Failure<AuthResponse>(DepartmentErrors.NotFound);
-            if (!defaultDepartment.IsActive)
-                return Result.Failure<AuthResponse>(DepartmentErrors.Inactive);
-
             var createAccountResult = Account.Create(
                 invitation.Email,
-                _passwordHasher.HashPassword(request.Password),
-                defaultDepartment.Id);
+                _passwordHasher.HashPassword(request.Password));
 
             if (createAccountResult.IsFailure)
                 return Result.Failure<AuthResponse>(createAccountResult.Error);
