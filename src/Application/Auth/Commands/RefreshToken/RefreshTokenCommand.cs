@@ -5,4 +5,4 @@ using FinFlow.Domain.Abstractions;
 
 namespace FinFlow.Application.Auth.Commands.RefreshToken;
 
-public record RefreshTokenCommand(RefreshTokenRequest Request) : ICommand<Result<AuthResponse>>;
+public record RefreshTokenCommand(RefreshTokenRequest Request) : ICommand<Result<RefreshSessionResponse>>;

@@ -11,7 +11,5 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         RuleFor(x => x.Request.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Request.Password).NotEmpty();
         RuleFor(x => x.Request.Name).NotEmpty();
-        RuleFor(x => x.Request.TenantCode).NotEmpty();
-        RuleFor(x => x.Request.DepartmentName).NotEmpty();
     }
 }

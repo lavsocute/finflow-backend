@@ -5,18 +5,14 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Interfaces;
-using FinFlow.Domain.TenantMemberships;
-using FinFlow.Domain.Tenants;
 using FinFlow.Domain.RefreshTokens;
 using RefreshTokenEntity = FinFlow.Domain.Entities.RefreshToken;
 
 namespace FinFlow.Application.Auth.Commands.Login;
 
-public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, Result<AuthResponse>>
+public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, Result<AccountSessionResponse>>
 {
     private readonly IAccountRepository _accountRepository;
-    private readonly ITenantRepository _tenantRepository;
-    private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
@@ -25,8 +21,6 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
 
     public LoginCommandHandler(
         IAccountRepository accountRepository,
-        ITenantRepository tenantRepository,
-        ITenantMembershipRepository membershipRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
         ITokenService tokenService,
@@ -34,8 +28,6 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
         ILoginRateLimiter rateLimiter)
     {
         _accountRepository = accountRepository;
-        _tenantRepository = tenantRepository;
-        _membershipRepository = membershipRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
@@ -43,67 +35,42 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
         _rateLimiter = rateLimiter;
     }
 
-    public async Task<Result<AuthResponse>> Handle(LoginCommand command, CancellationToken cancellationToken)
+    public async Task<Result<AccountSessionResponse>> Handle(LoginCommand command, CancellationToken cancellationToken)
     {
         var request = command.Request;
-        
-        var tenant = await _tenantRepository.GetByCodeAsync(request.TenantCode.Trim(), cancellationToken);
-        var tenantId = tenant?.Id;
 
-        if (await _rateLimiter.IsBlockedAsync(request.ClientIp, request.Email, tenantId))
-            return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
-
-        if (tenant == null || !tenant.IsActive)
-        {
-            await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email, tenantId);
-            return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
-        }
+        if (await _rateLimiter.IsBlockedAsync(request.ClientIp, request.Email))
+            return Result.Failure<AccountSessionResponse>(AccountErrors.TooManyRequests);
 
         var account = await _accountRepository.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
         if (account == null || !_passwordHasher.VerifyPassword(request.Password, account.PasswordHash))
         {
-            await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email, tenant.Id);
-            return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
+            await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email);
+            return Result.Failure<AccountSessionResponse>(AccountErrors.InvalidCurrentPassword);
         }
 
-        await _rateLimiter.ResetAccountAsync(request.Email, tenant.Id);
+        await _rateLimiter.ResetAccountAsync(request.Email);
 
         if (!account.IsActive)
-            return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
+            return Result.Failure<AccountSessionResponse>(AccountErrors.AlreadyDeactivated);
 
-        var membership = await _membershipRepository.GetActiveByAccountAndTenantAsync(account.Id, tenant.Id, cancellationToken);
-        if (membership == null)
-        {
-            await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email, tenant.Id);
-            return Result.Failure<AuthResponse>(AccountErrors.InvalidCurrentPassword);
-        }
-
-        var accessToken = _tokenService.GenerateAccessToken(
-            account.Id,
-            account.Email,
-            membership.Role.ToString(),
-            membership.IdTenant,
-            membership.Id);
+        var accessToken = _tokenService.GenerateAccountAccessToken(account.Id, account.Email);
         var refreshTokenRaw = _tokenService.GenerateRefreshToken();
-        var refreshTokenResult = RefreshTokenEntity.Create(
+        var refreshTokenResult = RefreshTokenEntity.CreateAccountSession(
             refreshTokenRaw,
             account.Id,
-            membership.Id,
             _tokenService.RefreshTokenExpirationDays);
 
         if (refreshTokenResult.IsFailure)
-            return Result.Failure<AuthResponse>(refreshTokenResult.Error);
+            return Result.Failure<AccountSessionResponse>(refreshTokenResult.Error);
 
         _refreshTokenRepository.Add(refreshTokenResult.Value);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(new AuthResponse(
+        return Result.Success(new AccountSessionResponse(
             accessToken,
             refreshTokenRaw,
             account.Id,
-            membership.Id,
-            account.Email,
-            membership.Role,
-            membership.IdTenant));
+            account.Email));
     }
 }

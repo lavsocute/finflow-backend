@@ -2,13 +2,13 @@ using FinFlow.Domain.Enums;
 
 namespace FinFlow.Application.Auth.DTOs.Responses;
 
-public record AuthResponse(
+public record RefreshSessionResponse(
     string AccessToken,
     string RefreshToken,
     Guid Id,
-    Guid MembershipId,
     string Email,
-    RoleType Role,
-    Guid IdTenant,
-    string SessionKind = "workspace"
+    string SessionKind,
+    Guid? MembershipId = null,
+    RoleType? Role = null,
+    Guid? IdTenant = null
 );
