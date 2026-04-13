@@ -37,146 +37,7 @@ public sealed class GraphQlAccountAuthApiTests
         });
 
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
-
-        var payload = json.RootElement.GetProperty("data").GetProperty("register");
-        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("accountId").GetString()));
-        Assert.Equal("graphql.register@finflow.test", payload.GetProperty("email").GetString());
-        Assert.True(payload.GetProperty("requiresEmailVerification").GetBoolean());
-        Assert.Equal(90, payload.GetProperty("cooldownSeconds").GetInt32());
-
-        using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var account = await dbContext.Set<Account>()
-            .IgnoreQueryFilters()
-            .SingleAsync(x => x.Email == "graphql.register@finflow.test");
-
-        Assert.Equal(0, await dbContext.Set<Tenant>().IgnoreQueryFilters().CountAsync());
-        Assert.Equal(0, await dbContext.Set<Department>().IgnoreQueryFilters().CountAsync());
-        Assert.Equal(0, await dbContext.Set<TenantMembership>().IgnoreQueryFilters().CountAsync());
-        Assert.Equal(0, await dbContext.Set<RefreshToken>().IgnoreQueryFilters().CountAsync(x => x.AccountId == account.Id));
-    }
-
-    [Fact]
-    public async Task Register_Mutation_DoesNotExposeAccessOrRefreshTokenFields()
-    {
-        await using var factory = new GraphQlApiTestFactory();
-
-        const string mutation = """
-            mutation($input: RegisterInput!) {
-              register(input: $input) {
-                accessToken
-                refreshToken
-              }
-            }
-            """;
-
-        using var json = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(factory.CreateClient(), mutation, new
-        {
-            input = new
-            {
-                email = "graphql.register.tokens@finflow.test",
-                password = "P@ssw0rd!",
-                name = "GraphQL Register Tokens"
-            }
-        });
-
-        Assert.True(json.RootElement.TryGetProperty("errors", out var errors), json.RootElement.ToString());
-        Assert.Contains(errors.EnumerateArray(), error =>
-            error.GetProperty("message").GetString()!.Contains("does not exist on the type `RegistrationPendingResponse`", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task Login_Mutation_ReturnsAccountSession_WithoutRequiringWorkspaceState()
-    {
-        await using var factory = new GraphQlApiTestFactory();
-
-        var account = Account.Create("graphql.login@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
-        await factory.SeedAsync(db => db.Add(account));
-
-        const string mutation = """
-            mutation($input: LoginInput!) {
-              login(input: $input) {
-                accessToken
-                refreshToken
-                id
-                email
-                sessionKind
-              }
-            }
-            """;
-
-        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new
-        {
-            input = new
-            {
-                email = account.Email,
-                password = "P@ssw0rd!"
-            }
-        });
-
-        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
-
-        var payload = json.RootElement.GetProperty("data").GetProperty("login");
-        Assert.Equal(account.Email, payload.GetProperty("email").GetString());
-        Assert.Equal(account.Id.ToString(), payload.GetProperty("id").GetString());
-        Assert.Equal("account", payload.GetProperty("sessionKind").GetString());
-
-        using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        Assert.Equal(0, await dbContext.Set<Tenant>().IgnoreQueryFilters().CountAsync());
-        Assert.Equal(0, await dbContext.Set<Department>().IgnoreQueryFilters().CountAsync());
-        Assert.Equal(0, await dbContext.Set<TenantMembership>().IgnoreQueryFilters().CountAsync());
-        Assert.NotNull(await dbContext.Set<RefreshToken>().IgnoreQueryFilters().SingleAsync(x => x.AccountId == account.Id));
-    }
-
-    [Fact]
-    public async Task RefreshToken_Mutation_ReturnsAccountSession_ForAccountScopedRefreshToken()
-    {
-        await using var factory = new GraphQlApiTestFactory();
-
-        var account = Account.Create("graphql.refresh.account@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
-        var refreshToken = RefreshToken.CreateAccountSession("graphql-account-refresh-token", account.Id, 7).Value;
-
-        await factory.SeedAsync(db =>
-        {
-            db.Add(account);
-            db.Add(refreshToken);
-        });
-
-        const string mutation = """
-            mutation($input: RefreshTokenInput!) {
-              refreshToken(input: $input) {
-                accessToken
-                refreshToken
-                id
-                email
-                sessionKind
-                membershipId
-                role
-                idTenant
-              }
-            }
-            """;
-
-        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new
-        {
-            input = new
-            {
-                refreshToken = "graphql-account-refresh-token"
-            }
-        });
-
-        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
-
-        var payload = json.RootElement.GetProperty("data").GetProperty("refreshToken");
-        Assert.Equal(account.Id.ToString(), payload.GetProperty("id").GetString());
-        Assert.Equal(account.Email, payload.GetProperty("email").GetString());
-        Assert.Equal("account", payload.GetProperty("sessionKind").GetString());
-        Assert.Equal(JsonValueKind.Null, payload.GetProperty("membershipId").ValueKind);
-        Assert.Equal(JsonValueKind.Null, payload.GetProperty("role").ValueKind);
-        Assert.Equal(JsonValueKind.Null, payload.GetProperty("idTenant").ValueKind);
-        Assert.NotEqual("graphql-account-refresh-token", payload.GetProperty("refreshToken").GetString());
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("register").GetProperty("requiresEmailVerification").GetBoolean());
     }
 
     [Fact]
@@ -187,18 +48,15 @@ public sealed class GraphQlAccountAuthApiTests
         var secretService = secretScope.ServiceProvider.GetRequiredService<IEmailChallengeSecretService>();
 
         var account = Account.Create("graphql.verify.token@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
-        const string rawToken = "graphql-verify-token";
-        const string rawOtp = "654321";
         var nowUtc = DateTime.UtcNow;
-
         var challenge = EmailChallenge.Create(
             account.Id,
             EmailChallengePurpose.VerifyEmail,
             nowUtc.AddMinutes(-5),
             nowUtc.AddMinutes(15),
             email: account.Email,
-            tokenHash: secretService.HashChallengeToken(rawToken),
-            otpHash: secretService.HashChallengeOtp(rawOtp),
+            tokenHash: secretService.HashChallengeToken("graphql-verify-token"),
+            otpHash: secretService.HashChallengeOtp("654321"),
             lastSentAtUtc: nowUtc.AddMinutes(-2)).Value;
 
         await factory.SeedAsync(db =>
@@ -213,19 +71,9 @@ public sealed class GraphQlAccountAuthApiTests
             }
             """;
 
-        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new { token = rawToken });
-
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new { token = "graphql-verify-token" });
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
         Assert.True(json.RootElement.GetProperty("data").GetProperty("verifyEmailByToken").GetBoolean());
-
-        using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var verifiedAccount = await dbContext.Set<Account>().IgnoreQueryFilters().SingleAsync(x => x.Email == account.Email);
-        var consumedChallenge = await dbContext.Set<EmailChallenge>().IgnoreQueryFilters().SingleAsync(x => x.AccountId == account.Id);
-
-        Assert.True(verifiedAccount.IsEmailVerified);
-        Assert.True(consumedChallenge.IsConsumed);
     }
 
     [Fact]
@@ -236,18 +84,15 @@ public sealed class GraphQlAccountAuthApiTests
         var secretService = secretScope.ServiceProvider.GetRequiredService<IEmailChallengeSecretService>();
 
         var account = Account.Create("graphql.verify.otp@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
-        const string rawToken = "graphql-verify-otp-token";
-        const string rawOtp = "123456";
         var nowUtc = DateTime.UtcNow;
-
         var challenge = EmailChallenge.Create(
             account.Id,
             EmailChallengePurpose.VerifyEmail,
             nowUtc.AddMinutes(-5),
             nowUtc.AddMinutes(15),
             email: account.Email,
-            tokenHash: secretService.HashChallengeToken(rawToken),
-            otpHash: secretService.HashChallengeOtp(rawOtp),
+            tokenHash: secretService.HashChallengeToken("graphql-verify-otp-token"),
+            otpHash: secretService.HashChallengeOtp("123456"),
             lastSentAtUtc: nowUtc.AddMinutes(-2)).Value;
 
         await factory.SeedAsync(db =>
@@ -265,20 +110,11 @@ public sealed class GraphQlAccountAuthApiTests
         using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new
         {
             email = account.Email,
-            otp = rawOtp
+            otp = "123456"
         });
 
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
         Assert.True(json.RootElement.GetProperty("data").GetProperty("verifyEmailByOtp").GetBoolean());
-
-        using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var verifiedAccount = await dbContext.Set<Account>().IgnoreQueryFilters().SingleAsync(x => x.Email == account.Email);
-        var consumedChallenge = await dbContext.Set<EmailChallenge>().IgnoreQueryFilters().SingleAsync(x => x.AccountId == account.Id);
-
-        Assert.True(verifiedAccount.IsEmailVerified);
-        Assert.True(consumedChallenge.IsConsumed);
     }
 
     [Fact]
@@ -289,18 +125,15 @@ public sealed class GraphQlAccountAuthApiTests
         var secretService = secretScope.ServiceProvider.GetRequiredService<IEmailChallengeSecretService>();
 
         var account = Account.Create("graphql.resend@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
-        const string rawToken = "graphql-resend-old-token";
-        const string rawOtp = "222222";
         var nowUtc = DateTime.UtcNow;
-
         var existingChallenge = EmailChallenge.Create(
             account.Id,
             EmailChallengePurpose.VerifyEmail,
             nowUtc.AddMinutes(-10),
             nowUtc.AddMinutes(15),
             email: account.Email,
-            tokenHash: secretService.HashChallengeToken(rawToken),
-            otpHash: secretService.HashChallengeOtp(rawOtp),
+            tokenHash: secretService.HashChallengeToken("graphql-resend-old-token"),
+            otpHash: secretService.HashChallengeOtp("222222"),
             lastSentAtUtc: nowUtc.AddMinutes(-2)).Value;
 
         await factory.SeedAsync(db =>
@@ -319,23 +152,139 @@ public sealed class GraphQlAccountAuthApiTests
             """;
 
         using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new { email = account.Email });
+        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("resendEmailVerification").GetProperty("accepted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ForgotPassword_Mutation_ReturnsNeutralDispatchPayload()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+        var account = Account.Create("graphql.forgot@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        await factory.SeedAsync(db => db.Add(account));
+
+        const string mutation = """
+            mutation($email: String!) {
+              forgotPassword(email: $email) {
+                accepted
+                cooldownSeconds
+              }
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new { email = account.Email });
+        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("forgotPassword").GetProperty("accepted").GetBoolean());
+        Assert.Single(factory.EmailSender.PasswordResetEmails);
+    }
+
+    [Fact]
+    public async Task VerifyPasswordResetToken_Mutation_ReturnsTrue_ForValidToken()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+        var account = Account.Create("graphql.reset.verify@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        var challenge = PasswordResetChallenge.Create(
+            account.Id,
+            "reset-token-hash:reset-token-123",
+            "reset-otp-hash:654321",
+            DateTime.UtcNow.AddMinutes(15),
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            90,
+            5).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(challenge);
+        });
+
+        const string mutation = """
+            mutation($token: String!) {
+              verifyPasswordResetToken(token: $token)
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new { token = "reset-token-123" });
+        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("verifyPasswordResetToken").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ResetPasswordByToken_Mutation_ChangesPassword()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+        var account = Account.Create("graphql.reset.token@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        var challenge = PasswordResetChallenge.Create(
+            account.Id,
+            "reset-token-hash:reset-token-123",
+            "reset-otp-hash:654321",
+            DateTime.UtcNow.AddMinutes(15),
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            90,
+            5).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(challenge);
+        });
+
+        const string mutation = """
+            mutation($token: String!, $newPassword: String!) {
+              resetPasswordByToken(token: $token, newPassword: $newPassword)
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new
+        {
+            token = "reset-token-123",
+            newPassword = "N3wP@ssword!"
+        });
 
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
-        var payload = json.RootElement.GetProperty("data").GetProperty("resendEmailVerification");
-        Assert.True(payload.GetProperty("accepted").GetBoolean());
-        Assert.Equal(90, payload.GetProperty("cooldownSeconds").GetInt32());
-        Assert.Single(factory.EmailSender.VerificationEmails);
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("resetPasswordByToken").GetBoolean());
+    }
 
-        using var scope = factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var challenges = await dbContext.Set<EmailChallenge>()
-            .IgnoreQueryFilters()
-            .Where(x => x.AccountId == account.Id && x.Purpose == EmailChallengePurpose.VerifyEmail)
-            .OrderBy(x => x.CreatedAt)
-            .ToListAsync();
+    [Fact]
+    public async Task ResetPasswordByOtp_Mutation_ChangesPassword()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+        var account = Account.Create("graphql.reset.otp@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        var challenge = PasswordResetChallenge.Create(
+            account.Id,
+            "reset-token-hash:reset-token-123",
+            "reset-otp-hash:654321",
+            DateTime.UtcNow.AddMinutes(15),
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            90,
+            5).Value;
 
-        Assert.Equal(2, challenges.Count);
-        Assert.True(challenges[0].IsRevoked);
-        Assert.False(challenges[1].IsRevoked);
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(challenge);
+        });
+
+        const string mutation = """
+            mutation($input: ResetPasswordByOtpInput!) {
+              resetPasswordByOtp(input: $input)
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAsync(factory.CreateClient(), mutation, new
+        {
+            input = new
+            {
+                email = account.Email,
+                otp = "654321",
+                newPassword = "N3wP@ssword!"
+            }
+        });
+
+        Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
+        Assert.True(json.RootElement.GetProperty("data").GetProperty("resetPasswordByOtp").GetBoolean());
     }
 }

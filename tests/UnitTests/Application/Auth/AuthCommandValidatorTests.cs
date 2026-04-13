@@ -1,11 +1,15 @@
 using FinFlow.Application.Auth.Commands.ChangePassword;
+using FinFlow.Application.Auth.Commands.ForgotPassword;
 using FinFlow.Application.Auth.Commands.Login;
 using FinFlow.Application.Auth.Commands.Logout;
 using FinFlow.Application.Auth.Commands.RefreshToken;
 using FinFlow.Application.Auth.Commands.Register;
 using FinFlow.Application.Auth.Commands.ResendEmailVerification;
+using FinFlow.Application.Auth.Commands.ResetPasswordByOtp;
+using FinFlow.Application.Auth.Commands.ResetPasswordByToken;
 using FinFlow.Application.Auth.Commands.VerifyEmailByOtp;
 using FinFlow.Application.Auth.Commands.VerifyEmailByToken;
+using FinFlow.Application.Auth.Commands.VerifyPasswordResetToken;
 using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Application.Auth.Validators;
 
@@ -71,16 +75,35 @@ public sealed class AuthCommandValidatorTests
         var verifyByOtpValidator = new VerifyEmailByOtpCommandValidator();
         var resendValidator = new ResendEmailVerificationCommandValidator();
 
-        var verifyByTokenResult = verifyByTokenValidator.Validate(
-            new VerifyEmailByTokenCommand(new VerifyEmailByTokenRequest("")));
-        var verifyByOtpResult = verifyByOtpValidator.Validate(
-            new VerifyEmailByOtpCommand(new VerifyEmailByOtpRequest("", "")));
-        var resendResult = resendValidator.Validate(
-            new ResendEmailVerificationCommand(new ResendEmailVerificationRequest("")));
+        var verifyByTokenResult = verifyByTokenValidator.Validate(new VerifyEmailByTokenCommand(new VerifyEmailByTokenRequest("")));
+        var verifyByOtpResult = verifyByOtpValidator.Validate(new VerifyEmailByOtpCommand(new VerifyEmailByOtpRequest("", "")));
+        var resendResult = resendValidator.Validate(new ResendEmailVerificationCommand(new ResendEmailVerificationRequest("")));
 
         Assert.Contains(verifyByTokenResult.Errors, x => x.PropertyName == "Request.Token");
         Assert.Contains(verifyByOtpResult.Errors, x => x.PropertyName == "Request.Email");
         Assert.Contains(verifyByOtpResult.Errors, x => x.PropertyName == "Request.Otp");
         Assert.Contains(resendResult.Errors, x => x.PropertyName == "Request.Email");
+    }
+
+    [Fact]
+    public void ForgotAndResetPasswordValidators_ReturnErrors_ForMissingFields()
+    {
+        var forgotValidator = new ForgotPasswordCommandValidator();
+        var verifyTokenValidator = new VerifyPasswordResetTokenCommandValidator();
+        var tokenResetValidator = new ResetPasswordByTokenCommandValidator();
+        var otpResetValidator = new ResetPasswordByOtpCommandValidator();
+
+        var forgotResult = forgotValidator.Validate(new ForgotPasswordCommand(new ForgotPasswordRequest("")));
+        var verifyResult = verifyTokenValidator.Validate(new VerifyPasswordResetTokenCommand(""));
+        var tokenResetResult = tokenResetValidator.Validate(new ResetPasswordByTokenCommand(new ResetPasswordByTokenRequest("", "")));
+        var otpResetResult = otpResetValidator.Validate(new ResetPasswordByOtpCommand(new ResetPasswordByOtpRequest("", "", "")));
+
+        Assert.Contains(forgotResult.Errors, x => x.PropertyName == "Request.Email");
+        Assert.Contains(verifyResult.Errors, x => x.PropertyName == "Token");
+        Assert.Contains(tokenResetResult.Errors, x => x.PropertyName == "Request.Token");
+        Assert.Contains(tokenResetResult.Errors, x => x.PropertyName == "Request.NewPassword");
+        Assert.Contains(otpResetResult.Errors, x => x.PropertyName == "Request.Email");
+        Assert.Contains(otpResetResult.Errors, x => x.PropertyName == "Request.Otp");
+        Assert.Contains(otpResetResult.Errors, x => x.PropertyName == "Request.NewPassword");
     }
 }

@@ -53,6 +53,8 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
 
         if (!account.IsActive)
             return Result.Failure<AccountSessionResponse>(AccountErrors.AlreadyDeactivated);
+        if (!account.IsEmailVerified)
+            return Result.Failure<AccountSessionResponse>(AccountErrors.EmailNotVerified);
 
         var accessToken = _tokenService.GenerateAccountAccessToken(account.Id, account.Email);
         var refreshTokenRaw = _tokenService.GenerateRefreshToken();

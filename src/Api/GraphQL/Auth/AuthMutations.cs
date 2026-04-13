@@ -1,13 +1,17 @@
 using FinFlow.Api.Extensions;
 using FinFlow.Application.Auth.Commands.ChangePassword;
+using FinFlow.Application.Auth.Commands.ForgotPassword;
 using FinFlow.Application.Auth.Commands.Login;
 using FinFlow.Application.Auth.Commands.Logout;
 using FinFlow.Application.Auth.Commands.RefreshToken;
 using FinFlow.Application.Auth.Commands.Register;
+using FinFlow.Application.Auth.Commands.ResetPasswordByOtp;
+using FinFlow.Application.Auth.Commands.ResetPasswordByToken;
 using FinFlow.Application.Auth.Commands.ResendEmailVerification;
 using FinFlow.Application.Auth.Commands.SelectWorkspace;
 using FinFlow.Application.Auth.Commands.VerifyEmailByOtp;
 using FinFlow.Application.Auth.Commands.VerifyEmailByToken;
+using FinFlow.Application.Auth.Commands.VerifyPasswordResetToken;
 using FinFlow.Application.Auth.DTOs.Requests;
 using FinFlow.Application.Auth.DTOs.Responses;
 using FinFlow.Application.Membership.Commands.AcceptInvite;
@@ -53,6 +57,7 @@ public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken
 public record InviteMemberInput(string Email, RoleType Role);
 public record AcceptInviteInput(string InviteToken, string Password);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
+public record ResetPasswordByOtpInput(string Email, string Otp, string NewPassword);
 
 public record AccountSessionPayload(
     string AccessToken,
@@ -61,6 +66,12 @@ public record AccountSessionPayload(
     string Email,
     string SessionKind
 );
+
+public record RegistrationPendingPayload(
+    Guid AccountId,
+    string Email,
+    bool RequiresEmailVerification,
+    int CooldownSeconds);
 
 public record AuthPayload(
     string AccessToken,
@@ -285,6 +296,33 @@ public class AuthMutations
         return HandleRefreshResult(result);
     }
 
+    public async Task<ChallengeDispatchResponse> ForgotPasswordAsync(
+        string email,
+        [Service] IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(
+            new ForgotPasswordCommand(new ForgotPasswordRequest(email)),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return result.Value;
+    }
+
+    public async Task<bool> VerifyPasswordResetTokenAsync(
+        string token,
+        [Service] IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(new VerifyPasswordResetTokenCommand(token), cancellationToken);
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return result.Value;
+    }
+
     public async Task<bool> VerifyEmailByTokenAsync(
         string token,
         [Service] IMediator mediator,
@@ -293,7 +331,6 @@ public class AuthMutations
         var result = await mediator.Send(
             new VerifyEmailByTokenCommand(new VerifyEmailByTokenRequest(token)),
             cancellationToken);
-
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
@@ -309,7 +346,6 @@ public class AuthMutations
         var result = await mediator.Send(
             new VerifyEmailByOtpCommand(new VerifyEmailByOtpRequest(email, otp)),
             cancellationToken);
-
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
@@ -324,11 +360,39 @@ public class AuthMutations
         var result = await mediator.Send(
             new ResendEmailVerificationCommand(new ResendEmailVerificationRequest(email)),
             cancellationToken);
-
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
         return result.Value;
+    }
+
+    public async Task<bool> ResetPasswordByTokenAsync(
+        string token,
+        string newPassword,
+        [Service] IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(
+            new ResetPasswordByTokenCommand(new ResetPasswordByTokenRequest(token, newPassword)),
+            cancellationToken);
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return true;
+    }
+
+    public async Task<bool> ResetPasswordByOtpAsync(
+        ResetPasswordByOtpInput input,
+        [Service] IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(
+            new ResetPasswordByOtpCommand(new ResetPasswordByOtpRequest(input.Email, input.Otp, input.NewPassword)),
+            cancellationToken);
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return true;
     }
 
     [Authorize]

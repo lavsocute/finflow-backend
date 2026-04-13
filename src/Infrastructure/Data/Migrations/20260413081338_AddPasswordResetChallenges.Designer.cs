@@ -3,6 +3,7 @@ using System;
 using FinFlow.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FinFlow.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260413081338_AddPasswordResetChallenges")]
+    partial class AddPasswordResetChallenges
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -37,21 +40,11 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("email");
 
-                    b.Property<DateTime?>("EmailVerifiedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("email_verified_at");
-
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
-
-                    b.Property<bool>("IsEmailVerified")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("is_email_verified");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -167,82 +160,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.HasIndex("ParentId");
 
                     b.ToTable("department", (string)null);
-                });
-
-            modelBuilder.Entity("FinFlow.Domain.Entities.EmailChallenge", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AccountId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("account_id");
-
-                    b.Property<DateTime?>("ConsumedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("consumed_at");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("email");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<DateTime?>("LastSentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_sent_at");
-
-                    b.Property<int>("MaxOtpAttempts")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(5)
-                        .HasColumnName("max_otp_attempts");
-
-                    b.Property<int>("OtpAttemptCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("otp_attempt_count");
-
-                    b.Property<string>("OtpHash")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("otp_hash");
-
-                    b.Property<int>("Purpose")
-                        .HasColumnType("integer")
-                        .HasColumnName("purpose");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("revoked_at");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("token_hash");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("Email");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.HasIndex("AccountId", "Purpose");
-
-                    b.ToTable("email_challenge", (string)null);
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.Invitation", b =>
@@ -668,15 +585,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("FinFlow.Domain.Entities.EmailChallenge", b =>
-                {
-                    b.HasOne("FinFlow.Domain.Entities.Account", null)
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.Invitation", b =>

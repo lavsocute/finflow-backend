@@ -97,6 +97,10 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
                 return Result.Failure<AuthResponse>(createAccountResult.Error);
 
             var account = createAccountResult.Value;
+            var verifyResult = account.MarkEmailVerified(DateTime.UtcNow);
+            if (verifyResult.IsFailure)
+                return Result.Failure<AuthResponse>(verifyResult.Error);
+
             _accountRepository.Add(account);
             accountInfo = new AccountLoginInfo(account.Id, account.Email, account.PasswordHash, account.IsActive, account.IsEmailVerified, account.EmailVerifiedAt);
             accountId = account.Id;

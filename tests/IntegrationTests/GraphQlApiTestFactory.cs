@@ -1,23 +1,22 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Infrastructure;
-using FinFlow.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Text.Encodings.Web;
 
 namespace FinFlow.IntegrationTests;
 
@@ -26,7 +25,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
     private readonly string _databaseName = $"finflow-api-tests-{Guid.NewGuid():N}";
     public RecordingEmailSender EmailSender { get; } = new();
 
-    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
         builder.ConfigureLogging(logging => logging.ClearProviders());
@@ -39,12 +38,16 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(ILoginRateLimiter));
             services.RemoveAll(typeof(ICurrentTenant));
             services.RemoveAll(typeof(IEmailSender));
+            services.RemoveAll(typeof(IPasswordResetChallengeSecretService));
+            services.RemoveAll(typeof(IPasswordResetSettings));
 
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
+            services.AddSingleton<IPasswordResetChallengeSecretService, TestPasswordResetChallengeSecretService>();
+            services.AddSingleton<IPasswordResetSettings, TestPasswordResetSettings>();
             services.AddAuthentication(options =>
                 {
                     options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
@@ -74,12 +77,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         dbContext.ChangeTracker.Clear();
     }
 
-    public HttpClient CreateAuthenticatedClient(
-        Guid accountId,
-        string email,
-        RoleType role,
-        Guid? tenantId = null,
-        Guid? membershipId = null)
+    public HttpClient CreateAuthenticatedClient(Guid accountId, string email, RoleType role, Guid? tenantId = null, Guid? membershipId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(TestAuthHandler.SchemeName);
@@ -132,6 +130,24 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             PasswordResetEmails.Add((email, resetLink, otp));
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class TestPasswordResetChallengeSecretService : IPasswordResetChallengeSecretService
+    {
+        public string GenerateToken() => "reset-token-123";
+        public string GenerateOtp(int length) => "654321";
+        public string HashToken(string token) => $"reset-token-hash:{token}";
+        public string HashOtp(string otp) => $"reset-otp-hash:{otp}";
+    }
+
+    private sealed class TestPasswordResetSettings : IPasswordResetSettings
+    {
+        public int TokenLifetimeMinutes => 15;
+        public int CooldownSeconds => 90;
+        public int OtpLength => 6;
+        public int TokenByteLength => 32;
+        public int MaxOtpAttempts => 5;
+        public string ResetLinkBaseUrl => "https://reset.finflow.test/password";
     }
 
     private sealed class TestHttpCurrentTenant : ICurrentTenant
