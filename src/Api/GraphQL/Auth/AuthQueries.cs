@@ -75,7 +75,9 @@ public sealed class AuthQueries
         CancellationToken cancellationToken)
     {
         var accountId = GetAuthenticatedAccountId(context);
-        var result = await mediator.Send(new GetCurrentWorkspaceQuery(accountId), cancellationToken);
+        var tenantId = GetAuthenticatedTenantId(context);
+        var membershipId = GetAuthenticatedMembershipId(context);
+        var result = await mediator.Send(new GetCurrentWorkspaceQuery(accountId, tenantId, membershipId), cancellationToken);
         if (result.IsFailure)
             throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
 
@@ -115,8 +117,7 @@ public sealed class AuthQueries
 
     private static Guid GetAuthenticatedAccountId(IResolverContext context)
     {
-        var httpContextAccessor = context.Service<IHttpContextAccessor>();
-        var user = httpContextAccessor.HttpContext?.User;
+        var user = GetUser(context);
         var accountIdClaim = user?.FindFirst("sub")?.Value
             ?? user?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -124,5 +125,32 @@ public sealed class AuthQueries
             throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
 
         return accountId;
+    }
+
+    private static Guid GetAuthenticatedTenantId(IResolverContext context)
+    {
+        var user = GetUser(context);
+        var tenantIdClaim = user?.FindFirst("IdTenant")?.Value;
+
+        if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+            throw new GraphQLException(new HotChocolate.Error("The current user is not authorized to access this resource.", "Account.Unauthorized"));
+
+        return tenantId;
+    }
+
+    private static Guid? GetAuthenticatedMembershipId(IResolverContext context)
+    {
+        var user = GetUser(context);
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+
+        return Guid.TryParse(membershipIdClaim, out var membershipId)
+            ? membershipId
+            : null;
+    }
+
+    private static ClaimsPrincipal? GetUser(IResolverContext context)
+    {
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        return httpContextAccessor.HttpContext?.User;
     }
 }

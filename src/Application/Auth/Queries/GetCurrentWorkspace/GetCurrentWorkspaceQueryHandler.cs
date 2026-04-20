@@ -10,18 +10,15 @@ namespace FinFlow.Application.Auth.Queries.GetCurrentWorkspace;
 
 public sealed class GetCurrentWorkspaceQueryHandler : MediatR.IRequestHandler<GetCurrentWorkspaceQuery, Result<CurrentWorkspaceResponse>>
 {
-    private readonly ICurrentTenant _currentTenant;
     private readonly IAccountRepository _accountRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly ITenantRepository _tenantRepository;
 
     public GetCurrentWorkspaceQueryHandler(
-        ICurrentTenant currentTenant,
         IAccountRepository accountRepository,
         ITenantMembershipRepository membershipRepository,
         ITenantRepository tenantRepository)
     {
-        _currentTenant = currentTenant;
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
         _tenantRepository = tenantRepository;
@@ -29,9 +26,6 @@ public sealed class GetCurrentWorkspaceQueryHandler : MediatR.IRequestHandler<Ge
 
     public async Task<Result<CurrentWorkspaceResponse>> Handle(GetCurrentWorkspaceQuery request, CancellationToken cancellationToken)
     {
-        if (!_currentTenant.Id.HasValue)
-            return Result.Failure<CurrentWorkspaceResponse>(AccountErrors.Unauthorized);
-
         var account = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (account is null)
             return Result.Failure<CurrentWorkspaceResponse>(AccountErrors.NotFound);
@@ -39,7 +33,7 @@ public sealed class GetCurrentWorkspaceQueryHandler : MediatR.IRequestHandler<Ge
         if (!account.IsActive)
             return Result.Failure<CurrentWorkspaceResponse>(AccountErrors.AlreadyDeactivated);
 
-        var membershipResult = await ResolveMembershipAsync(request.AccountId, _currentTenant.Id.Value, cancellationToken);
+        var membershipResult = await ResolveMembershipAsync(request.AccountId, request.TenantId, request.MembershipId, cancellationToken);
         if (membershipResult.IsFailure)
             return Result.Failure<CurrentWorkspaceResponse>(membershipResult.Error);
 
@@ -58,11 +52,15 @@ public sealed class GetCurrentWorkspaceQueryHandler : MediatR.IRequestHandler<Ge
             tenant.Name));
     }
 
-    private async Task<Result<TenantMembershipSummary>> ResolveMembershipAsync(Guid accountId, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<Result<TenantMembershipSummary>> ResolveMembershipAsync(
+        Guid accountId,
+        Guid tenantId,
+        Guid? membershipId,
+        CancellationToken cancellationToken)
     {
-        if (_currentTenant.MembershipId.HasValue)
+        if (membershipId.HasValue)
         {
-            var currentMembership = await _membershipRepository.GetByIdAsync(_currentTenant.MembershipId.Value, cancellationToken);
+            var currentMembership = await _membershipRepository.GetByIdAsync(membershipId.Value, cancellationToken);
             if (currentMembership is null || !currentMembership.IsActive)
                 return Result.Failure<TenantMembershipSummary>(TenantMembershipErrors.NotFound);
 

@@ -4,4 +4,7 @@ using FinFlow.Domain.Abstractions;
 
 namespace FinFlow.Application.Auth.Queries.GetCurrentWorkspace;
 
-public record GetCurrentWorkspaceQuery(Guid AccountId) : IQuery<Result<CurrentWorkspaceResponse>>;
+public record GetCurrentWorkspaceQuery(
+    Guid AccountId,
+    Guid TenantId,
+    Guid? MembershipId) : IQuery<Result<CurrentWorkspaceResponse>>;
