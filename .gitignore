@@ -7,6 +7,10 @@ TestResults/
 .dotnet-cli/
 .dotnet-cli*/
 .nuget-packages*/
+.codex-build/
+.codex-build*/
+.codex-run/
+.codex-run*/
 
 ## IDE files
 .vs/

@@ -1,11 +1,13 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
+using FinFlow.Api.GraphQL.Documents;
 using FinFlow.Api.Observability;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
@@ -106,7 +108,9 @@ builder.Services.AddCors(options =>
 builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
     .AddTypeExtension<AuthQueries>()
+    .AddTypeExtension<DocumentsQueries>()
     .AddMutationType<AuthMutations>()
+    .AddTypeExtension<DocumentsMutations>()
     .AddAuthorization()
     .AddErrorFilter(error =>
     {
@@ -121,6 +125,15 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    if (dbContext.Database.IsRelational())
+    {
+        await dbContext.Database.MigrateAsync();
+    }
+}
 
 app.UseSerilogRequestLogging(options =>
 {
