@@ -9,6 +9,18 @@ namespace FinFlow.IntegrationTests;
 
 public sealed class GraphQlDocumentsApiTests
 {
+    private static readonly string SamplePdfFixturePath = Path.Combine(
+        AppContext.BaseDirectory,
+        "..",
+        "..",
+        "..",
+        "..",
+        "..",
+        "tests",
+        "UnitTests",
+        "Fixtures",
+        "sample-single-page.pdf");
+
     [Fact]
     public async Task UploadDocumentForReview_ReturnsDeterministicDraftPayload()
     {
@@ -79,6 +91,58 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal("staff.documents@finflow.test", draft.GetProperty("reviewedByStaff").GetString());
         Assert.Equal("High precision", draft.GetProperty("confidenceLabel").GetString());
         Assert.Equal(3, draft.GetProperty("lineItems").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task UploadDocumentForReview_WithRealPdf_RendersFirstPage_AndReturnsDraft()
+    {
+        await using var factory = new GraphQlApiTestFactory(useRealPdfOcr: true);
+
+        var account = Account.Create("staff.documents.pdf@finflow.test", "hashed-password").Value;
+        var tenant = Tenant.Create("Finance Ops Workspace PDF", "finance-ops-pdf").Value;
+        var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(tenant);
+            db.Add(membership);
+        });
+
+        using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
+
+        const string mutation = """
+            mutation($input: UploadDocumentForReviewInput!) {
+              uploadDocumentForReview(input: $input) {
+                documentId
+                originalFileName
+                contentType
+                vendorName
+                confidenceLabel
+              }
+            }
+            """;
+
+        var pdfBytes = await File.ReadAllBytesAsync(SamplePdfFixturePath);
+        var payload = await GraphQlApiTestFactory.PostGraphQlAsync(client, mutation, new
+        {
+            input = new
+            {
+                fileName = "invoice-aws-october.pdf",
+                contentType = "application/pdf",
+                base64Content = Convert.ToBase64String(pdfBytes)
+            }
+        });
+
+        var draft = payload.RootElement.GetProperty("data").GetProperty("uploadDocumentForReview");
+        Assert.Equal("invoice-aws-october.pdf", draft.GetProperty("originalFileName").GetString());
+        Assert.Equal("application/pdf", draft.GetProperty("contentType").GetString());
+        Assert.Equal("Amazon Web Services, Inc.", draft.GetProperty("vendorName").GetString());
+        Assert.Equal("High precision", draft.GetProperty("confidenceLabel").GetString());
+
+        Assert.True(factory.OcrProbe.WasPdfRendered);
+        Assert.Equal("image/png", factory.OcrProbe.LastPreparedContentType);
+        Assert.True(factory.OcrProbe.LastPreparedBase64Length > 0);
     }
 
     [Fact]

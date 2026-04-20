@@ -4,6 +4,7 @@ using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
+using FinFlow.Infrastructure.Ocr.LlmVision;
 using Microsoft.Extensions.Options;
 
 namespace FinFlow.Infrastructure.Ocr.OpenRouter;
@@ -37,7 +38,14 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         byte[] fileContents,
         CancellationToken cancellationToken)
     {
-        var imagesResult = await PrepareImagesAsync(contentType, fileContents, cancellationToken);
+        var imagesResult = await LlmVisionImagePreparer.PrepareAsync(
+            contentType,
+            fileContents,
+            _options.MaxImageBytes,
+            _options.MaxPagesPerDocument,
+            _options.MaxImagesPerRequest,
+            _pdfPageRenderer,
+            cancellationToken);
         if (imagesResult.IsFailure)
             return Result.Failure<OcrExtractionResult>(imagesResult.Error);
 
@@ -54,7 +62,7 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
             if (string.IsNullOrWhiteSpace(content))
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
 
-            return ParseContent(content);
+            return LlmVisionOcrParser.Parse(content, "openrouter");
         }
         catch (HttpRequestException)
         {
@@ -66,61 +74,13 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         }
     }
 
-    private async Task<Result<IReadOnlyList<OcrPageImage>>> PrepareImagesAsync(
-        string contentType,
-        byte[] fileContents,
-        CancellationToken cancellationToken)
-    {
-        if (string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
-        {
-            var renderResult = await _pdfPageRenderer.RenderAsync(fileContents, cancellationToken);
-            if (renderResult.IsFailure)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(renderResult.Error);
-
-            var renderedPages = renderResult.Value;
-            if (renderedPages.Count == 0)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed);
-            if (renderedPages.Count > _options.MaxImagesPerRequest)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrExtractionFailed);
-
-            foreach (var page in renderedPages)
-            {
-                if (GetDecodedByteLength(page.Base64Content) > _options.MaxImageBytes)
-                    return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrFileTooLarge);
-            }
-
-            return Result.Success<IReadOnlyList<OcrPageImage>>(renderedPages);
-        }
-
-        if (!IsSupportedImage(contentType))
-            return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrUnsupportedFile);
-
-        if (fileContents.Length > _options.MaxImageBytes)
-            return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrFileTooLarge);
-
-        return Result.Success<IReadOnlyList<OcrPageImage>>(
-            [
-                new OcrPageImage(1, contentType, Convert.ToBase64String(fileContents))
-            ]);
-    }
-
     private OpenRouterChatCompletionRequest BuildRequest(IReadOnlyList<OcrPageImage> images)
     {
         var userContent = new List<object>
         {
             new OpenRouterTextContentPart(
                 "text",
-                """
-                Extract this expense document into strict JSON only.
-                Return keys:
-                vendorName, reference, documentDate, dueDate, category, vendorTaxId, subtotal, vat, totalAmount, lineItems.
-                lineItems must be an array of objects with itemName, quantity, unitPrice, total.
-                Rules:
-                - Output JSON only
-                - Dates must use yyyy-MM-dd
-                - Use numbers for money and quantities
-                - Do not invent values
-                """
+                LlmVisionPrompt.ExtractExpenseDocument
             )
         };
 
@@ -134,131 +94,6 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
             [
                 new OpenRouterChatMessage("user", userContent)
             ]);
-    }
-
-    private static Result<OcrExtractionResult> ParseContent(string content)
-    {
-        var normalizedContent = StripCodeFences(content);
-
-        try
-        {
-            using var document = JsonDocument.Parse(normalizedContent);
-            var root = document.RootElement;
-
-            var vendorName = GetRequiredString(root, "vendorName");
-            var reference = GetRequiredString(root, "reference");
-            var documentDate = GetRequiredDate(root, "documentDate");
-            var dueDate = GetRequiredDate(root, "dueDate");
-            var category = GetRequiredString(root, "category");
-            var vendorTaxId = GetOptionalString(root, "vendorTaxId");
-            var subtotal = GetRequiredDecimal(root, "subtotal");
-            var vat = GetRequiredDecimal(root, "vat");
-            var totalAmount = GetRequiredDecimal(root, "totalAmount");
-
-            if (!root.TryGetProperty("lineItems", out var lineItemsElement) || lineItemsElement.ValueKind != JsonValueKind.Array)
-                return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
-
-            var lineItems = new List<OcrExtractionLineItem>();
-            foreach (var item in lineItemsElement.EnumerateArray())
-            {
-                lineItems.Add(new OcrExtractionLineItem(
-                    GetRequiredString(item, "itemName"),
-                    GetRequiredDecimal(item, "quantity"),
-                    GetRequiredDecimal(item, "unitPrice"),
-                    GetRequiredDecimal(item, "total")));
-            }
-
-            return Result.Success(new OcrExtractionResult(
-                vendorName,
-                reference,
-                documentDate,
-                dueDate,
-                category,
-                vendorTaxId,
-                subtotal,
-                vat,
-                totalAmount,
-                "openrouter",
-                "AI extracted",
-                lineItems));
-        }
-        catch (FormatException)
-        {
-            return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
-        }
-        catch (InvalidOperationException)
-        {
-            return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
-        }
-        catch (JsonException)
-        {
-            return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
-        }
-    }
-
-    private static string StripCodeFences(string content)
-    {
-        var trimmed = content.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
-            return trimmed;
-
-        var lines = trimmed.Split('\n')
-            .Where(line => !line.TrimStart().StartsWith("```", StringComparison.Ordinal))
-            .ToArray();
-
-        return string.Join('\n', lines).Trim();
-    }
-
-    private static bool IsSupportedImage(string contentType) =>
-        string.Equals(contentType, "image/png", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(contentType, "image/jpeg", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(contentType, "image/jpg", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(contentType, "image/webp", StringComparison.OrdinalIgnoreCase);
-
-    private static int GetDecodedByteLength(string base64Content) =>
-        Convert.FromBase64String(base64Content).Length;
-
-    private static string GetRequiredString(JsonElement element, string propertyName)
-    {
-        var value = GetOptionalString(element, propertyName);
-        if (string.IsNullOrWhiteSpace(value))
-            throw new InvalidOperationException($"{propertyName} is required.");
-
-        return value;
-    }
-
-    private static string? GetOptionalString(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var property))
-            return null;
-
-        return property.ValueKind switch
-        {
-            JsonValueKind.Null => null,
-            JsonValueKind.String => property.GetString()?.Trim(),
-            _ => throw new InvalidOperationException($"{propertyName} must be a string.")
-        };
-    }
-
-    private static DateOnly GetRequiredDate(JsonElement element, string propertyName)
-    {
-        var value = GetRequiredString(element, propertyName);
-        if (!DateOnly.TryParse(value, out var date))
-            throw new FormatException($"{propertyName} must be a valid date.");
-
-        return date;
-    }
-
-    private static decimal GetRequiredDecimal(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var property))
-            throw new InvalidOperationException($"{propertyName} is required.");
-
-        return property.ValueKind switch
-        {
-            JsonValueKind.Number when property.TryGetDecimal(out var value) => value,
-            _ => throw new InvalidOperationException($"{propertyName} must be a decimal.")
-        };
     }
 }
 

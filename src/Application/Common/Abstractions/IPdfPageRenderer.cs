@@ -7,5 +7,6 @@ public interface IPdfPageRenderer
 {
     Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(
         byte[] pdfBytes,
+        int maxPages,
         CancellationToken cancellationToken);
 }

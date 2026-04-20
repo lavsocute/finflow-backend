@@ -121,7 +121,7 @@ public sealed class GroqOcrProviderTests
 
         public StubPdfPageRenderer(Result<IReadOnlyList<OcrPageImage>> result) => _result = result;
 
-        public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(byte[] pdfBytes, CancellationToken cancellationToken) =>
+        public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(_result);
     }
 
