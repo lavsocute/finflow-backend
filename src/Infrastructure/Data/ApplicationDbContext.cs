@@ -17,6 +17,8 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     }
 
     public DbSet<EmailChallenge> EmailChallenges => Set<EmailChallenge>();
+    public DbSet<ReviewedDocument> ReviewedDocuments => Set<ReviewedDocument>();
+    public DbSet<UploadedDocumentDraft> UploadedDocumentDrafts => Set<UploadedDocumentDraft>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -122,6 +124,12 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<Invitation>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<ReviewedDocument>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<UploadedDocumentDraft>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<AuditLog>().HasQueryFilter(e =>

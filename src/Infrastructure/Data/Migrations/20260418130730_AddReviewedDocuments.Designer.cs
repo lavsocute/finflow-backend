@@ -3,6 +3,7 @@ using System;
 using FinFlow.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FinFlow.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260418130730_AddReviewedDocuments")]
+    partial class AddReviewedDocuments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -498,11 +501,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("reference");
 
-                    b.Property<string>("RejectionReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("rejection_reason");
-
                     b.Property<string>("ReviewedByStaff")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -778,117 +776,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.ToTable("tenant_membership", (string)null);
                 });
 
-            modelBuilder.Entity("FinFlow.Domain.Entities.UploadedDocumentDraft", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("category");
-
-                    b.Property<string>("ConfidenceLabel")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("confidence_label");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("content_type");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<DateOnly>("DocumentDate")
-                        .HasColumnType("date")
-                        .HasColumnName("document_date");
-
-                    b.Property<DateOnly>("DueDate")
-                        .HasColumnType("date")
-                        .HasColumnName("due_date");
-
-                    b.Property<Guid>("IdTenant")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_tenant");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_active");
-
-                    b.Property<Guid>("MembershipId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("membership_id");
-
-                    b.Property<string>("OriginalFileName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("original_file_name");
-
-                    b.Property<string>("Reference")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("reference");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("source");
-
-                    b.Property<decimal>("Subtotal")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("subtotal");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("total_amount");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("uploaded_at");
-
-                    b.Property<string>("UploadedByStaff")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("uploaded_by_staff");
-
-                    b.Property<decimal>("Vat")
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("vat");
-
-                    b.Property<string>("VendorName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("vendor_name");
-
-                    b.Property<string>("VendorTaxId")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("vendor_tax_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IdTenant", "UploadedAt");
-
-                    b.ToTable("uploaded_document_draft", (string)null);
-                });
-
             modelBuilder.Entity("FinFlow.Domain.Entities.Department", b =>
                 {
                     b.HasOne("FinFlow.Domain.Entities.Tenant", null)
@@ -1005,48 +892,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasForeignKey("IdTenant")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("FinFlow.Domain.Entities.UploadedDocumentDraft", b =>
-                {
-                    b.OwnsMany("FinFlow.Domain.Entities.UploadedDocumentDraftLineItem", "LineItems", b1 =>
-                        {
-                            b1.Property<Guid>("Id")
-                                .HasColumnType("uuid")
-                                .HasColumnName("id");
-
-                            b1.Property<string>("ItemName")
-                                .IsRequired()
-                                .HasMaxLength(250)
-                                .HasColumnType("character varying(250)")
-                                .HasColumnName("item_name");
-
-                            b1.Property<decimal>("Quantity")
-                                .HasColumnType("numeric(18,2)")
-                                .HasColumnName("quantity");
-
-                            b1.Property<decimal>("Total")
-                                .HasColumnType("numeric(18,2)")
-                                .HasColumnName("total");
-
-                            b1.Property<decimal>("UnitPrice")
-                                .HasColumnType("numeric(18,2)")
-                                .HasColumnName("unit_price");
-
-                            b1.Property<Guid>("uploaded_document_draft_id")
-                                .HasColumnType("uuid");
-
-                            b1.HasKey("Id");
-
-                            b1.HasIndex("uploaded_document_draft_id");
-
-                            b1.ToTable("uploaded_document_draft_line_item", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("uploaded_document_draft_id");
-                        });
-
-                    b.Navigation("LineItems");
                 });
 #pragma warning restore 612, 618
         }
