@@ -4,11 +4,13 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -38,6 +40,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(ILoginRateLimiter));
             services.RemoveAll(typeof(ICurrentTenant));
             services.RemoveAll(typeof(IEmailSender));
+            services.RemoveAll(typeof(IOcrExtractionService));
             services.RemoveAll(typeof(IPasswordResetChallengeSecretService));
             services.RemoveAll(typeof(IPasswordResetSettings));
 
@@ -46,8 +49,10 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
+            services.AddSingleton<IOcrExtractionService, DeterministicOcrExtractionService>();
             services.AddSingleton<IPasswordResetChallengeSecretService, TestPasswordResetChallengeSecretService>();
             services.AddSingleton<IPasswordResetSettings, TestPasswordResetSettings>();
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddAuthentication(options =>
                 {
                     options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
@@ -112,6 +117,44 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         public Task<bool> IsBlockedAsync(string? ip, string email, Guid? tenantId = null) => Task.FromResult(false);
         public Task RecordFailureAsync(string? ip, string email, Guid? tenantId = null) => Task.CompletedTask;
         public Task ResetAccountAsync(string email, Guid? tenantId = null) => Task.CompletedTask;
+    }
+
+    private sealed class DeterministicOcrExtractionService : IOcrExtractionService
+    {
+        public Task<Result<OcrExtractionResult>> ExtractAsync(
+            string fileName,
+            string contentType,
+            byte[] fileContents,
+            CancellationToken cancellationToken)
+        {
+            var normalized = fileName.ToLowerInvariant();
+            var vendorName = normalized.Contains("amazon") || normalized.Contains("aws")
+                ? "Amazon Web Services, Inc."
+                : "FinFlow Sample Vendor";
+            var category = normalized.Contains("travel") || normalized.Contains("flight")
+                ? "Travel"
+                : normalized.Contains("marketing")
+                    ? "Marketing"
+                    : "Software & SaaS";
+
+            return Task.FromResult(Result.Success(new OcrExtractionResult(
+                vendorName,
+                "INV-2026-0101",
+                new DateOnly(2026, 4, 18),
+                new DateOnly(2026, 5, 2),
+                category,
+                "TX-990-2134",
+                1200.00m,
+                250.00m,
+                1450.00m,
+                "staff-upload",
+                "High precision",
+                [
+                    new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
+                    new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
+                    new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
+                ])));
+        }
     }
 
     internal sealed class RecordingEmailSender : IEmailSender
