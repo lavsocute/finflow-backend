@@ -9,6 +9,8 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Infrastructure;
+using FinFlow.Infrastructure.Ocr;
+using FinFlow.Infrastructure.Ocr.Pdf;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -25,7 +27,14 @@ namespace FinFlow.IntegrationTests;
 internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"finflow-api-tests-{Guid.NewGuid():N}";
+    private readonly bool _useRealPdfOcr;
     public RecordingEmailSender EmailSender { get; } = new();
+    public OcrPipelineProbe OcrProbe { get; } = new();
+
+    public GraphQlApiTestFactory(bool useRealPdfOcr = false)
+    {
+        _useRealPdfOcr = useRealPdfOcr;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -41,6 +50,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(ICurrentTenant));
             services.RemoveAll(typeof(IEmailSender));
             services.RemoveAll(typeof(IOcrExtractionService));
+            services.RemoveAll(typeof(IOcrProvider));
             services.RemoveAll(typeof(IPasswordResetChallengeSecretService));
             services.RemoveAll(typeof(IPasswordResetSettings));
 
@@ -49,7 +59,23 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
-            services.AddSingleton<IOcrExtractionService, DeterministicOcrExtractionService>();
+            services.AddSingleton(OcrProbe);
+
+            if (_useRealPdfOcr)
+            {
+                services.AddSingleton<IOptions<OcrOptions>>(Options.Create(new OcrOptions
+                {
+                    ActiveProvider = DeterministicPdfOcrProvider.ProviderName
+                }));
+                services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
+                services.AddScoped<IOcrProvider, DeterministicPdfOcrProvider>();
+                services.AddScoped<IOcrExtractionService, ConfigurableOcrExtractionService>();
+            }
+            else
+            {
+                services.AddSingleton<IOcrExtractionService, DeterministicOcrExtractionService>();
+            }
+
             services.AddSingleton<IPasswordResetChallengeSecretService, TestPasswordResetChallengeSecretService>();
             services.AddSingleton<IPasswordResetSettings, TestPasswordResetSettings>();
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
@@ -154,6 +180,87 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
                     new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
                 ])));
+        }
+    }
+
+    internal sealed class OcrPipelineProbe
+    {
+        public bool WasPdfRendered { get; set; }
+        public string? LastPreparedContentType { get; set; }
+        public int LastPreparedBase64Length { get; set; }
+    }
+
+    private sealed class DeterministicPdfOcrProvider : IOcrProvider
+    {
+        public const string ProviderName = "DeterministicPdf";
+
+        private readonly IPdfPageRenderer _pdfPageRenderer;
+        private readonly OcrPipelineProbe _probe;
+
+        public DeterministicPdfOcrProvider(IPdfPageRenderer pdfPageRenderer, OcrPipelineProbe probe)
+        {
+            _pdfPageRenderer = pdfPageRenderer;
+            _probe = probe;
+        }
+
+        public string Name => ProviderName;
+
+        public async Task<Result<OcrExtractionResult>> ExtractAsync(
+            string fileName,
+            string contentType,
+            byte[] fileContents,
+            CancellationToken cancellationToken)
+        {
+            string observedContentType;
+            string observedBase64;
+
+            if (string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var rendered = await _pdfPageRenderer.RenderAsync(fileContents, 3, cancellationToken);
+                if (rendered.IsFailure)
+                    return Result.Failure<OcrExtractionResult>(rendered.Error);
+
+                var page = rendered.Value.First();
+                _probe.WasPdfRendered = true;
+                observedContentType = page.ContentType;
+                observedBase64 = page.Base64Content;
+            }
+            else
+            {
+                observedContentType = contentType;
+                observedBase64 = Convert.ToBase64String(fileContents);
+            }
+
+            _probe.LastPreparedContentType = observedContentType;
+            _probe.LastPreparedBase64Length = observedBase64.Length;
+
+            var normalized = fileName.ToLowerInvariant();
+            var vendorName = normalized.Contains("amazon") || normalized.Contains("aws")
+                ? "Amazon Web Services, Inc."
+                : "FinFlow Sample Vendor";
+            var category = normalized.Contains("travel") || normalized.Contains("flight")
+                ? "Travel"
+                : normalized.Contains("marketing")
+                    ? "Marketing"
+                    : "Software & SaaS";
+
+            return Result.Success(new OcrExtractionResult(
+                vendorName,
+                "INV-2026-0101",
+                new DateOnly(2026, 4, 18),
+                new DateOnly(2026, 5, 2),
+                category,
+                "TX-990-2134",
+                1200.00m,
+                250.00m,
+                1450.00m,
+                "staff-upload",
+                "High precision",
+                [
+                    new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
+                    new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
+                    new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
+                ]));
         }
     }
 
