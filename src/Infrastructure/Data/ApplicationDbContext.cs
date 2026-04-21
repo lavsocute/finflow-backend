@@ -1,5 +1,6 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,8 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<EmailChallenge> EmailChallenges => Set<EmailChallenge>();
     public DbSet<ReviewedDocument> ReviewedDocuments => Set<ReviewedDocument>();
     public DbSet<UploadedDocumentDraft> UploadedDocumentDrafts => Set<UploadedDocumentDraft>();
+    public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
+    public DbSet<TenantUsageSnapshot> TenantUsageSnapshots => Set<TenantUsageSnapshot>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -130,6 +133,13 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<UploadedDocumentDraft>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<TenantSubscription>().HasQueryFilter(e =>
+            e.Status == SubscriptionStatus.Active &&
+            (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<TenantUsageSnapshot>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<AuditLog>().HasQueryFilter(e =>

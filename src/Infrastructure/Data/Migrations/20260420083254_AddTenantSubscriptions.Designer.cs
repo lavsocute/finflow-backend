@@ -3,6 +3,7 @@ using System;
 using FinFlow.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FinFlow.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420083254_AddTenantSubscriptions")]
+    partial class AddTenantSubscriptions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -828,56 +831,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.ToTable("tenant_subscription", (string)null);
                 });
 
-            modelBuilder.Entity("FinFlow.Domain.Entities.TenantUsageSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("ChatbotMessagesUsed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("chatbot_messages_used");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_active");
-
-                    b.Property<Guid>("IdTenant")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_tenant");
-
-                    b.Property<DateOnly>("PeriodEnd")
-                        .HasColumnType("date")
-                        .HasColumnName("period_end");
-
-                    b.Property<DateOnly>("PeriodStart")
-                        .HasColumnType("date")
-                        .HasColumnName("period_start");
-
-                    b.Property<int>("OcrPagesUsed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("ocr_pages_used");
-
-                    b.Property<long>("StorageUsedBytes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("storage_used_bytes");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IdTenant", "PeriodStart", "PeriodEnd")
-                        .IsUnique()
-                        .HasDatabaseName("ux_tenant_usage_snapshot_period");
-
-                    b.ToTable("tenant_usage_snapshot", (string)null);
-                });
-
             modelBuilder.Entity("FinFlow.Domain.Entities.UploadedDocumentDraft", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1108,15 +1061,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.TenantSubscription", b =>
-                {
-                    b.HasOne("FinFlow.Domain.Entities.Tenant", null)
-                        .WithMany()
-                        .HasForeignKey("IdTenant")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("FinFlow.Domain.Entities.TenantUsageSnapshot", b =>
                 {
                     b.HasOne("FinFlow.Domain.Entities.Tenant", null)
                         .WithMany()
