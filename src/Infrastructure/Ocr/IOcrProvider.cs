@@ -12,4 +12,9 @@ public interface IOcrProvider
         string contentType,
         byte[] fileContents,
         CancellationToken cancellationToken);
+
+    Task<Result<int>> GetPageCountAsync(
+        string contentType,
+        byte[] fileContents,
+        CancellationToken cancellationToken);
 }

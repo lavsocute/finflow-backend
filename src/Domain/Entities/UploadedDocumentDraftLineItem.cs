@@ -1,3 +1,5 @@
+using FinFlow.Domain.Abstractions;
+
 namespace FinFlow.Domain.Entities;
 
 public sealed class UploadedDocumentDraftLineItem
@@ -19,6 +21,20 @@ public sealed class UploadedDocumentDraftLineItem
     public decimal UnitPrice { get; private set; }
     public decimal Total { get; private set; }
 
-    public static UploadedDocumentDraftLineItem Create(string itemName, decimal quantity, decimal unitPrice, decimal total) =>
-        new(Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, total);
+    public static Result<UploadedDocumentDraftLineItem> Create(string itemName, decimal quantity, decimal unitPrice, decimal total)
+    {
+        if (string.IsNullOrWhiteSpace(itemName))
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemNameRequired);
+
+        if (quantity <= 0)
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemQuantityInvalid);
+
+        if (unitPrice <= 0)
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemUnitPriceInvalid);
+
+        if (total <= 0)
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
+
+        return Result.Success(new UploadedDocumentDraftLineItem(Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, total));
+    }
 }

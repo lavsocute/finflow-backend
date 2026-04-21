@@ -30,4 +30,15 @@ public sealed class ConfigurableOcrExtractionService : IOcrExtractionService
 
         return provider.ExtractAsync(fileName, contentType, fileContents, cancellationToken);
     }
+
+    public Task<Result<int>> GetPageCountAsync(
+        string contentType,
+        byte[] fileContents,
+        CancellationToken cancellationToken)
+    {
+        if (!_providers.TryGetValue(_options.ActiveProvider, out var provider))
+            return Task.FromResult(Result.Failure<int>(DocumentOcrErrors.OcrProviderUnavailable));
+
+        return provider.GetPageCountAsync(contentType, fileContents, cancellationToken);
+    }
 }

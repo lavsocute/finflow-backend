@@ -6,6 +6,8 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Infrastructure.Ocr.LlmVision;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
 
 namespace FinFlow.Infrastructure.Ocr.OpenRouter;
 
@@ -16,6 +18,7 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         PropertyNameCaseInsensitive = true
     };
 
+    private readonly ResiliencePipeline<HttpResponseMessage> _retryPipeline;
     private readonly HttpClient _httpClient;
     private readonly IPdfPageRenderer _pdfPageRenderer;
     private readonly OpenRouterProviderOptions _options;
@@ -28,6 +31,19 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         _httpClient = httpClient;
         _pdfPageRenderer = pdfPageRenderer;
         _options = options.Value;
+
+        _retryPipeline = new ResiliencePipelineBuilder<HttpResponseMessage>()
+            .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
+            {
+                MaxRetryAttempts = 3,
+                Delay = TimeSpan.FromSeconds(1),
+                BackoffType = DelayBackoffType.Exponential,
+                ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+                    .Handle<HttpRequestException>()
+                    .Handle<TaskCanceledException>()
+                    .HandleResult(r => !r.IsSuccessStatusCode && (int)r.StatusCode >= 500)
+            })
+            .Build();
     }
 
     public string Name => "OpenRouter";
@@ -49,20 +65,47 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         if (imagesResult.IsFailure)
             return Result.Failure<OcrExtractionResult>(imagesResult.Error);
 
-        var request = BuildRequest(imagesResult.Value);
+        var processedPageCount = imagesResult.Value.Pages.Count;
+        var wasTruncated = imagesResult.Value.WasTruncated;
+        var request = BuildRequest(imagesResult.Value.Pages);
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync("chat/completions", request, SerializerOptions, cancellationToken);
+            using var response = await _retryPipeline.ExecuteAsync(
+                async ct => await _httpClient.PostAsJsonAsync("chat/completions", request, SerializerOptions, ct),
+                cancellationToken);
+
             if (!response.IsSuccessStatusCode)
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrExtractionFailed);
 
             var completion = await response.Content.ReadFromJsonAsync<OpenRouterChatCompletionResponse>(SerializerOptions, cancellationToken);
-            var content = completion?.Choices?.FirstOrDefault()?.Message?.Content;
+            var choice = completion?.Choices?.FirstOrDefault();
+            if (choice?.Message is null)
+                return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
+
+            var content = choice.Message.Content;
             if (string.IsNullOrWhiteSpace(content))
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
 
-            return LlmVisionOcrParser.Parse(content, "openrouter");
+            var parseResult = LlmVisionOcrParser.Parse(content, "openrouter");
+            if (parseResult.IsFailure)
+                return parseResult;
+
+            return Result.Success(OcrExtractionResult.Create(
+                parseResult.Value.VendorName,
+                parseResult.Value.Reference,
+                parseResult.Value.DocumentDate,
+                parseResult.Value.DueDate,
+                parseResult.Value.Category,
+                parseResult.Value.VendorTaxId,
+                parseResult.Value.Subtotal,
+                parseResult.Value.Vat,
+                parseResult.Value.TotalAmount,
+                parseResult.Value.Source,
+                parseResult.Value.ConfidenceLabel,
+                parseResult.Value.LineItems,
+                processedPageCount,
+                wasTruncated));
         }
         catch (HttpRequestException)
         {
@@ -72,6 +115,25 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         {
             return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrProviderUnavailable);
         }
+    }
+
+    public async Task<Result<int>> GetPageCountAsync(
+        string contentType,
+        byte[] fileContents,
+        CancellationToken cancellationToken)
+    {
+        if (fileContents.Length == 0)
+            return Result.Failure<int>(DocumentOcrErrors.OcrFileEmpty);
+
+        if (!string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            return Result.Success(1);
+
+        var allowedPages = Math.Min(_options.MaxPagesPerDocument, _options.MaxImagesPerRequest);
+        var renderResult = await _pdfPageRenderer.RenderAsync(fileContents, allowedPages, cancellationToken);
+        if (renderResult.IsFailure)
+            return Result.Failure<int>(renderResult.Error);
+
+        return Result.Success(renderResult.Value.Pages.Count);
     }
 
     private OpenRouterChatCompletionRequest BuildRequest(IReadOnlyList<OcrPageImage> images)
@@ -100,7 +162,7 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
 internal sealed record OpenRouterChatCompletionRequest(
     [property: System.Text.Json.Serialization.JsonPropertyName("model")] string Model,
     [property: System.Text.Json.Serialization.JsonPropertyName("messages")] IReadOnlyList<OpenRouterChatMessage> Messages,
-    [property: System.Text.Json.Serialization.JsonPropertyName("temperature")] int Temperature = 0);
+    [property: System.Text.Json.Serialization.JsonPropertyName("temperature")] float Temperature = 0f);
 
 internal sealed record OpenRouterChatMessage(
     [property: System.Text.Json.Serialization.JsonPropertyName("role")] string Role,

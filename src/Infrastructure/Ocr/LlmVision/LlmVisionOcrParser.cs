@@ -51,7 +51,8 @@ public static class LlmVisionOcrParser
                 totalAmount,
                 source,
                 "AI extracted",
-                lineItems));
+                lineItems,
+                0));
         }
         catch (FormatException)
         {

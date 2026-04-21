@@ -24,5 +24,8 @@ public static class UploadedDocumentDraftErrors
     public static readonly Error LineItemTotalsMismatch = new("UploadedDocumentDraft.LineItemTotalsMismatch", "Line item totals must match the uploaded document total amount.");
     public static readonly Error FinancialBreakdownMismatch = new("UploadedDocumentDraft.FinancialBreakdownMismatch", "Subtotal plus tax must match the uploaded document total amount.");
     public static readonly Error UploadedAtRequired = new("UploadedDocumentDraft.UploadedAtRequired", "Uploaded at must be a valid UTC timestamp.");
-    public static readonly Error UnsupportedContentType = new("UploadedDocumentDraft.UnsupportedContentType", "Only PDF and image uploads are supported.");
+public static readonly Error UnsupportedContentType = new("UploadedDocumentDraft.UnsupportedContentType", "Only PDF and image uploads are supported.");
+    public static readonly Error FileTooLarge = new("UploadedDocumentDraft.FileTooLarge", "The uploaded file exceeds the maximum allowed size of 10MB.");
+    public static readonly Error OcrNotAvailableForCurrentPlan = new("Documents.OcrNotAvailableForCurrentPlan", "OCR is not available for the current plan.");
+    public static readonly Error ImageContentTypeRequired = new("UploadedDocumentDraft.ImageContentTypeRequired", "Image content type is required when has image is true.");
 }

@@ -36,6 +36,7 @@ public sealed class GraphQlDocumentsApiTests
             db.Add(tenant);
             db.Add(membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
 
@@ -108,6 +109,7 @@ public sealed class GraphQlDocumentsApiTests
             db.Add(tenant);
             db.Add(membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
 
@@ -183,6 +185,90 @@ public sealed class GraphQlDocumentsApiTests
 
         var errors = payload.RootElement.GetProperty("errors");
         Assert.Equal("Only PDF and image uploads are supported.", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task UploadDocumentForReview_ReturnsPlanError_ForFreeTenant()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var account = Account.Create("staff.documents.free@finflow.test", "hashed-password").Value;
+        var tenant = Tenant.Create("Finance Ops Workspace Free", "finance-ops-free").Value;
+        var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(tenant);
+            db.Add(membership);
+        });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Free);
+
+        using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
+
+        const string mutation = """
+            mutation($input: UploadDocumentForReviewInput!) {
+              uploadDocumentForReview(input: $input) {
+                documentId
+              }
+            }
+            """;
+
+        var payload = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(client, mutation, new
+        {
+            input = new
+            {
+                fileName = "invoice-aws-october.pdf",
+                contentType = "application/pdf",
+                base64Content = Convert.ToBase64String("""%PDF-1.7 invoice aws"""u8.ToArray())
+            }
+        });
+
+        var errors = payload.RootElement.GetProperty("errors");
+        Assert.Equal("OCR is not available for the current plan.", errors[0].GetProperty("message").GetString());
+        Assert.Equal("Documents.OcrNotAvailableForCurrentPlan", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task UploadDocumentForReview_ReturnsQuotaExceeded_WhenMonthlyQuotaIsExhausted()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var account = Account.Create("staff.documents.quota@finflow.test", "hashed-password").Value;
+        var tenant = Tenant.Create("Finance Ops Workspace Quota", "finance-ops-quota").Value;
+        var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(tenant);
+            db.Add(membership);
+        });
+        await factory.SeedTenantSubscriptionWithUsageAsync(tenant.Id, PlanTier.Pro, ocrPagesUsed: 1_000);
+
+        using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
+
+        const string mutation = """
+            mutation($input: UploadDocumentForReviewInput!) {
+              uploadDocumentForReview(input: $input) {
+                documentId
+              }
+            }
+            """;
+
+        var payload = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(client, mutation, new
+        {
+            input = new
+            {
+                fileName = "invoice-aws-october.pdf",
+                contentType = "application/pdf",
+                base64Content = Convert.ToBase64String("""%PDF-1.7 invoice aws"""u8.ToArray())
+            }
+        });
+
+        var errors = payload.RootElement.GetProperty("errors");
+        Assert.Equal("The current plan has reached its monthly OCR quota.", errors[0].GetProperty("message").GetString());
+        Assert.Equal("Subscription.OcrQuotaExceeded", errors[0].GetProperty("extensions").GetProperty("code").GetString());
     }
 
     [Fact]

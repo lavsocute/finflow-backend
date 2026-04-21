@@ -35,7 +35,7 @@ public sealed class GroqOcrProviderTests
         var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.groq.test/") };
         var provider = new GroqOcrProvider(
             client,
-            new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             Options.Create(new GroqProviderOptions { Model = "test-model" }));
 
         var result = await provider.ExtractAsync("invoice.png", "image/png", [1, 2, 3], CancellationToken.None);
@@ -78,7 +78,7 @@ public sealed class GroqOcrProviderTests
         var client = new HttpClient(handler) { BaseAddress = new Uri("https://api.groq.test/") };
         var provider = new GroqOcrProvider(
             client,
-            new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             Options.Create(new GroqProviderOptions()));
 
         var result = await provider.ExtractAsync("invoice.png", "image/png", [1, 2, 3], CancellationToken.None);
@@ -92,7 +92,7 @@ public sealed class GroqOcrProviderTests
     {
         var provider = new GroqOcrProvider(
             new HttpClient(new ThrowingHttpMessageHandler()),
-            new StubPdfPageRenderer(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed)),
+            new StubPdfPageRenderer(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed)),
             Options.Create(new GroqProviderOptions()));
 
         var result = await provider.ExtractAsync("invoice.pdf", "application/pdf", [1, 2, 3], CancellationToken.None);
@@ -106,7 +106,7 @@ public sealed class GroqOcrProviderTests
     {
         var provider = new GroqOcrProvider(
             new HttpClient(new ThrowingHttpMessageHandler()),
-            new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             Options.Create(new GroqProviderOptions()));
 
         var result = await provider.ExtractAsync("invoice.txt", "text/plain", [1, 2, 3], CancellationToken.None);
@@ -117,11 +117,11 @@ public sealed class GroqOcrProviderTests
 
     private sealed class StubPdfPageRenderer : IPdfPageRenderer
     {
-        private readonly Result<IReadOnlyList<OcrPageImage>> _result;
+        private readonly Result<PdfRenderResult> _result;
 
-        public StubPdfPageRenderer(Result<IReadOnlyList<OcrPageImage>> result) => _result = result;
+        public StubPdfPageRenderer(Result<PdfRenderResult> result) => _result = result;
 
-        public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
+        public Task<Result<PdfRenderResult>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(_result);
     }
 
