@@ -9,13 +9,13 @@ namespace FinFlow.Infrastructure.Ocr.Pdf;
 
 public sealed class PdfPageRenderer : IPdfPageRenderer
 {
-    public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(
+    public Task<Result<PdfRenderResult>> RenderAsync(
         byte[] pdfBytes,
         int maxPages,
         CancellationToken cancellationToken)
     {
         if (pdfBytes.Length == 0 || maxPages <= 0)
-            return Task.FromResult(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed));
+            return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
 
         try
         {
@@ -25,7 +25,7 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
                 && !OperatingSystem.IsLinux()
                 && !OperatingSystem.IsMacOS())
             {
-                return Task.FromResult(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed));
+                return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
             }
 
             var pageCount = Conversion.GetPageCount(pdfBytes, null);
@@ -40,7 +40,7 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
                 using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
 
                 if (encoded is null)
-                    return Task.FromResult(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed));
+                    return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
 
                 renderedPages.Add(new OcrPageImage(
                     pageIndex + 1,
@@ -48,7 +48,7 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
                     Convert.ToBase64String(encoded.ToArray())));
             }
 
-            return Task.FromResult(Result.Success<IReadOnlyList<OcrPageImage>>(renderedPages));
+            return Task.FromResult(Result.Success(PdfRenderResult.Success(renderedPages, pageCount)));
         }
         catch (OperationCanceledException)
         {
@@ -56,7 +56,7 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
         }
         catch
         {
-            return Task.FromResult(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed));
+            return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
         }
     }
 }

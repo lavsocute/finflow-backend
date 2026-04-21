@@ -26,6 +26,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
         string uploadedByStaff,
         string confidenceLabel,
         DateTime uploadedAtUtc,
+        string? imageContentType,
+        byte[]? imageData,
         IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
     {
         Id = id;
@@ -48,6 +50,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
         UploadedAt = uploadedAtUtc;
         CreatedAt = uploadedAtUtc;
         UpdatedAt = uploadedAtUtc;
+        ImageContentType = imageContentType;
+        ImageData = imageData;
         _lineItems.AddRange(lineItems);
     }
 
@@ -73,6 +77,9 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
     public bool IsActive { get; private set; } = true;
+    public bool HasImage { get => ImageData is { Length: > 0 }; }
+    public string? ImageContentType { get; private set; }
+    public byte[]? ImageData { get; private set; }
     public IReadOnlyCollection<UploadedDocumentDraftLineItem> LineItems => _lineItems.AsReadOnly();
 
     public static Result<UploadedDocumentDraft> CreateSuggested(
@@ -94,6 +101,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
         string uploadedByStaff,
         string confidenceLabel,
         DateTime uploadedAtUtc,
+        string? imageContentType,
+        byte[]? imageData,
         IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
     {
         if (documentId == Guid.Empty)
@@ -120,6 +129,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
             return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.LineItemRequired);
         if (uploadedAtUtc.Kind != DateTimeKind.Utc)
             return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.UploadedAtRequired);
+        if (imageData is { Length: > 0 } && string.IsNullOrWhiteSpace(imageContentType))
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.ImageContentTypeRequired);
 
         return Result.Success(new UploadedDocumentDraft(
             documentId,
@@ -140,6 +151,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
             uploadedByStaff.Trim(),
             string.IsNullOrWhiteSpace(confidenceLabel) ? "High precision" : confidenceLabel.Trim(),
             uploadedAtUtc,
+            imageContentType?.Trim(),
+            imageData,
             lineItems));
     }
 

@@ -10,4 +10,5 @@ public static class DocumentOcrErrors
     public static readonly Error OcrUnsupportedFile = new("Documents.OcrUnsupportedFile", "The selected file type is not supported by the OCR service.");
     public static readonly Error OcrPdfRenderFailed = new("Documents.OcrPdfRenderFailed", "The OCR service was unable to render the PDF for extraction.");
     public static readonly Error OcrFileTooLarge = new("Documents.OcrFileTooLarge", "The file is too large for OCR processing.");
+    public static readonly Error OcrFileEmpty = new("Documents.OcrFileEmpty", "The file is empty and cannot be processed.");
 }

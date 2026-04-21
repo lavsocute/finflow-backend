@@ -5,7 +5,7 @@ namespace FinFlow.Application.Common.Abstractions;
 
 public interface IPdfPageRenderer
 {
-    Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(
+    Task<Result<PdfRenderResult>> RenderAsync(
         byte[] pdfBytes,
         int maxPages,
         CancellationToken cancellationToken);

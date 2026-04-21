@@ -74,7 +74,7 @@ public sealed class ConfigurableOcrExtractionServiceTests
             [
                 new OcrExtractionLineItem("Cloud Compute Instance", 1m, 1200.00m, 1200.00m),
                 new OcrExtractionLineItem("Tax Adjustment", 1m, 240.00m, 240.00m)
-            ]);
+            ], 1);
 
     private sealed class StubOcrProvider : IOcrProvider
     {
@@ -98,5 +98,11 @@ public sealed class ConfigurableOcrExtractionServiceTests
             WasCalled = true;
             return Task.FromResult(_result);
         }
+
+        public Task<Result<int>> GetPageCountAsync(
+            string contentType,
+            byte[] fileContents,
+            CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success(1));
     }
 }

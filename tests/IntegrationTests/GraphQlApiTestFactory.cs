@@ -6,6 +6,7 @@ using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Abstractions;
+using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Infrastructure;
@@ -108,6 +109,71 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         dbContext.ChangeTracker.Clear();
     }
 
+    public async Task SeedTenantSubscriptionAsync(Guid tenantId, PlanTier planTier)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var currentTenant = scope.ServiceProvider.GetRequiredService<ICurrentTenant>();
+
+        var result = TenantSubscription.Create(
+            tenantId,
+            planTier,
+            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow.AddMonths(1));
+
+        if (result.IsFailure)
+            throw new InvalidOperationException(result.Error.Description);
+
+        currentTenant.Id = tenantId;
+        currentTenant.MembershipId = null;
+        currentTenant.IsSuperAdmin = true;
+
+        dbContext.Add(result.Value);
+        await dbContext.SaveChangesAsync();
+
+        currentTenant.Id = null;
+        currentTenant.MembershipId = null;
+        currentTenant.IsSuperAdmin = false;
+        dbContext.ChangeTracker.Clear();
+    }
+
+    public async Task SeedTenantSubscriptionWithUsageAsync(Guid tenantId, PlanTier planTier, int ocrPagesUsed)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var currentTenant = scope.ServiceProvider.GetRequiredService<ICurrentTenant>();
+
+        var periodStart = DateTime.UtcNow.Date.AddDays(-1);
+        var periodEnd = periodStart.AddMonths(1);
+        var subscriptionResult = TenantSubscription.Create(tenantId, planTier, periodStart, periodEnd);
+        if (subscriptionResult.IsFailure)
+            throw new InvalidOperationException(subscriptionResult.Error.Description);
+
+        var usageResult = TenantUsageSnapshot.Create(
+            tenantId,
+            DateOnly.FromDateTime(periodStart),
+            DateOnly.FromDateTime(periodEnd));
+        if (usageResult.IsFailure)
+            throw new InvalidOperationException(usageResult.Error.Description);
+
+        var recordUsageResult = usageResult.Value.RecordOcrUsage(ocrPagesUsed);
+        if (recordUsageResult.IsFailure)
+            throw new InvalidOperationException(recordUsageResult.Error.Description);
+
+        currentTenant.Id = tenantId;
+        currentTenant.MembershipId = null;
+        currentTenant.IsSuperAdmin = true;
+
+        dbContext.Add(subscriptionResult.Value);
+        dbContext.Add(usageResult.Value);
+        await dbContext.SaveChangesAsync();
+
+        currentTenant.Id = null;
+        currentTenant.MembershipId = null;
+        currentTenant.IsSuperAdmin = false;
+        dbContext.ChangeTracker.Clear();
+    }
+
     public HttpClient CreateAuthenticatedClient(Guid accountId, string email, RoleType role, Guid? tenantId = null, Guid? membershipId = null)
     {
         var client = CreateClient();
@@ -179,8 +245,14 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
                     new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
                     new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
-                ])));
+                ], 1)));
         }
+
+        public Task<Result<int>> GetPageCountAsync(
+            string contentType,
+            byte[] fileContents,
+            CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success(1));
     }
 
     internal sealed class OcrPipelineProbe
@@ -220,7 +292,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                 if (rendered.IsFailure)
                     return Result.Failure<OcrExtractionResult>(rendered.Error);
 
-                var page = rendered.Value.First();
+                var page = rendered.Value.Pages.First();
                 _probe.WasPdfRendered = true;
                 observedContentType = page.ContentType;
                 observedBase64 = page.Base64Content;
@@ -260,7 +332,22 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
                     new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
                     new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
-                ]));
+                ], 1));
+        }
+
+        public async Task<Result<int>> GetPageCountAsync(
+            string contentType,
+            byte[] fileContents,
+            CancellationToken cancellationToken)
+        {
+            if (!string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+                return Result.Success(1);
+
+            var rendered = await _pdfPageRenderer.RenderAsync(fileContents, 3, cancellationToken);
+            if (rendered.IsFailure)
+                return Result.Failure<int>(rendered.Error);
+
+            return Result.Success(rendered.Value.Pages.Count);
         }
     }
 

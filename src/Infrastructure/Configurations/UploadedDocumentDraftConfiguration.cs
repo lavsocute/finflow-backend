@@ -33,6 +33,8 @@ internal sealed class UploadedDocumentDraftConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
+        builder.Property(x => x.ImageContentType).HasColumnName("image_content_type").HasMaxLength(100);
+        builder.Property(x => x.ImageData).HasColumnName("image_data").HasColumnType("bytea");
 
         builder.HasIndex(x => new { x.IdTenant, x.UploadedAt });
 

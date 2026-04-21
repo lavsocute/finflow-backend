@@ -5,7 +5,7 @@ namespace FinFlow.Infrastructure.Ocr.Groq;
 internal sealed record GroqChatCompletionRequest(
     [property: JsonPropertyName("model")] string Model,
     [property: JsonPropertyName("messages")] IReadOnlyList<GroqChatMessage> Messages,
-    [property: JsonPropertyName("temperature")] int Temperature = 0);
+    [property: JsonPropertyName("temperature")] float Temperature = 0f);
 
 internal sealed record GroqChatMessage(
     [property: JsonPropertyName("role")] string Role,

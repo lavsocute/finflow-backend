@@ -35,7 +35,7 @@ public sealed class OpenRouterOcrProviderTests
         var client = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.test/api/v1/") };
         var provider = new OpenRouterOcrProvider(
             client,
-            new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             Options.Create(new OpenRouterProviderOptions { Model = "google/gemma-4-31b-it:free" }));
 
         var result = await provider.ExtractAsync("receipt.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
@@ -63,7 +63,7 @@ public sealed class OpenRouterOcrProviderTests
         };
         var provider = new OpenRouterOcrProvider(
             client,
-            new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             Options.Create(new OpenRouterProviderOptions()));
 
         var result = await provider.ExtractAsync("receipt.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
@@ -74,11 +74,11 @@ public sealed class OpenRouterOcrProviderTests
 
     private sealed class StubPdfPageRenderer : IPdfPageRenderer
     {
-        private readonly Result<IReadOnlyList<OcrPageImage>> _result;
+        private readonly Result<PdfRenderResult> _result;
 
-        public StubPdfPageRenderer(Result<IReadOnlyList<OcrPageImage>> result) => _result = result;
+        public StubPdfPageRenderer(Result<PdfRenderResult> result) => _result = result;
 
-        public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
+        public Task<Result<PdfRenderResult>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(_result);
     }
 

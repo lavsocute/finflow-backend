@@ -1,3 +1,4 @@
+using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Entities;
 using FinFlow.Infrastructure.Ocr.Pdf;
 
@@ -29,7 +30,7 @@ public sealed class PdfPageRendererTests
         var result = await renderer.RenderAsync(pdfBytes, 1, CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
-        var page = Assert.Single(result.Value);
+        var page = Assert.Single(result.Value.Pages);
         Assert.Equal(1, page.PageNumber);
         Assert.Equal("image/png", page.ContentType);
         Assert.False(string.IsNullOrWhiteSpace(page.Base64Content));
@@ -55,10 +56,10 @@ public sealed class PdfPageRendererTests
         var result = await renderer.RenderAsync(pdfBytes, 3, CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
-        Assert.True(result.Value.Count >= 2);
-        Assert.True(result.Value.Count <= 3);
-        Assert.Equal(Enumerable.Range(1, result.Value.Count), result.Value.Select(x => x.PageNumber));
-        Assert.All(result.Value, page =>
+        Assert.True(result.Value.Pages.Count >= 2);
+        Assert.True(result.Value.Pages.Count <= 3);
+        Assert.Equal(Enumerable.Range(1, result.Value.Pages.Count), result.Value.Pages.Select(x => x.PageNumber));
+        Assert.All(result.Value.Pages, page =>
         {
             Assert.Equal("image/png", page.ContentType);
             Assert.False(string.IsNullOrWhiteSpace(page.Base64Content));

@@ -16,5 +16,6 @@ public sealed record DocumentOcrDraftResponse(
     string Source,
     string ReviewedByStaff,
     string ConfidenceLabel,
+    bool HasImage,
     IReadOnlyList<DocumentOcrDraftLineItemResponse> LineItems
 );

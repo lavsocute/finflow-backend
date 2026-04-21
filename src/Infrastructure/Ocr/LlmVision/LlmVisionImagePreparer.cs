@@ -7,7 +7,7 @@ namespace FinFlow.Infrastructure.Ocr.LlmVision;
 
 public static class LlmVisionImagePreparer
 {
-    public static async Task<Result<IReadOnlyList<OcrPageImage>>> PrepareAsync(
+    public static async Task<Result<ImagePrepareResult>> PrepareAsync(
         string contentType,
         byte[] fileContents,
         int maxImageBytes,
@@ -16,38 +16,42 @@ public static class LlmVisionImagePreparer
         IPdfPageRenderer pdfPageRenderer,
         CancellationToken cancellationToken)
     {
+        if (fileContents.Length == 0)
+            return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrFileEmpty);
+
         if (string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
         {
             var allowedPages = Math.Min(maxPagesPerDocument, maxImagesPerRequest);
             var renderResult = await pdfPageRenderer.RenderAsync(fileContents, allowedPages, cancellationToken);
             if (renderResult.IsFailure)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(renderResult.Error);
+                return Result.Failure<ImagePrepareResult>(renderResult.Error);
 
-            var renderedPages = renderResult.Value;
+            var renderedPages = renderResult.Value.Pages;
+            var wasTruncated = renderResult.Value.WasTruncated;
             if (renderedPages.Count == 0)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed);
+                return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrPdfRenderFailed);
             if (renderedPages.Count > maxImagesPerRequest)
-                return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrExtractionFailed);
+                return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrExtractionFailed);
 
             foreach (var page in renderedPages)
             {
                 if (GetDecodedByteLength(page.Base64Content) > maxImageBytes)
-                    return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrFileTooLarge);
+                    return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrFileTooLarge);
             }
 
-            return Result.Success<IReadOnlyList<OcrPageImage>>(renderedPages);
+            return Result.Success(ImagePrepareResult.Success(renderedPages, wasTruncated));
         }
 
         if (!IsSupportedImage(contentType))
-            return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrUnsupportedFile);
+            return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrUnsupportedFile);
 
         if (fileContents.Length > maxImageBytes)
-            return Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrFileTooLarge);
+            return Result.Failure<ImagePrepareResult>(DocumentOcrErrors.OcrFileTooLarge);
 
-        return Result.Success<IReadOnlyList<OcrPageImage>>(
+        return Result.Success(ImagePrepareResult.Success(
         [
             new OcrPageImage(1, contentType, Convert.ToBase64String(fileContents))
-        ]);
+        ]));
     }
 
     private static bool IsSupportedImage(string contentType) =>

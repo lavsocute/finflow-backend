@@ -17,13 +17,13 @@ public sealed class LlmVisionImagePreparerTests
             maxImageBytes: 4,
             maxPagesPerDocument: 3,
             maxImagesPerRequest: 5,
-            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
-        Assert.Single(result.Value);
-        Assert.Equal("image/png", result.Value[0].ContentType);
-        Assert.Equal("AQID", result.Value[0].Base64Content);
+        Assert.Single(result.Value.Pages);
+        Assert.Equal("image/png", result.Value.Pages[0].ContentType);
+        Assert.Equal("AQID", result.Value.Pages[0].Base64Content);
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class LlmVisionImagePreparerTests
             maxImageBytes: 4,
             maxPagesPerDocument: 3,
             maxImagesPerRequest: 5,
-            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -51,7 +51,7 @@ public sealed class LlmVisionImagePreparerTests
             maxImageBytes: 4,
             maxPagesPerDocument: 3,
             maxImagesPerRequest: 5,
-            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([])),
+            pdfPageRenderer: new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([], 0, false))),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -67,7 +67,7 @@ public sealed class LlmVisionImagePreparerTests
             maxImageBytes: 4,
             maxPagesPerDocument: 3,
             maxImagesPerRequest: 5,
-            pdfPageRenderer: new StubPdfPageRenderer(Result.Failure<IReadOnlyList<OcrPageImage>>(DocumentOcrErrors.OcrPdfRenderFailed)),
+            pdfPageRenderer: new StubPdfPageRenderer(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed)),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -78,7 +78,7 @@ public sealed class LlmVisionImagePreparerTests
     public async Task PrepareAsync_ReturnsRenderedPdfPage_WhenRendererSucceeds()
     {
         var renderedPage = new OcrPageImage(1, "image/png", "AQID");
-        var renderer = new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([renderedPage]));
+        var renderer = new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([renderedPage], 3, false)));
         var result = await LlmVisionImagePreparer.PrepareAsync(
             "application/pdf",
             [1, 2, 3],
@@ -89,7 +89,7 @@ public sealed class LlmVisionImagePreparerTests
             CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error.Description);
-        var page = Assert.Single(result.Value);
+        var page = Assert.Single(result.Value.Pages);
         Assert.Equal(renderedPage, page);
         Assert.Equal(3, renderer.LastMaxPages);
     }
@@ -98,7 +98,7 @@ public sealed class LlmVisionImagePreparerTests
     public async Task PrepareAsync_UsesSmallerOfMaxPagesAndMaxImages()
     {
         var renderedPage = new OcrPageImage(1, "image/png", "AQID");
-        var renderer = new StubPdfPageRenderer(Result.Success<IReadOnlyList<OcrPageImage>>([renderedPage]));
+        var renderer = new StubPdfPageRenderer(Result.Success<PdfRenderResult>(new PdfRenderResult([renderedPage], 3, false)));
         var result = await LlmVisionImagePreparer.PrepareAsync(
             "application/pdf",
             [1, 2, 3],
@@ -114,16 +114,16 @@ public sealed class LlmVisionImagePreparerTests
 
     private sealed class StubPdfPageRenderer : IPdfPageRenderer
     {
-        private readonly Result<IReadOnlyList<OcrPageImage>> _result;
+        private readonly Result<PdfRenderResult> _result;
 
-        public StubPdfPageRenderer(Result<IReadOnlyList<OcrPageImage>> result) => _result = result;
+        public StubPdfPageRenderer(Result<PdfRenderResult> result) => _result = result;
 
         public int? LastMaxPages { get; private set; }
 
-        public Task<Result<IReadOnlyList<OcrPageImage>>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
+        public Task<Result<PdfRenderResult>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(Track(maxPages));
 
-        private Result<IReadOnlyList<OcrPageImage>> Track(int maxPages)
+        private Result<PdfRenderResult> Track(int maxPages)
         {
             LastMaxPages = maxPages;
             return _result;
