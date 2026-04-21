@@ -1,6 +1,7 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
 using FinFlow.Api.GraphQL.Documents;
+using FinFlow.Api.GraphQL.Subscriptions;
 using FinFlow.Api.Observability;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
@@ -109,6 +110,7 @@ builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
     .AddTypeExtension<AuthQueries>()
     .AddTypeExtension<DocumentsQueries>()
+    .AddTypeExtension<SubscriptionsQueries>()
     .AddMutationType<AuthMutations>()
     .AddTypeExtension<DocumentsMutations>()
     .AddAuthorization()
