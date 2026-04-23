@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Documents.Ocr;
+using FinFlow.Application.Membership.Authorization;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
@@ -58,6 +59,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
+            services.AddScoped<IMembershipAuthorizationService, MembershipAuthorizationService>();
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
             services.AddSingleton(OcrProbe);
