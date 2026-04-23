@@ -32,7 +32,7 @@ internal sealed class InvitationRepository : IInvitationRepository
             .AsNoTracking()
             .IgnoreQueryFilters()
             .Where(i => i.TokenHash == tokenHash)
-            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.AcceptedAt, i.RevokedAt, i.IsActive))
+            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<IReadOnlyList<InvitationSummary>> GetPendingByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default)
@@ -47,7 +47,7 @@ internal sealed class InvitationRepository : IInvitationRepository
                 !i.AcceptedAt.HasValue &&
                 !i.RevokedAt.HasValue &&
                 i.ExpiresAt > now)
-            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.AcceptedAt, i.RevokedAt, i.IsActive))
+            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .OrderByDescending(i => i.ExpiresAt)
             .ToListAsync(cancellationToken);
     }
@@ -59,6 +59,19 @@ internal sealed class InvitationRepository : IInvitationRepository
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, cancellationToken);
     }
+
+    public async Task<Invitation?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Invitation>()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
+
+    public async Task<IReadOnlyList<InvitationSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Invitation>()
+            .AsNoTracking()
+            .Where(i => i.IdTenant == idTenant)
+            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
+            .OrderByDescending(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
 
     public void Add(Invitation invitation) => _dbContext.Set<Invitation>().Add(invitation);
     public void Update(Invitation invitation) => _dbContext.Set<Invitation>().Update(invitation);
