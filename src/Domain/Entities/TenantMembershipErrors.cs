@@ -11,4 +11,5 @@ public static class TenantMembershipErrors
     public static readonly Error SameRole = new("TenantMembership.SameRole", "The membership already has this role");
     public static readonly Error AlreadyDeactivated = new("TenantMembership.AlreadyDeactivated", "The membership is already deactivated");
     public static readonly Error AlreadyActive = new("TenantMembership.AlreadyActive", "The membership is already active");
+    public static readonly Error DepartmentRequired = new("TenantMembership.DepartmentRequired", "Department is required for Staff role");
 }

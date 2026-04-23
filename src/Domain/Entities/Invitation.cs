@@ -39,6 +39,7 @@ public sealed class Invitation : Entity, IMultiTenant
     public DateTime CreatedAt { get; private set; }
     public DateTime? AcceptedAt { get; private set; }
     public DateTime? RevokedAt { get; private set; }
+    public Guid? RevokedByMembershipId { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     public bool IsExpired => DateTime.UtcNow > ExpiresAt;
@@ -102,7 +103,7 @@ public sealed class Invitation : Entity, IMultiTenant
         return Result.Success(invitation);
     }
 
-    public Result Revoke()
+    public Result Revoke(Guid revokedByMembershipId)
     {
         if (AcceptedAt.HasValue)
             return Result.Failure(InvitationErrors.AlreadyAccepted);
@@ -112,6 +113,25 @@ public sealed class Invitation : Entity, IMultiTenant
 
         IsActive = false;
         RevokedAt = DateTime.UtcNow;
+        RevokedByMembershipId = revokedByMembershipId;
+        RaiseDomainEvent(new InvitationRevokedDomainEvent(Id, Email, IdTenant, revokedByMembershipId));
+        return Result.Success();
+    }
+
+    public Result Resend(DateTime newExpiresAt, string newRawToken)
+    {
+        if (!IsActive)
+            return Result.Failure(InvitationErrors.AlreadyRevoked);
+
+        if (AcceptedAt.HasValue)
+            return Result.Failure(InvitationErrors.AlreadyAccepted);
+
+        if (newExpiresAt <= DateTime.UtcNow)
+            return Result.Failure(InvitationErrors.InvalidExpiration);
+
+        ExpiresAt = newExpiresAt;
+        TokenHash = HashToken(newRawToken);
+        RaiseDomainEvent(new InvitationResentDomainEvent(Id, Email, IdTenant, InvitedByMembershipId, newExpiresAt));
         return Result.Success();
     }
 
