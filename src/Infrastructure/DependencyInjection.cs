@@ -1,4 +1,5 @@
 using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Membership.Authorization;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Departments;
@@ -67,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IPasswordResetChallengeRepository, PasswordResetChallengeRepository>();
         services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();
+        services.AddScoped<IMembershipAuthorizationService, MembershipAuthorizationService>();
         services.AddHttpClient<GroqOcrProvider>((sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<GroqProviderOptions>>().Value;
