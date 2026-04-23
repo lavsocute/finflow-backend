@@ -23,7 +23,8 @@ public sealed class AccountEmailVerificationTests
     [Fact]
     public void MarkEmailVerified_SetsVerificationState_AndTimestamp()
     {
-        var account = Account.Create("user@finflow.test", "password-hash").Value;
+        var createdAtUtc = new DateTime(2026, 4, 13, 1, 0, 0, DateTimeKind.Utc);
+        var account = Account.Create("user@finflow.test", "password-hash", createdAtUtc).Value;
         var verifiedAtUtc = new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc);
 
         var method = typeof(Account).GetMethod("MarkEmailVerified", BindingFlags.Public | BindingFlags.Instance);
@@ -40,7 +41,8 @@ public sealed class AccountEmailVerificationTests
     [Fact]
     public void MarkEmailVerified_Fails_WhenAlreadyVerified()
     {
-        var account = Account.Create("user@finflow.test", "password-hash").Value;
+        var createdAtUtc = new DateTime(2026, 4, 13, 1, 0, 0, DateTimeKind.Utc);
+        var account = Account.Create("user@finflow.test", "password-hash", createdAtUtc).Value;
         var method = typeof(Account).GetMethod("MarkEmailVerified", BindingFlags.Public | BindingFlags.Instance)!;
 
         var firstResult = (Result)method.Invoke(account, [new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc)])!;

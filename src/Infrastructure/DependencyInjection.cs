@@ -14,6 +14,7 @@ using FinFlow.Domain.TenantSubscriptions;
 using FinFlow.Domain.TenantUsageSnapshots;
 using FinFlow.Domain.Tenants;
 using FinFlow.Infrastructure.Auth.Email;
+using FinFlow.Infrastructure.Documents;
 using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Groq;
 using FinFlow.Infrastructure.Ocr.OpenRouter;
@@ -65,6 +66,7 @@ public static class DependencyInjection
         services.AddSingleton<PlanEntitlementCatalog>();
         services.AddScoped<ISubscriptionFeatureGate, SubscriptionFeatureGate>();
         services.AddScoped<IInvitationRepository, InvitationRepository>();
+        services.AddScoped<IDocumentStorageProvider, Documents.PostgresDocumentStorageProvider>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IPasswordResetChallengeRepository, PasswordResetChallengeRepository>();
         services.AddScoped<Domain.Audit.IAuditLogRepository, AuditLogRepository>();

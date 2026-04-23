@@ -70,6 +70,7 @@ public sealed record DocumentOcrDraftPayload(
     string Source,
     string ReviewedByStaff,
     string ConfidenceLabel,
+    bool HasImage,
     IReadOnlyList<DocumentOcrDraftLineItemPayload> LineItems);
 
 public sealed record ReviewedDocumentPayload(
@@ -293,6 +294,7 @@ public sealed class DocumentsMutations
             response.Source,
             response.ReviewedByStaff,
             response.ConfidenceLabel,
+            response.HasImage,
             response.LineItems
                 .Select(x => new DocumentOcrDraftLineItemPayload(x.ItemName, x.Quantity, x.UnitPrice, x.Total))
                 .ToList());

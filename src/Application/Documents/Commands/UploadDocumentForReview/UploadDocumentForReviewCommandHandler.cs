@@ -213,6 +213,7 @@ var subscription = await _tenantSubscriptionRepository.GetByTenantIdAsync(reques
             draft.Source,
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
+            draft.HasImage,
             draft.LineItems
                 .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
                 .ToList());

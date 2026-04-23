@@ -287,4 +287,45 @@ public sealed class GraphQlAccountAuthApiTests
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());
         Assert.True(json.RootElement.GetProperty("data").GetProperty("resetPasswordByOtp").GetBoolean());
     }
+
+    [Fact]
+    public async Task ResetPasswordByOtp_Mutation_RejectsWrongOtp()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+        var account = Account.Create("graphql.reset.otp.wrong@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        var challenge = PasswordResetChallenge.Create(
+            account.Id,
+            "reset-token-hash:reset-token-456",
+            "reset-otp-hash:654321",
+            DateTime.UtcNow.AddMinutes(15),
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            90,
+            5).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(account);
+            db.Add(challenge);
+        });
+
+        const string mutation = """
+            mutation($input: ResetPasswordByOtpInput!) {
+              resetPasswordByOtp(input: $input)
+            }
+            """;
+
+        using var json = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(factory.CreateClient(), mutation, new
+        {
+            input = new
+            {
+                email = account.Email,
+                otp = "000000",
+                newPassword = "N3wP@ssword!"
+            }
+        });
+
+        Assert.True(json.RootElement.TryGetProperty("errors", out var errors), json.RootElement.ToString());
+        Assert.Equal("PasswordResetChallenge.InvalidOtp", errors[0].GetProperty("extensions").GetProperty("code").GetString());
+    }
 }

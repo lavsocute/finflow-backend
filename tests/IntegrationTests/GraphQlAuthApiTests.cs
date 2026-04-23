@@ -16,6 +16,7 @@ public sealed class GraphQlAuthApiTests
         var tenant = Tenant.Create("Login Workspace", "http-login").Value;
         var department = Department.Create("Root", tenant.Id).Value;
         var account = Account.Create("login.http@finflow.test", BCrypt.Net.BCrypt.HashPassword("P@ssw0rd!")).Value;
+        account.MarkEmailVerified(DateTime.UtcNow);
 
         await factory.SeedAsync(db =>
         {

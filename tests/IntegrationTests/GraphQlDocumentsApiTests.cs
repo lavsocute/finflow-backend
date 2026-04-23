@@ -286,6 +286,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(account, tenant, membership, managerAccount, managerMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
         using var managerClient = factory.CreateAuthenticatedClient(managerAccount.Id, managerAccount.Email, RoleType.Manager, tenant.Id, managerMembership.Id);
@@ -406,6 +407,7 @@ public sealed class GraphQlDocumentsApiTests
             db.Add(tenant);
             db.Add(membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Manager, tenant.Id, membership.Id);
 
@@ -464,6 +466,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(account, tenant, membership, managerAccount, managerMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
         using var managerClient = factory.CreateAuthenticatedClient(managerAccount.Id, managerAccount.Email, RoleType.Manager, tenant.Id, managerMembership.Id);
@@ -530,6 +533,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(sourceAccount, sourceTenant, sourceMembership, otherAccount, otherTenant, otherMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(sourceTenant.Id, PlanTier.Pro);
 
         using var sourceClient = factory.CreateAuthenticatedClient(
             sourceAccount.Id,
@@ -589,6 +593,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var staffClient = factory.CreateAuthenticatedClient(
             staffAccount.Id,
@@ -650,6 +655,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, ownerAccount, ownerMembership, staffAccount, staffMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var ownerClient = factory.CreateAuthenticatedClient(
             ownerAccount.Id,
@@ -701,6 +707,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(sourceAccount, sourceTenant, sourceMembership, otherAccount, otherTenant, otherMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(sourceTenant.Id, PlanTier.Pro);
 
         using var sourceClient = factory.CreateAuthenticatedClient(
             sourceAccount.Id,
@@ -753,6 +760,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, ownerAccount, ownerMembership, otherAccount, otherMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var ownerClient = factory.CreateAuthenticatedClient(
             ownerAccount.Id,
@@ -802,6 +810,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var staffClient = factory.CreateAuthenticatedClient(
             staffAccount.Id,
@@ -843,6 +852,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(account, tenant, membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(
             account.Id,
@@ -880,6 +890,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, ownerAccount, ownerMembership, otherAccount, otherMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var ownerClient = factory.CreateAuthenticatedClient(
             ownerAccount.Id,
@@ -928,6 +939,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var staffClient = factory.CreateAuthenticatedClient(
             staffAccount.Id,
@@ -969,6 +981,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(account, tenant, membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(
             account.Id,
@@ -1053,6 +1066,8 @@ public sealed class GraphQlDocumentsApiTests
                 otherSubmitter,
                 otherSubmitterMembership);
         });
+        await factory.SeedTenantSubscriptionAsync(sourceTenant.Id, PlanTier.Pro);
+        await factory.SeedTenantSubscriptionAsync(otherTenant.Id, PlanTier.Pro);
 
         using var sourceClient = factory.CreateAuthenticatedClient(
             sourceAccount.Id,
@@ -1117,6 +1132,7 @@ public sealed class GraphQlDocumentsApiTests
         {
             db.AddRange(account, tenant, membership);
         });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
         var documentId = await UploadDraftAsync(client);
