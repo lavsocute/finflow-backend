@@ -7,51 +7,70 @@ public sealed class EmailChallengeTests
     [Fact]
     public void Create_UsableChallenge_StartsPendingAndCanResend()
     {
-        var challenge = CreateChallenge("VerifyEmail", DateTime.UtcNow.AddMinutes(10));
+        var nowUtc = new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc);
+        var challenge = CreateChallenge("VerifyEmail", nowUtc, nowUtc.AddMinutes(10));
 
-        Assert.True((bool)challenge.GetType().GetProperty("IsUsable")!.GetValue(challenge)!);
-        Assert.True((bool)challenge.GetType().GetProperty("CanResend")!.GetValue(challenge)!);
-        Assert.Equal(0, (int)challenge.GetType().GetProperty("OtpFailedAttemptCount")!.GetValue(challenge)!);
+        var isUsableMethod = challenge.GetType().GetMethod("IsUsableAt", BindingFlags.Public | BindingFlags.Instance);
+        var canResendMethod = challenge.GetType().GetMethod("CanResendAt", BindingFlags.Public | BindingFlags.Instance);
+        var otpFailedAttemptCountProp = challenge.GetType().GetProperty("OtpFailedAttemptCount", BindingFlags.Public | BindingFlags.Instance);
+
+        Assert.NotNull(isUsableMethod);
+        Assert.NotNull(canResendMethod);
+        Assert.NotNull(otpFailedAttemptCountProp);
+
+        Assert.True((bool)isUsableMethod!.Invoke(challenge, [nowUtc])!);
+        Assert.True((bool)canResendMethod!.Invoke(challenge, [nowUtc])!);
+        Assert.Equal(0, (int)otpFailedAttemptCountProp!.GetValue(challenge)!);
     }
 
     [Fact]
     public void RegisterFailedOtpAttempt_RevokesChallenge_AfterMaxAttempts()
     {
-        var challenge = CreateChallenge("ResetPassword", DateTime.UtcNow.AddMinutes(10));
+        var nowUtc = new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc);
+        var challenge = CreateChallenge("ResetPassword", nowUtc, nowUtc.AddMinutes(10));
         var method = challenge.GetType().GetMethod("RegisterFailedOtpAttempt", BindingFlags.Public | BindingFlags.Instance);
+        var isRevokedProp = challenge.GetType().GetProperty("IsRevoked", BindingFlags.Public | BindingFlags.Instance);
+        var isUsableMethod = challenge.GetType().GetMethod("IsUsableAt", BindingFlags.Public | BindingFlags.Instance);
+        var otpFailedAttemptCountProp = challenge.GetType().GetProperty("OtpFailedAttemptCount", BindingFlags.Public | BindingFlags.Instance);
 
         Assert.NotNull(method);
+        Assert.NotNull(isRevokedProp);
+        Assert.NotNull(isUsableMethod);
+        Assert.NotNull(otpFailedAttemptCountProp);
 
         Result? lastResult = null;
         for (var i = 0; i < 5; i++)
         {
-            lastResult = (Result)method!.Invoke(challenge, [new DateTime(2026, 4, 13, 2, 30, i, DateTimeKind.Utc)])!;
+            lastResult = (Result)method!.Invoke(challenge, [nowUtc.AddSeconds(i)])!;
         }
 
         Assert.NotNull(lastResult);
         Assert.True(lastResult!.IsSuccess);
-        Assert.True((bool)challenge.GetType().GetProperty("IsRevoked")!.GetValue(challenge)!);
-        Assert.False((bool)challenge.GetType().GetProperty("IsUsable")!.GetValue(challenge)!);
-        Assert.Equal(5, (int)challenge.GetType().GetProperty("OtpFailedAttemptCount")!.GetValue(challenge)!);
+        Assert.True((bool)isRevokedProp!.GetValue(challenge)!);
+        Assert.False((bool)isUsableMethod!.Invoke(challenge, [nowUtc.AddSeconds(4)])!);
+        Assert.Equal(5, (int)otpFailedAttemptCountProp!.GetValue(challenge)!);
     }
 
     [Fact]
     public void Consume_MakesChallenge_Unusable_ForSecondUse()
     {
-        var challenge = CreateChallenge("VerifyEmail", DateTime.UtcNow.AddMinutes(10));
+        var nowUtc = new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc);
+        var challenge = CreateChallenge("VerifyEmail", nowUtc, nowUtc.AddMinutes(10));
         var consumeMethod = challenge.GetType().GetMethod("Consume", BindingFlags.Public | BindingFlags.Instance);
+        var isUsableMethod = challenge.GetType().GetMethod("IsUsableAt", BindingFlags.Public | BindingFlags.Instance);
 
         Assert.NotNull(consumeMethod);
+        Assert.NotNull(isUsableMethod);
 
-        var firstResult = (Result)consumeMethod!.Invoke(challenge, [new DateTime(2026, 4, 13, 2, 30, 0, DateTimeKind.Utc)])!;
-        var secondResult = (Result)consumeMethod.Invoke(challenge, [new DateTime(2026, 4, 13, 2, 31, 0, DateTimeKind.Utc)])!;
+        var firstResult = (Result)consumeMethod!.Invoke(challenge, [nowUtc])!;
+        var secondResult = (Result)consumeMethod.Invoke(challenge, [nowUtc.AddMinutes(1)])!;
 
         Assert.True(firstResult.IsSuccess);
         Assert.True(secondResult.IsFailure);
-        Assert.False((bool)challenge.GetType().GetProperty("IsUsable")!.GetValue(challenge)!);
+        Assert.False((bool)isUsableMethod!.Invoke(challenge, [nowUtc.AddMinutes(1)])!);
     }
 
-    private static object CreateChallenge(string purposeName, DateTime expiresAtUtc)
+    private static object CreateChallenge(string purposeName, DateTime createdAtUtc, DateTime expiresAtUtc)
     {
         var challengeType = Type.GetType("FinFlow.Domain.Entities.EmailChallenge, FinFlow.Domain");
 
@@ -67,7 +86,18 @@ public sealed class EmailChallengeTests
 
         Assert.NotNull(createMethod);
 
-        var result = createMethod!.Invoke(null, [Guid.NewGuid(), purpose, expiresAtUtc]);
+        var result = createMethod!.Invoke(null, [
+            Guid.NewGuid(),
+            purpose,
+            createdAtUtc,
+            expiresAtUtc,
+            "",
+            "",
+            null,
+            null,
+            5,
+            0
+        ]);
 
         Assert.NotNull(result);
 

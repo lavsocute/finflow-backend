@@ -69,11 +69,12 @@ public sealed class DomainEntityTests
     [Fact]
     public void TenantMembership_ChangeRole_Deactivate_Activate_FollowExpectedRules()
     {
-        var membership = TenantMembership.Create(Guid.NewGuid(), Guid.NewGuid(), RoleType.Staff).Value;
+        var adminId = Guid.NewGuid();
+        var membership = TenantMembership.Create(adminId, Guid.NewGuid(), RoleType.Staff).Value;
 
         var roleResult = membership.ChangeRole(RoleType.Manager);
-        var deactivateResult = membership.Deactivate();
-        var secondDeactivate = membership.Deactivate();
+        var deactivateResult = membership.Deactivate(adminId, "Test reason");
+        var secondDeactivate = membership.Deactivate(adminId, null);
         var activateResult = membership.Activate();
 
         Assert.True(roleResult.IsSuccess);

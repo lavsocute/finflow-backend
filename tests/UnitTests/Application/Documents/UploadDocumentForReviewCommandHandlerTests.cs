@@ -31,7 +31,8 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ocrService,
             subscriptionFeatureGate,
             tenantUsageService,
-            subscriptionRepository);
+            subscriptionRepository,
+            new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -138,7 +139,8 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ocrService,
             subscriptionFeatureGate,
             tenantUsageService,
-            subscriptionRepository);
+            subscriptionRepository,
+            new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -238,7 +240,8 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ocrService,
             new AllowAllSubscriptionFeatureGate(),
             new NoOpTenantUsageService(),
-            new StubTenantSubscriptionRepository(subscriptionResult.Value));
+            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -922,6 +925,21 @@ public void Update(TenantSubscription subscription) => throw new NotSupportedExc
             DateOnly periodEnd,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class NoOpDocumentStorageProvider : IDocumentStorageProvider
+    {
+        public Task SaveImageAsync(Guid documentId, byte[] imageData, string contentType, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<byte[]?> GetImageAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<byte[]?>(null);
+
+        public Task DeleteImageAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<string?> GetContentTypeAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
     }
 
     private static TenantSubscription CreateSubscription(Guid tenantId, DateTime periodStartUtc, DateTime periodEndUtc)

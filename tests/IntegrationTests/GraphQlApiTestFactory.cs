@@ -55,6 +55,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(IOcrProvider));
             services.RemoveAll(typeof(IPasswordResetChallengeSecretService));
             services.RemoveAll(typeof(IPasswordResetSettings));
+            services.RemoveAll(typeof(IDocumentStorageProvider));
 
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
@@ -78,6 +79,8 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             {
                 services.AddSingleton<IOcrExtractionService, DeterministicOcrExtractionService>();
             }
+
+            services.AddScoped<IDocumentStorageProvider, NoOpDocumentStorageProvider>();
 
             services.AddSingleton<IPasswordResetChallengeSecretService, TestPasswordResetChallengeSecretService>();
             services.AddSingleton<IPasswordResetSettings, TestPasswordResetSettings>();
@@ -196,8 +199,14 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
     public static async Task<JsonDocument> PostGraphQlAsync(HttpClient client, string query, object? variables = null)
     {
         using var response = await client.PostAsJsonAsync("/graphql", new { query, variables });
-        response.EnsureSuccessStatusCode();
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("errors", out var errors) || !root.TryGetProperty("data", out var data) || data.ValueKind == JsonValueKind.Null)
+        {
+            throw new GraphQlAssertionException($"GraphQL mutation failed. Status: {response.StatusCode}, Body: {body}");
+        }
+        return doc;
     }
 
     public static async Task<JsonDocument> PostGraphQlAllowingErrorsAsync(HttpClient client, string query, object? variables = null)
@@ -499,5 +508,25 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
             return Task.FromResult(AuthenticateResult.Success(ticket));
         }
+    }
+
+    private sealed class NoOpDocumentStorageProvider : IDocumentStorageProvider
+    {
+        public Task SaveImageAsync(Guid documentId, byte[] imageData, string contentType, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<byte[]?> GetImageAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<byte[]?>(null);
+
+        public Task DeleteImageAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<string?> GetContentTypeAsync(Guid documentId, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+    }
+
+    private sealed class GraphQlAssertionException : Exception
+    {
+        public GraphQlAssertionException(string message) : base(message) { }
     }
 }
