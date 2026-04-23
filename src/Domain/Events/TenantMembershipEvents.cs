@@ -25,7 +25,8 @@ public sealed record TenantMembershipRoleChangedDomainEvent(
 public sealed record TenantMembershipDeactivatedDomainEvent(
     Guid MembershipId,
     Guid AccountId,
-    Guid IdTenant) : IDomainEvent
+    Guid IdTenant,
+    Guid DeactivatedBy) : IDomainEvent
 {
     public DateTime OccurredOn { get; } = DateTime.UtcNow;
 }

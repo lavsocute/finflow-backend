@@ -22,10 +22,14 @@ public sealed class TenantMembership : Entity, IMultiTenant
 
     public Guid AccountId { get; private set; }
     public Guid IdTenant { get; private set; }
+    public Guid? DepartmentId { get; private set; }
     public RoleType Role { get; private set; }
     public bool IsOwner { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public bool IsActive { get; private set; }
+    public DateTime? DeactivatedAt { get; private set; }
+    public Guid? DeactivatedBy { get; private set; }
+    public string? DeactivatedReason { get; private set; }
 
     public static Result<TenantMembership> Create(Guid accountId, Guid idTenant, RoleType role, bool isOwner = false)
     {
@@ -59,13 +63,21 @@ public sealed class TenantMembership : Entity, IMultiTenant
         return Result.Success();
     }
 
-    public Result Deactivate()
+    public void SetDepartment(Guid? departmentId)
+    {
+        DepartmentId = departmentId;
+    }
+
+    public Result Deactivate(Guid deactivatedBy, string? reason)
     {
         if (!IsActive)
             return Result.Failure(TenantMembershipErrors.AlreadyDeactivated);
 
         IsActive = false;
-        RaiseDomainEvent(new TenantMembershipDeactivatedDomainEvent(Id, AccountId, IdTenant));
+        DeactivatedAt = DateTime.UtcNow;
+        DeactivatedBy = deactivatedBy;
+        DeactivatedReason = reason;
+        RaiseDomainEvent(new TenantMembershipDeactivatedDomainEvent(Id, AccountId, IdTenant, deactivatedBy));
         return Result.Success();
     }
 
@@ -75,7 +87,15 @@ public sealed class TenantMembership : Entity, IMultiTenant
             return Result.Failure(TenantMembershipErrors.AlreadyActive);
 
         IsActive = true;
+        DeactivatedAt = null;
+        DeactivatedBy = null;
+        DeactivatedReason = null;
         RaiseDomainEvent(new TenantMembershipActivatedDomainEvent(Id, AccountId, IdTenant));
         return Result.Success();
+    }
+
+    public void SetIsOwner(bool isOwner)
+    {
+        IsOwner = isOwner;
     }
 }
