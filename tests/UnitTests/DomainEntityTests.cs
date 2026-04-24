@@ -13,6 +13,7 @@ public sealed class DomainEntityTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             RoleType.Staff,
+            null,
             "raw-invite-token",
             DateTime.UtcNow.AddDays(1)).Value;
 
@@ -30,6 +31,7 @@ public sealed class DomainEntityTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             RoleType.Staff,
+            null,
             "raw-invite-token",
             DateTime.UtcNow.AddSeconds(1)).Value;
 

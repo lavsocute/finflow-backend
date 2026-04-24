@@ -141,7 +141,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, targetTenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "handler-accept-raw-token";
-        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, rawInviteToken);
+        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, null, rawInviteToken);
 
         await scope.SaveSeedAsync();
 

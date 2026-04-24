@@ -84,6 +84,7 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
             inviterMembership.IdTenant,
             inviterMembership.Id,
             request.Role,
+            request.DepartmentId,
             rawInviteToken,
             DateTime.UtcNow.AddDays(7));
 
