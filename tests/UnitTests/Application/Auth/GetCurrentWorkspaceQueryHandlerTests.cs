@@ -29,6 +29,7 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
                     membershipId,
                     accountId,
                     tenantId,
+                    null,
                     RoleType.Accountant,
                     false,
                     true,

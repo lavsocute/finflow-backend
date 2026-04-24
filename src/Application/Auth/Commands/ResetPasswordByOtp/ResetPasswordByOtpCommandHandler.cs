@@ -16,6 +16,7 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public ResetPasswordByOtpCommandHandler(
         IPasswordResetChallengeRepository challengeRepository,
@@ -23,7 +24,8 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         IAccountRepository accountRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IPasswordHasher passwordHasher,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOtpOperationLockService otpLockService)
     {
         _challengeRepository = challengeRepository;
         _secretService = secretService;
@@ -31,6 +33,7 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         _refreshTokenRepository = refreshTokenRepository;
         _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result> Handle(ResetPasswordByOtpCommand command, CancellationToken cancellationToken)
@@ -43,6 +46,14 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
 
         var accountInfo = await _accountRepository.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
         if (accountInfo is null || !accountInfo.IsActive)
+            return Result.Failure(PasswordResetChallengeErrors.InvalidOtp);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"reset-otp:{accountInfo.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
             return Result.Failure(PasswordResetChallengeErrors.InvalidOtp);
 
         var challenge = await _challengeRepository.GetLatestByAccountIdForUpdateAsync(accountInfo.Id, cancellationToken);

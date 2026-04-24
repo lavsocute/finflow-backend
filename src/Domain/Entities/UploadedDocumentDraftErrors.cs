@@ -10,6 +10,7 @@ public static class UploadedDocumentDraftErrors
     public static readonly Error MembershipRequired = new("UploadedDocumentDraft.MembershipRequired", "Membership is required.");
     public static readonly Error DocumentIdRequired = new("UploadedDocumentDraft.DocumentIdRequired", "Document id is required.");
     public static readonly Error FileNameRequired = new("UploadedDocumentDraft.FileNameRequired", "Original file name is required.");
+    public static readonly Error InvalidFileName = new("UploadedDocumentDraft.InvalidFileName", "File name contains invalid characters.");
     public static readonly Error ContentTypeRequired = new("UploadedDocumentDraft.ContentTypeRequired", "Content type is required.");
     public static readonly Error UploadedByRequired = new("UploadedDocumentDraft.UploadedByRequired", "Uploaded by staff is required.");
     public static readonly Error VendorNameRequired = new("UploadedDocumentDraft.VendorNameRequired", "Vendor name is required.");

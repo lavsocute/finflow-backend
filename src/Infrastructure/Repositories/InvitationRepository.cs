@@ -57,7 +57,7 @@ internal sealed class InvitationRepository : IInvitationRepository
         var tokenHash = Invitation.HashToken(rawToken);
         return await _dbContext.Set<Invitation>()
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, cancellationToken);
+            .FirstOrDefaultAsync(i => i.TokenHash == tokenHash && !i.AcceptedAt.HasValue, cancellationToken);
     }
 
     public async Task<Invitation?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>

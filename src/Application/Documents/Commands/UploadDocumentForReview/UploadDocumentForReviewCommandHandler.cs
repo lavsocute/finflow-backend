@@ -88,6 +88,9 @@ public UploadDocumentForReviewCommandHandler(
         if (string.IsNullOrWhiteSpace(fileName))
             return Result.Failure<DocumentOcrDraftResponse>(UploadedDocumentDraftErrors.FileNameRequired);
 
+        if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+            return Result.Failure<DocumentOcrDraftResponse>(UploadedDocumentDraftErrors.InvalidFileName);
+
 var contentType = request.ContentType?.Trim() ?? string.Empty;
         if (!SupportedContentTypes.Contains(contentType))
             return Result.Failure<DocumentOcrDraftResponse>(UploadedDocumentDraftErrors.UnsupportedContentType);

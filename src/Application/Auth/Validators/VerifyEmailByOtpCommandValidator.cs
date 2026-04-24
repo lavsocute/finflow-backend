@@ -8,6 +8,6 @@ public sealed class VerifyEmailByOtpCommandValidator : AbstractValidator<VerifyE
     public VerifyEmailByOtpCommandValidator()
     {
         RuleFor(x => x.Request.Email).NotEmpty().EmailAddress();
-        RuleFor(x => x.Request.Otp).NotEmpty();
+        RuleFor(x => x.Request.Otp).NotEmpty().Length(6);
     }
 }

@@ -7,6 +7,6 @@ public sealed class VerifyEmailByTokenCommandValidator : AbstractValidator<Verif
 {
     public VerifyEmailByTokenCommandValidator()
     {
-        RuleFor(x => x.Request.Token).NotEmpty();
+        RuleFor(x => x.Request.Token).NotEmpty().MaximumLength(500);
     }
 }

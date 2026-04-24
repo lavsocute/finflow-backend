@@ -14,28 +14,40 @@ public sealed class ChangePasswordCommandHandler : MediatR.IRequestHandler<Chang
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public ChangePasswordCommandHandler(
         IAccountRepository accountRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
-        IPasswordHasher passwordHasher)
+        IPasswordHasher passwordHasher,
+        IOtpOperationLockService otpLockService)
     {
         _accountRepository = accountRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result> Handle(ChangePasswordCommand command, CancellationToken cancellationToken)
     {
         var request = command.Request;
-        
+
         var accountInfo = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (accountInfo == null)
             return Result.Failure(AccountErrors.NotFound);
         if (!accountInfo.IsActive)
             return Result.Failure(AccountErrors.AlreadyDeactivated);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"change-password:{accountInfo.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
+            return Result.Failure(AccountErrors.InvalidCurrentPassword);
+
         if (!_passwordHasher.VerifyPassword(request.CurrentPassword, accountInfo.PasswordHash))
             return Result.Failure(AccountErrors.InvalidCurrentPassword);
         if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)

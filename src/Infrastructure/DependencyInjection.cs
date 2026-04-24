@@ -116,6 +116,7 @@ public static class DependencyInjection
         services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConnection)));
         services.AddMemoryCache();
         services.AddSingleton<ILoginRateLimiter, Auth.RedisLoginRateLimiter>();
+        services.AddSingleton<IOtpOperationLockService, Auth.RedisOtpOperationLockService>();
         services.AddSingleton<ITokenService, Auth.JwtTokenService>();
         services.AddSingleton<Auth.JwtTokenService>(sp => (Auth.JwtTokenService)sp.GetRequiredService<ITokenService>());
         services.AddSingleton<IPasswordHasher, Auth.BcryptPasswordHasher>();

@@ -15,28 +15,39 @@ public sealed class RefreshTokenCommandHandler : MediatR.IRequestHandler<Refresh
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public RefreshTokenCommandHandler(
         IRefreshTokenRepository refreshTokenRepository,
         IAccountRepository accountRepository,
         ITenantMembershipRepository membershipRepository,
         IUnitOfWork unitOfWork,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        IOtpOperationLockService otpLockService)
     {
         _refreshTokenRepository = refreshTokenRepository;
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result<RefreshSessionResponse>> Handle(RefreshTokenCommand command, CancellationToken cancellationToken)
     {
         var request = command.Request;
-        
+
         var storedToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
         if (storedToken == null)
             return Result.Failure<RefreshSessionResponse>(RefreshTokenErrors.NotFound);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"refresh-token:{storedToken.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
+            return Result.Failure<RefreshSessionResponse>(RefreshTokenErrors.Revoked);
 
         if (!storedToken.IsActive)
         {

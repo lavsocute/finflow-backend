@@ -6,6 +6,7 @@ public record TenantMembershipSummary(
     Guid Id,
     Guid AccountId,
     Guid IdTenant,
+    Guid? DepartmentId,
     RoleType Role,
     bool IsOwner,
     bool IsActive,
