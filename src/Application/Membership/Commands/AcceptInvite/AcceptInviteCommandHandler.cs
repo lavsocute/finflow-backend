@@ -71,6 +71,9 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
             if (!existingAccount.IsActive)
                 return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
 
+            if (await _rateLimiter.IsBlockedAsync(request.ClientIp, invitation.Email, invitation.IdTenant))
+                return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
+
             if (!_passwordHasher.VerifyPassword(request.Password, existingAccount.PasswordHash))
             {
                 await _rateLimiter.RecordFailureAsync(request.ClientIp, invitation.Email, invitation.IdTenant);
@@ -111,6 +114,9 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
             return Result.Failure<AuthResponse>(membershipResult.Error);
 
         var membership = membershipResult.Value;
+
+        if (invitation.DepartmentId.HasValue)
+            membership.SetDepartment(invitation.DepartmentId);
 
         var acceptResult = invitation.MarkAccepted();
         if (acceptResult.IsFailure)

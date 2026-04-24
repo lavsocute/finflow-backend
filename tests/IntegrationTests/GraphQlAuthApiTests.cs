@@ -121,6 +121,7 @@ public sealed class GraphQlAuthApiTests
             tenant.Id,
             inviterMembership.Id,
             RoleType.Accountant,
+            null,
             rawInviteToken,
             DateTime.UtcNow.AddDays(7)).Value;
 

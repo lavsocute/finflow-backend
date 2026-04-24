@@ -116,6 +116,7 @@ internal sealed class AuthFlowTestFixture
             VerificationSubject = "Verify your email",
             PasswordResetSubject = "Reset your password"
         }));
+        services.AddSingleton<IOtpOperationLockService, NoOpOtpOperationLockService>();
         var serviceProvider = services.BuildServiceProvider();
         var mediator = serviceProvider.GetRequiredService<IMediator>();
 
@@ -179,13 +180,14 @@ internal sealed class AuthFlowTestFixture
             return membership;
         }
 
-        public Invitation SeedInvitation(string email, Guid tenantId, Guid inviterMembershipId, RoleType role, string rawToken, DateTime? expiresAt = null)
+        public Invitation SeedInvitation(string email, Guid tenantId, Guid inviterMembershipId, RoleType role, Guid? departmentId, string rawToken, DateTime? expiresAt = null)
         {
             var invitation = Invitation.Create(
                 email,
                 tenantId,
                 inviterMembershipId,
                 role,
+                departmentId,
                 rawToken,
                 expiresAt ?? DateTime.UtcNow.AddDays(7)).Value;
             DbContext.Add(invitation);
@@ -359,5 +361,18 @@ internal sealed class AuthFlowTestFixture
     {
         public FixedClock(DateTime utcNow) => UtcNow = utcNow;
         public DateTime UtcNow { get; }
+    }
+
+    internal sealed class NoOpOtpOperationLockService : IOtpOperationLockService
+    {
+        public Task<IAsyncDisposable?> AcquireLockAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IAsyncDisposable?>(new NoOpOtpLock());
+        }
+
+        private sealed class NoOpOtpLock : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 }

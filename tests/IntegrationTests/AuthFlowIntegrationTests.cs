@@ -29,7 +29,7 @@ public sealed class AuthFlowIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, targetTenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-existing-invite-token";
-        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, rawInviteToken);
+        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, null, rawInviteToken);
 
         await scope.SaveSeedAsync();
 
@@ -71,7 +71,7 @@ public sealed class AuthFlowIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, targetTenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-existing-invalid-password-token";
-        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, rawInviteToken);
+        scope.SeedInvitation(existingAccount.Email, targetTenant.Id, inviterMembership.Id, RoleType.Manager, null, rawInviteToken);
 
         await scope.SaveSeedAsync();
 
@@ -94,7 +94,7 @@ public sealed class AuthFlowIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, tenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-new-user-invite-token";
-        scope.SeedInvitation("new.user@finflow.test", tenant.Id, inviterMembership.Id, RoleType.Staff, rawInviteToken);
+        scope.SeedInvitation("new.user@finflow.test", tenant.Id, inviterMembership.Id, RoleType.Staff, null, rawInviteToken);
 
         await scope.SaveSeedAsync();
 
@@ -134,7 +134,7 @@ public sealed class AuthFlowIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, tenant.Id, RoleType.TenantAdmin);
 
         const string rawInviteToken = "raw-inactive-department-invite-token";
-        scope.SeedInvitation("inactive.department@finflow.test", tenant.Id, inviterMembership.Id, RoleType.Staff, rawInviteToken);
+        scope.SeedInvitation("inactive.department@finflow.test", tenant.Id, inviterMembership.Id, RoleType.Staff, null, rawInviteToken);
 
         await scope.SaveSeedAsync();
 

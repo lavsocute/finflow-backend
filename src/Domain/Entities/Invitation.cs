@@ -15,6 +15,7 @@ public sealed class Invitation : Entity, IMultiTenant
         Guid idTenant,
         Guid invitedByMembershipId,
         RoleType role,
+        Guid? departmentId,
         string tokenHash,
         DateTime expiresAt)
     {
@@ -23,6 +24,7 @@ public sealed class Invitation : Entity, IMultiTenant
         IdTenant = idTenant;
         InvitedByMembershipId = invitedByMembershipId;
         Role = role;
+        DepartmentId = departmentId;
         TokenHash = tokenHash;
         ExpiresAt = expiresAt;
         CreatedAt = DateTime.UtcNow;
@@ -34,6 +36,7 @@ public sealed class Invitation : Entity, IMultiTenant
     public Guid IdTenant { get; private set; }
     public Guid InvitedByMembershipId { get; private set; }
     public RoleType Role { get; private set; }
+    public Guid? DepartmentId { get; private set; }
     public string TokenHash { get; private set; } = null!;
     public DateTime ExpiresAt { get; private set; }
     public DateTime CreatedAt { get; private set; }
@@ -57,6 +60,7 @@ public sealed class Invitation : Entity, IMultiTenant
         Guid idTenant,
         Guid invitedByMembershipId,
         RoleType role,
+        Guid? departmentId,
         string rawToken,
         DateTime expiresAt)
     {
@@ -89,6 +93,7 @@ public sealed class Invitation : Entity, IMultiTenant
             idTenant,
             invitedByMembershipId,
             role,
+            departmentId,
             HashToken(rawToken),
             expiresAt);
 
