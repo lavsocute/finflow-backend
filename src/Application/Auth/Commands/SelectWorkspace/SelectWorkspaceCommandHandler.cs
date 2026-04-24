@@ -18,19 +18,22 @@ public sealed class SelectWorkspaceCommandHandler : MediatR.IRequestHandler<Sele
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public SelectWorkspaceCommandHandler(
         IAccountRepository accountRepository,
         ITenantMembershipRepository membershipRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
-        ITokenService tokenService)
+        ITokenService tokenService,
+        IOtpOperationLockService otpLockService)
     {
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result<WorkspaceSessionResponse>> Handle(SelectWorkspaceCommand command, CancellationToken cancellationToken)
@@ -40,6 +43,14 @@ public sealed class SelectWorkspaceCommandHandler : MediatR.IRequestHandler<Sele
         var account = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (account == null || !account.IsActive)
             return Result.Failure<WorkspaceSessionResponse>(AccountErrors.Unauthorized);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"select-workspace:{request.AccountId}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
+            return Result.Failure<WorkspaceSessionResponse>(AccountErrors.TooManyRequests);
 
         var membership = await _membershipRepository.GetByIdAsync(request.MembershipId, cancellationToken);
         if (membership == null || !membership.IsActive)

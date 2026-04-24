@@ -15,6 +15,7 @@ public sealed class ForgotPasswordCommandHandler : MediatR.IRequestHandler<Forgo
     private readonly IPasswordResetSettings _settings;
     private readonly IEmailSender _emailSender;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public ForgotPasswordCommandHandler(
         IAccountRepository accountRepository,
@@ -22,7 +23,8 @@ public sealed class ForgotPasswordCommandHandler : MediatR.IRequestHandler<Forgo
         IPasswordResetChallengeSecretService secretService,
         IPasswordResetSettings settings,
         IEmailSender emailSender,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOtpOperationLockService otpLockService)
     {
         _accountRepository = accountRepository;
         _challengeRepository = challengeRepository;
@@ -30,6 +32,7 @@ public sealed class ForgotPasswordCommandHandler : MediatR.IRequestHandler<Forgo
         _settings = settings;
         _emailSender = emailSender;
         _unitOfWork = unitOfWork;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result<ChallengeDispatchResponse>> Handle(ForgotPasswordCommand command, CancellationToken cancellationToken)
@@ -41,6 +44,14 @@ public sealed class ForgotPasswordCommandHandler : MediatR.IRequestHandler<Forgo
         {
             return Result.Success(neutralResponse);
         }
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"forgot-password:{account.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
+            return Result.Success(neutralResponse);
 
         var nowUtc = DateTime.UtcNow;
         var latestChallenge = await _challengeRepository.GetLatestByAccountIdForUpdateAsync(account.Id, cancellationToken);

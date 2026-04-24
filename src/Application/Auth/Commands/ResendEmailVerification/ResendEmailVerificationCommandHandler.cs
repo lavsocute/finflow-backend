@@ -23,6 +23,7 @@ public sealed class ResendEmailVerificationCommandHandler : MediatR.IRequestHand
     private readonly IEmailSender _emailSender;
     private readonly IClock _clock;
     private readonly IRegistrationChallengeSettings _challengeSettings;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public ResendEmailVerificationCommandHandler(
         IAccountRepository accountRepository,
@@ -31,7 +32,8 @@ public sealed class ResendEmailVerificationCommandHandler : MediatR.IRequestHand
         IEmailChallengeSecretService secretService,
         IEmailSender emailSender,
         IClock clock,
-        IRegistrationChallengeSettings challengeSettings)
+        IRegistrationChallengeSettings challengeSettings,
+        IOtpOperationLockService otpLockService)
     {
         _accountRepository = accountRepository;
         _emailChallengeRepository = emailChallengeRepository;
@@ -40,6 +42,7 @@ public sealed class ResendEmailVerificationCommandHandler : MediatR.IRequestHand
         _emailSender = emailSender;
         _clock = clock;
         _challengeSettings = challengeSettings;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result<ChallengeDispatchResponse>> Handle(ResendEmailVerificationCommand command, CancellationToken cancellationToken)
@@ -49,6 +52,14 @@ public sealed class ResendEmailVerificationCommandHandler : MediatR.IRequestHand
         var cooldownSeconds = Math.Max(0, _challengeSettings.VerificationCooldownSeconds);
 
         if (accountInfo is null || !accountInfo.IsActive || accountInfo.IsEmailVerified)
+            return Result.Success(new ChallengeDispatchResponse(true, cooldownSeconds));
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"resend-verify:{accountInfo.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
             return Result.Success(new ChallengeDispatchResponse(true, cooldownSeconds));
 
         var account = await _accountRepository.GetByIdForUpdateAsync(accountInfo.Id, cancellationToken);

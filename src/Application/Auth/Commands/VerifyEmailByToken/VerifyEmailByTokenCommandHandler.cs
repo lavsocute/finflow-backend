@@ -15,19 +15,22 @@ public sealed class VerifyEmailByTokenCommandHandler : MediatR.IRequestHandler<V
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailChallengeSecretService _secretService;
     private readonly IClock _clock;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public VerifyEmailByTokenCommandHandler(
         IEmailChallengeRepository emailChallengeRepository,
         IAccountRepository accountRepository,
         IUnitOfWork unitOfWork,
         IEmailChallengeSecretService secretService,
-        IClock clock)
+        IClock clock,
+        IOtpOperationLockService otpLockService)
     {
         _emailChallengeRepository = emailChallengeRepository;
         _accountRepository = accountRepository;
         _unitOfWork = unitOfWork;
         _secretService = secretService;
         _clock = clock;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result> Handle(VerifyEmailByTokenCommand command, CancellationToken cancellationToken)
@@ -35,6 +38,14 @@ public sealed class VerifyEmailByTokenCommandHandler : MediatR.IRequestHandler<V
         var tokenHash = _secretService.HashChallengeToken(command.Request.Token);
         var challenge = await _emailChallengeRepository.GetByTokenHashForUpdateAsync(tokenHash, cancellationToken);
         if (challenge is null)
+            return Result.Failure(EmailChallengeErrors.InvalidToken);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"verify-email-token:{challenge.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
             return Result.Failure(EmailChallengeErrors.InvalidToken);
 
         var nowUtc = _clock.UtcNow;

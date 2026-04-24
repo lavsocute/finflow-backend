@@ -17,6 +17,7 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
     private readonly ICurrentTenant _currentTenant;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public SwitchWorkspaceCommandHandler(
         IAccountRepository accountRepository,
@@ -24,7 +25,8 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
         IRefreshTokenRepository refreshTokenRepository,
         IUnitOfWork unitOfWork,
         ITokenService tokenService,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        IOtpOperationLockService otpLockService)
     {
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
@@ -32,6 +34,7 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
         _currentTenant = currentTenant;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result<AuthResponse>> Handle(SwitchWorkspaceCommand command, CancellationToken cancellationToken)
@@ -41,6 +44,14 @@ public sealed class SwitchWorkspaceCommandHandler : MediatR.IRequestHandler<Swit
         var account = await _accountRepository.GetLoginInfoByIdAsync(request.AccountId, cancellationToken);
         if (account == null || !account.IsActive)
             return Result.Failure<AuthResponse>(AccountErrors.AlreadyDeactivated);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"switch-workspace:{request.AccountId}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
+            return Result.Failure<AuthResponse>(AccountErrors.TooManyRequests);
 
         var membership = await _membershipRepository.GetByIdAsync(request.MembershipId, cancellationToken);
         if (membership == null || !membership.IsActive)

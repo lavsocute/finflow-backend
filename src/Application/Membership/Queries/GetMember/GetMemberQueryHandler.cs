@@ -36,9 +36,9 @@ public sealed class GetMemberQueryHandler : IQueryHandler<GetMemberQuery, Result
             return Result.Failure<MemberDto>(TenantMembershipErrors.NotFound);
 
         if (!_authorizationService.CanViewMembers(
-            request.ActorMembershipId,
+            actor,
             request.MembershipId,
-            actor.Id,
+            actor.DepartmentId,
             null))
             return Result.Failure<MemberDto>(TenantMembershipErrors.NotFound);
 

@@ -8,7 +8,7 @@ namespace FinFlow.Application.Membership.Authorization;
 
 public interface IMembershipAuthorizationService
 {
-    bool CanViewMembers(Guid actorMembershipId, Guid targetMembershipId, Guid? actorDepartmentId, Guid? targetDepartmentId);
+    bool CanViewMembers(TenantMembershipSummary actor, Guid targetMembershipId, Guid? actorDepartmentId, Guid? targetDepartmentId);
     bool CanInviteMember(Guid actorMembershipId, RoleType actorRole, Guid? actorDepartmentId, Guid targetDepartmentId);
     bool CanRemoveMember(Guid actorMembershipId, Guid targetMembershipId, RoleType actorRole);
     bool CanChangeMemberRole(Guid actorMembershipId, Guid targetMembershipId, RoleType actorRole);
@@ -28,14 +28,10 @@ public sealed class MembershipAuthorizationService : IMembershipAuthorizationSer
         _currentTenant = currentTenant;
     }
 
-    public bool CanViewMembers(Guid actorMembershipId, Guid targetMembershipId, Guid? actorDepartmentId, Guid? targetDepartmentId)
+    public bool CanViewMembers(TenantMembershipSummary actor, Guid targetMembershipId, Guid? actorDepartmentId, Guid? targetDepartmentId)
     {
-        if (actorMembershipId == targetMembershipId)
+        if (actor.Id == targetMembershipId)
             return true;
-
-        var actor = GetMembershipSummary(actorMembershipId);
-        if (actor is null)
-            return false;
 
         switch (actor.Role)
         {
@@ -100,12 +96,5 @@ public sealed class MembershipAuthorizationService : IMembershipAuthorizationSer
             return true;
 
         return false;
-    }
-
-    private TenantMembershipSummary? GetMembershipSummary(Guid membershipId)
-    {
-        var task = _membershipRepository.GetByIdAsync(membershipId);
-        task.Wait();
-        return task.Result;
     }
 }

@@ -7,7 +7,7 @@ public sealed class ResetPasswordByTokenCommandValidator : AbstractValidator<Res
 {
     public ResetPasswordByTokenCommandValidator()
     {
-        RuleFor(x => x.Request.Token).NotEmpty();
+        RuleFor(x => x.Request.Token).NotEmpty().MaximumLength(500);
         RuleFor(x => x.Request.NewPassword).NotEmpty();
     }
 }

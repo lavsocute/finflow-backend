@@ -16,6 +16,7 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IOtpOperationLockService _otpLockService;
 
     public ResetPasswordByTokenCommandHandler(
         IPasswordResetChallengeRepository challengeRepository,
@@ -23,7 +24,8 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         IAccountRepository accountRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IPasswordHasher passwordHasher,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IOtpOperationLockService otpLockService)
     {
         _challengeRepository = challengeRepository;
         _secretService = secretService;
@@ -31,6 +33,7 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         _refreshTokenRepository = refreshTokenRepository;
         _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
+        _otpLockService = otpLockService;
     }
 
     public async Task<Result> Handle(ResetPasswordByTokenCommand command, CancellationToken cancellationToken)
@@ -44,6 +47,14 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         var tokenHash = _secretService.HashToken(request.Token);
         var challenge = await _challengeRepository.GetByTokenHashForUpdateAsync(tokenHash, cancellationToken);
         if (challenge is null)
+            return Result.Failure(PasswordResetChallengeErrors.InvalidToken);
+
+        await using var lockHandle = await _otpLockService.AcquireLockAsync(
+            $"reset-token:{challenge.Id}",
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+
+        if (lockHandle == null)
             return Result.Failure(PasswordResetChallengeErrors.InvalidToken);
 
         var validationResult = challenge.EnsureCanBeConsumed(DateTime.UtcNow);

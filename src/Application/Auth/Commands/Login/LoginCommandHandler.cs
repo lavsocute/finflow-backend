@@ -19,6 +19,8 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
     private readonly IPasswordHasher _passwordHasher;
     private readonly ILoginRateLimiter _rateLimiter;
 
+    private const int MinPasswordVerificationTimeMs = 100;
+
     public LoginCommandHandler(
         IAccountRepository accountRepository,
         IRefreshTokenRepository refreshTokenRepository,
@@ -43,9 +45,22 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
             return Result.Failure<AccountSessionResponse>(AccountErrors.TooManyRequests);
 
         var account = await _accountRepository.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
-        if (account == null || !_passwordHasher.VerifyPassword(request.Password, account.PasswordHash))
+        if (account == null)
         {
             await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email);
+            await Task.Delay(MinPasswordVerificationTimeMs, cancellationToken);
+            return Result.Failure<AccountSessionResponse>(AccountErrors.InvalidCurrentPassword);
+        }
+
+        var startTime = DateTime.UtcNow;
+        var passwordValid = _passwordHasher.VerifyPassword(request.Password, account.PasswordHash);
+        var elapsed = DateTime.UtcNow - startTime;
+
+        if (!passwordValid)
+        {
+            await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email);
+            if (elapsed.TotalMilliseconds < MinPasswordVerificationTimeMs)
+                await Task.Delay(MinPasswordVerificationTimeMs - (int)elapsed.TotalMilliseconds, cancellationToken);
             return Result.Failure<AccountSessionResponse>(AccountErrors.InvalidCurrentPassword);
         }
 
