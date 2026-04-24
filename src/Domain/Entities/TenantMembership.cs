@@ -58,6 +58,9 @@ public sealed class TenantMembership : Entity, IMultiTenant
         if (Role == role)
             return Result.Failure(TenantMembershipErrors.SameRole);
 
+        if (role == RoleType.Staff && !DepartmentId.HasValue)
+            return Result.Failure(TenantMembershipErrors.DepartmentRequired);
+
         Role = role;
         RaiseDomainEvent(new TenantMembershipRoleChangedDomainEvent(Id, AccountId, IdTenant, role));
         return Result.Success();
