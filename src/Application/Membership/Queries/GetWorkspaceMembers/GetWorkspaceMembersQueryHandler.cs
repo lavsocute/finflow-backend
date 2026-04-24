@@ -33,12 +33,12 @@ public sealed class GetWorkspaceMembersQueryHandler : IQueryHandler<GetWorkspace
         var members = await _membershipRepository.GetByTenantIdAsync(request.TenantId, cancellationToken);
 
         var filteredMembers = members
-            .Where(m => request.DepartmentId is null || true)
+            .Where(m => request.DepartmentId is null || m.DepartmentId == request.DepartmentId)
             .Where(m => _authorizationService.CanViewMembers(
-                request.ActorMembershipId,
+                actor,
                 m.Id,
-                actor.Id,
-                request.DepartmentId))
+                actor.DepartmentId,
+                m.DepartmentId))
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
             .Select(m => new MemberDto(

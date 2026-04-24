@@ -35,10 +35,10 @@ public sealed class RemoveMemberCommandHandler : ICommandHandler<RemoveMemberCom
             return Result.Failure(TenantMembershipErrors.NotFound);
 
         if (!_authorizationService.CanRemoveMember(request.ActorMembershipId, request.MembershipId, actor.Role))
-            return Result.Failure(TenantMembershipErrors.NotFound);
+            return Result.Failure(TenantMembershipErrors.Forbidden);
 
         if (membership.IdTenant != _currentTenant.Id)
-            return Result.Failure(TenantMembershipErrors.NotFound);
+            return Result.Failure(TenantMembershipErrors.Forbidden);
 
         if (membership.IsOwner)
             return Result.Failure(TenantMembershipErrors.OwnerMustBeTenantAdmin);
