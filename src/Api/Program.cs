@@ -4,6 +4,7 @@ using FinFlow.Api.GraphQL.Documents;
 using FinFlow.Api.GraphQL.Membership;
 using FinFlow.Api.GraphQL.Platform;
 using FinFlow.Api.GraphQL.Subscriptions;
+using FinFlow.Api.GraphQL.Vendors;
 using FinFlow.Api.Observability;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
@@ -18,7 +19,52 @@ using System.Net;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+static string? ResolveEnvFile(string contentRootPath)
+{
+    var candidates = new[]
+    {
+        System.IO.Path.Combine(contentRootPath, ".env"),
+        System.IO.Path.Combine(contentRootPath, "..", ".env"),
+        System.IO.Path.Combine(contentRootPath, "..", "..", ".env"),
+        System.IO.Path.Combine(AppContext.BaseDirectory, ".env"),
+        System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".env")
+    };
+
+    return candidates
+        .Select(System.IO.Path.GetFullPath)
+        .FirstOrDefault(System.IO.File.Exists);
+}
+
+static void LoadDotEnv(string envFile)
+{
+    foreach (var rawLine in File.ReadAllLines(envFile))
+    {
+        var line = rawLine.Trim();
+        if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            continue;
+
+        if (line.StartsWith("export ", StringComparison.OrdinalIgnoreCase))
+            line = line["export ".Length..].Trim();
+
+        var parts = line.Split('=', 2);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]))
+            continue;
+
+        var key = parts[0].Trim();
+        var value = parts[1].Trim().Trim('"').Trim('\'');
+        Environment.SetEnvironmentVariable(key, value);
+    }
+}
+
+var envFile = ResolveEnvFile(builder.Environment.ContentRootPath);
+if (!string.IsNullOrWhiteSpace(envFile))
+{
+    LoadDotEnv(envFile);
+}
+
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddEnvironmentVariables();
 
 builder.Host.UseSerilog((context, services, configuration) =>
 {
@@ -115,7 +161,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddGraphQLServer()
+    builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
     .AddTypeExtension<AuthQueries>()
     .AddTypeExtension<DocumentsQueries>()
@@ -126,12 +172,19 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<DocumentsMutations>()
     .AddTypeExtension<MembershipMutations>()
     .AddTypeExtension<PlatformMutations>()
+    .AddTypeExtension<VendorMutations>()
     .AddAuthorization()
     .AddErrorFilter(error =>
     {
         if (isDevelopment && error.Exception != null)
         {
-            return error.WithMessage(error.Exception.Message);
+            var innermost = error.Exception;
+            while (innermost.InnerException != null)
+            {
+                innermost = innermost.InnerException;
+            }
+
+            return error.WithMessage(innermost.Message);
         }
         return error;
     });

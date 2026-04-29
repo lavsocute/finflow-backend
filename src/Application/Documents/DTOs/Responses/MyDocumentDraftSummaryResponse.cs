@@ -6,6 +6,8 @@ public sealed record MyDocumentDraftSummaryResponse(
     string VendorName,
     string Reference,
     decimal TotalAmount,
+    string Category,
+    string Source,
     string ConfidenceLabel,
     string OwnerEmail,
     DateTime UploadedAt

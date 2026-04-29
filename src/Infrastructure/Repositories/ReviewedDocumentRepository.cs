@@ -20,6 +20,14 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(x => x.Id == id && x.IdTenant == tenantId && x.IsActive, cancellationToken);
 
+    public async Task<ReviewedDocument?> GetOwnedByIdAsync(Guid id, Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.Id == id && x.IdTenant == tenantId && x.MembershipId == membershipId && x.IsActive,
+                cancellationToken);
+
     public async Task<bool> ExistsAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .IgnoreQueryFilters()

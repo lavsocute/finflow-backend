@@ -6,6 +6,8 @@ public sealed record MySubmittedDocumentSummaryResponse(
     string VendorName,
     string Reference,
     decimal TotalAmount,
+    string Category,
+    string Source,
     string Status,
     string SubmittedByEmail,
     DateTime SubmittedAt,

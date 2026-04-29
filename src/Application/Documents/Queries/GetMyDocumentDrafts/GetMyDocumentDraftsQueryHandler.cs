@@ -25,6 +25,8 @@ public sealed class GetMyDocumentDraftsQueryHandler
                 x.VendorName,
                 x.Reference,
                 x.TotalAmount,
+                x.Category,
+                x.Source,
                 x.ConfidenceLabel,
                 x.UploadedByStaff,
                 x.UploadedAt))
