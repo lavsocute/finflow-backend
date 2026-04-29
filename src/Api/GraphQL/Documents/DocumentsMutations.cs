@@ -4,6 +4,8 @@ using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Application.Documents.Commands.SubmitReviewedDocument;
 using FinFlow.Application.Documents.Commands.RejectReviewedDocument;
 using FinFlow.Application.Documents.Commands.UploadDocumentForReview;
+using FinFlow.Application.Documents.Commands.SaveManualDraft;
+using FinFlow.Application.Documents.Commands.SaveReviewedOcrDraft;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
@@ -28,9 +30,8 @@ public sealed record SubmitReviewedDocumentLineItemInput(
     decimal Total);
 
 public sealed record SubmitReviewedDocumentInput(
-    Guid DocumentId,
+    Guid? DraftId,
     string OriginalFileName,
-    string ContentType,
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
@@ -47,6 +48,49 @@ public sealed record SubmitReviewedDocumentInput(
 public sealed record ApproveReviewedDocumentInput(Guid DocumentId);
 
 public sealed record RejectReviewedDocumentInput(Guid DocumentId, string Reason);
+
+public sealed record SaveManualDraftLineItemInput(
+    string ItemName,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal Total);
+
+public sealed record SaveManualDraftInput(
+    string OriginalFileName,
+    string VendorName,
+    string Reference,
+    DateOnly DocumentDate,
+    DateOnly DueDate,
+    string Category,
+    string? VendorTaxId,
+    decimal Subtotal,
+    decimal Vat,
+    decimal TotalAmount,
+    IReadOnlyList<SaveManualDraftLineItemInput> LineItems);
+
+public sealed record SaveManualDraftPayload(Guid DraftId);
+
+public sealed record SaveReviewedOcrDraftLineItemInput(
+    string ItemName,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal Total);
+
+public sealed record SaveReviewedOcrDraftInput(
+    Guid DraftId,
+    string VendorName,
+    string Reference,
+    DateOnly DocumentDate,
+    DateOnly DueDate,
+    string Category,
+    string? VendorTaxId,
+    decimal Subtotal,
+    decimal Vat,
+    decimal TotalAmount,
+    string? ConfidenceLabel,
+    IReadOnlyList<SaveReviewedOcrDraftLineItemInput> LineItems);
+
+public sealed record SaveReviewedOcrDraftPayload(Guid DraftId);
 
 public sealed record DocumentOcrDraftLineItemPayload(
     string ItemName,
@@ -129,11 +173,10 @@ public sealed class DocumentsMutations
 
         var result = await mediator.Send(
             new SubmitReviewedDocumentCommand(
-                input.DocumentId,
+                input.DraftId,
                 tenantId,
                 membershipId,
                 input.OriginalFileName,
-                input.ContentType,
                 input.VendorName,
                 input.Reference,
                 input.DocumentDate,
@@ -162,6 +205,75 @@ public sealed class DocumentsMutations
             result.Value.TotalAmount,
             result.Value.DueDate,
             result.Value.ReviewedByStaff);
+    }
+
+    [Authorize]
+    public async Task<SaveManualDraftPayload> SaveManualDraftAsync(
+        SaveManualDraftInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var reviewedByStaff = GetRequiredClaim(context, "email", ClaimTypes.Email, "User is not authenticated or token is invalid");
+
+        var result = await mediator.Send(
+            new SaveManualDraftCommand(
+                tenantId,
+                membershipId,
+                input.OriginalFileName,
+                input.VendorName,
+                input.Reference,
+                input.DocumentDate,
+                input.DueDate,
+                input.Category,
+                input.VendorTaxId,
+                input.Subtotal,
+                input.Vat,
+                input.TotalAmount,
+                reviewedByStaff,
+                input.LineItems.Select(x => new SaveManualDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList()),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return new SaveManualDraftPayload(result.Value);
+    }
+
+    [Authorize]
+    public async Task<SaveReviewedOcrDraftPayload> SaveReviewedOcrDraftAsync(
+        SaveReviewedOcrDraftInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+
+        var result = await mediator.Send(
+            new SaveReviewedOcrDraftCommand(
+                input.DraftId,
+                tenantId,
+                membershipId,
+                input.VendorName,
+                input.Reference,
+                input.DocumentDate,
+                input.DueDate,
+                input.Category,
+                input.VendorTaxId,
+                input.Subtotal,
+                input.Vat,
+                input.TotalAmount,
+                string.IsNullOrWhiteSpace(input.ConfidenceLabel) ? "Staff corrected" : input.ConfidenceLabel,
+                input.LineItems.Select(x => new SaveReviewedOcrDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList()),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return new SaveReviewedOcrDraftPayload(result.Value);
     }
 
     [Authorize]

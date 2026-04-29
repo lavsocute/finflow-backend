@@ -2,6 +2,7 @@ using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Vendors;
 using MediatR;
 
 namespace FinFlow.Application.Documents.Commands.SubmitReviewedDocument;
@@ -11,38 +12,66 @@ public sealed class SubmitReviewedDocumentCommandHandler
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
     private readonly IUploadedDocumentDraftRepository _uploadedDocumentDraftRepository;
+    private readonly IVendorRepository _vendorRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public SubmitReviewedDocumentCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
         IUploadedDocumentDraftRepository uploadedDocumentDraftRepository,
+        IVendorRepository vendorRepository,
         IUnitOfWork unitOfWork)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
+        _vendorRepository = vendorRepository;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<ReviewedDocumentResponse>> Handle(SubmitReviewedDocumentCommand request, CancellationToken cancellationToken)
     {
-        var draft = await _uploadedDocumentDraftRepository.GetByIdAsync(
-            request.DocumentId,
-            request.TenantId,
-            request.MembershipId,
-            cancellationToken);
-        if (draft == null)
-            return Result.Failure<ReviewedDocumentResponse>(UploadedDocumentDraftErrors.NotFound);
+        UploadedDocumentDraft? draft = null;
+        Guid documentId;
+        string contentType;
+        string originalFileName;
+
+        if (request.DraftId.HasValue)
+        {
+            draft = await _uploadedDocumentDraftRepository.GetByIdAsync(
+                request.DraftId.Value,
+                request.TenantId,
+                request.MembershipId,
+                cancellationToken);
+            if (draft == null)
+                return Result.Failure<ReviewedDocumentResponse>(UploadedDocumentDraftErrors.NotFound);
+
+            documentId = draft.Id;
+            contentType = draft.ContentType;
+            originalFileName = draft.OriginalFileName;
+        }
+        else
+        {
+            documentId = Guid.NewGuid();
+            contentType = "manual-entry";
+            originalFileName = string.IsNullOrWhiteSpace(request.OriginalFileName) ? "manual-entry" : request.OriginalFileName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.VendorTaxId))
+        {
+            var vendorExists = await _vendorRepository.ExistsByTaxCodeAsync(request.VendorTaxId, request.TenantId, cancellationToken);
+            if (!vendorExists)
+                return Result.Failure<ReviewedDocumentResponse>(VendorErrors.NotFound);
+        }
 
         var lineItems = request.LineItems
             .Select(item => ReviewedDocumentLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
             .ToList();
 
         var documentResult = ReviewedDocument.CreateSubmitted(
-            request.DocumentId,
+            documentId,
             request.TenantId,
             request.MembershipId,
-            draft.OriginalFileName,
-            draft.ContentType,
+            originalFileName,
+            contentType,
             request.VendorName,
             request.Reference,
             request.DocumentDate,
@@ -52,7 +81,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
             request.Subtotal,
             request.Vat,
             request.TotalAmount,
-            draft.Source,
+            string.IsNullOrWhiteSpace(request.Source) ? "manual-submission" : request.Source,
             request.ReviewedByStaff,
             string.IsNullOrWhiteSpace(request.ConfidenceLabel) ? "Staff corrected" : request.ConfidenceLabel,
             request.SubmittedAt,
@@ -61,11 +90,15 @@ public sealed class SubmitReviewedDocumentCommandHandler
         if (documentResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(documentResult.Error);
 
-        var markSubmittedResult = draft.MarkSubmitted();
-        if (markSubmittedResult.IsFailure)
-            return Result.Failure<ReviewedDocumentResponse>(markSubmittedResult.Error);
+        if (draft != null)
+        {
+            var markSubmittedResult = draft.MarkSubmitted();
+            if (markSubmittedResult.IsFailure)
+                return Result.Failure<ReviewedDocumentResponse>(markSubmittedResult.Error);
 
-        _uploadedDocumentDraftRepository.Update(draft);
+            _uploadedDocumentDraftRepository.Update(draft);
+        }
+
         _reviewedDocumentRepository.Add(documentResult.Value);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
