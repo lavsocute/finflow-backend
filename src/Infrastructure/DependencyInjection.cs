@@ -13,6 +13,7 @@ using FinFlow.Domain.TenantMemberships;
 using FinFlow.Domain.TenantSubscriptions;
 using FinFlow.Domain.TenantUsageSnapshots;
 using FinFlow.Domain.Tenants;
+using FinFlow.Domain.Vendors;
 using FinFlow.Infrastructure.Auth.Email;
 using FinFlow.Infrastructure.Documents;
 using FinFlow.Infrastructure.Ocr;
@@ -61,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IUploadedDocumentDraftRepository, UploadedDocumentDraftRepository>();
         services.AddScoped<ITenantApprovalRequestRepository, TenantApprovalRequestRepository>();
         services.AddScoped<ITenantSubscriptionRepository, TenantSubscriptionRepository>();
+        services.AddScoped<IVendorRepository, VendorRepository>();
         services.AddScoped<ITenantUsageSnapshotRepository, TenantUsageSnapshotRepository>();
         services.AddScoped<ITenantUsageService, TenantUsageService>();
         services.AddSingleton<PlanEntitlementCatalog>();
@@ -77,10 +79,11 @@ public static class DependencyInjection
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(options.RequestTimeoutSeconds);
 
-            if (!string.IsNullOrWhiteSpace(options.ApiKey))
+            var apiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? options.ApiKey;
+            if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", options.ApiKey);
+                    new AuthenticationHeaderValue("Bearer", apiKey);
             }
         });
         services.AddHttpClient<OpenRouterOcrProvider>((sp, client) =>
@@ -89,10 +92,11 @@ public static class DependencyInjection
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(options.RequestTimeoutSeconds);
 
-            if (!string.IsNullOrWhiteSpace(options.ApiKey))
+            var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY") ?? options.ApiKey;
+            if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", options.ApiKey);
+                    new AuthenticationHeaderValue("Bearer", apiKey);
             }
 
             if (!string.IsNullOrWhiteSpace(options.Referer))
@@ -107,8 +111,8 @@ public static class DependencyInjection
         });
 
         services.AddScoped<Domain.Interfaces.ICurrentTenant, Security.CurrentTenant>();
-        services.AddScoped<IOcrProvider, GroqOcrProvider>();
-        services.AddScoped<IOcrProvider, OpenRouterOcrProvider>();
+        services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<GroqOcrProvider>());
+        services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<OpenRouterOcrProvider>());
         services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
         services.AddScoped<IOcrExtractionService, ConfigurableOcrExtractionService>();
 
