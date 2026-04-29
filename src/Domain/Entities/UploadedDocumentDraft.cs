@@ -156,6 +156,62 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
             lineItems));
     }
 
+    public static Result<UploadedDocumentDraft> CreateManual(
+        Guid idTenant,
+        Guid membershipId,
+        string originalFileName,
+        string vendorName,
+        string reference,
+        DateOnly documentDate,
+        DateOnly dueDate,
+        string category,
+        string? vendorTaxId,
+        decimal subtotal,
+        decimal vat,
+        decimal totalAmount,
+        string uploadedByStaff,
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+    {
+        if (idTenant == Guid.Empty)
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.TenantRequired);
+        if (membershipId == Guid.Empty)
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.MembershipRequired);
+        if (string.IsNullOrWhiteSpace(vendorName))
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.VendorNameRequired);
+        if (string.IsNullOrWhiteSpace(reference))
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.ReferenceRequired);
+        if (string.IsNullOrWhiteSpace(category))
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.CategoryRequired);
+        if (totalAmount <= 0)
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.TotalAmountInvalid);
+        if (lineItems.Count == 0)
+            return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.LineItemRequired);
+
+        var now = DateTime.UtcNow;
+        return Result.Success(new UploadedDocumentDraft(
+            Guid.NewGuid(),
+            idTenant,
+            membershipId,
+            string.IsNullOrWhiteSpace(originalFileName) ? "manual-entry" : originalFileName.Trim(),
+            "manual-entry",
+            vendorName.Trim(),
+            reference.Trim(),
+            documentDate,
+            dueDate,
+            category.Trim(),
+            string.IsNullOrWhiteSpace(vendorTaxId) ? null : vendorTaxId.Trim(),
+            subtotal,
+            vat,
+            totalAmount,
+            "manual-entry",
+            uploadedByStaff.Trim(),
+            "Manual entry",
+            now,
+            null,
+            null,
+            lineItems));
+    }
+
     public Result MarkSubmitted()
     {
         if (!IsActive)
@@ -163,6 +219,51 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant
 
         IsActive = false;
         UpdatedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
+    public Result UpdateReviewedData(
+        string vendorName,
+        string reference,
+        DateOnly documentDate,
+        DateOnly dueDate,
+        string category,
+        string? vendorTaxId,
+        decimal subtotal,
+        decimal vat,
+        decimal totalAmount,
+        string confidenceLabel,
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+    {
+        if (!IsActive)
+            return Result.Failure(UploadedDocumentDraftErrors.NotFound);
+
+        if (string.IsNullOrWhiteSpace(vendorName))
+            return Result.Failure(UploadedDocumentDraftErrors.VendorNameRequired);
+        if (string.IsNullOrWhiteSpace(reference))
+            return Result.Failure(UploadedDocumentDraftErrors.ReferenceRequired);
+        if (string.IsNullOrWhiteSpace(category))
+            return Result.Failure(UploadedDocumentDraftErrors.CategoryRequired);
+        if (totalAmount <= 0)
+            return Result.Failure(UploadedDocumentDraftErrors.TotalAmountInvalid);
+        if (lineItems.Count == 0)
+            return Result.Failure(UploadedDocumentDraftErrors.LineItemRequired);
+
+        VendorName = vendorName.Trim();
+        Reference = reference.Trim();
+        DocumentDate = documentDate;
+        DueDate = dueDate;
+        Category = category.Trim();
+        VendorTaxId = string.IsNullOrWhiteSpace(vendorTaxId) ? null : vendorTaxId.Trim();
+        Subtotal = subtotal;
+        Vat = vat;
+        TotalAmount = totalAmount;
+        ConfidenceLabel = string.IsNullOrWhiteSpace(confidenceLabel) ? "Staff corrected" : confidenceLabel.Trim();
+        UpdatedAt = DateTime.UtcNow;
+
+        _lineItems.Clear();
+        _lineItems.AddRange(lineItems);
+
         return Result.Success();
     }
 }

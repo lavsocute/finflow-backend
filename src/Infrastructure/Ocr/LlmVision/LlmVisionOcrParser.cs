@@ -19,9 +19,9 @@ public static class LlmVisionOcrParser
             var vendorName = GetRequiredString(root, "vendorName");
             var reference = GetRequiredString(root, "reference");
             var documentDate = GetRequiredDate(root, "documentDate");
-            var dueDate = GetRequiredDate(root, "dueDate");
-            var category = GetRequiredString(root, "category");
-            var vendorTaxId = GetOptionalString(root, "vendorTaxId");
+            var dueDate = GetOptionalDate(root, "dueDate") ?? documentDate;
+            var category = GetOptionalString(root, "category");
+            var vendorTaxId = NormalizeVendorTaxId(GetOptionalString(root, "vendorTaxId"));
             var subtotal = GetRequiredDecimal(root, "subtotal");
             var vat = GetRequiredDecimal(root, "vat");
             var totalAmount = GetRequiredDecimal(root, "totalAmount");
@@ -44,7 +44,7 @@ public static class LlmVisionOcrParser
                 reference,
                 documentDate,
                 dueDate,
-                category,
+                string.IsNullOrWhiteSpace(category) ? "Uncategorized" : category,
                 vendorTaxId,
                 subtotal,
                 vat,
@@ -112,6 +112,18 @@ public static class LlmVisionOcrParser
         return date;
     }
 
+    private static DateOnly? GetOptionalDate(JsonElement element, string propertyName)
+    {
+        var value = GetOptionalString(element, propertyName);
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (!DateOnly.TryParse(value, out var date))
+            throw new FormatException($"{propertyName} must be a valid date.");
+
+        return date;
+    }
+
     private static decimal GetRequiredDecimal(JsonElement element, string propertyName)
     {
         if (!element.TryGetProperty(propertyName, out var property))
@@ -122,5 +134,14 @@ public static class LlmVisionOcrParser
             JsonValueKind.Number when property.TryGetDecimal(out var value) => value,
             _ => throw new InvalidOperationException($"{propertyName} must be a decimal.")
         };
+    }
+
+    private static string? NormalizeVendorTaxId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim();
+        return normalized.Length <= 50 ? normalized : null;
     }
 }

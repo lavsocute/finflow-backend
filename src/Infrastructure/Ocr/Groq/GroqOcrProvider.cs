@@ -24,6 +24,7 @@ public sealed class GroqOcrProvider : IOcrProvider
     private readonly HttpClient _httpClient;
     private readonly IPdfPageRenderer _pdfPageRenderer;
     private readonly GroqProviderOptions _options;
+    private readonly Uri _chatCompletionsUri;
 
     public GroqOcrProvider(
         HttpClient httpClient,
@@ -33,6 +34,7 @@ public sealed class GroqOcrProvider : IOcrProvider
         _httpClient = httpClient;
         _pdfPageRenderer = pdfPageRenderer;
         _options = options.Value;
+        _chatCompletionsUri = BuildChatCompletionsUri(_options.BaseUrl);
 
         _retryPipeline = new ResiliencePipelineBuilder<HttpResponseMessage>()
             .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
@@ -74,7 +76,7 @@ public sealed class GroqOcrProvider : IOcrProvider
         try
         {
             using var response = await _retryPipeline.ExecuteAsync(
-                async ct => await _httpClient.PostAsJsonAsync("chat/completions", request, SerializerOptions, ct),
+                async ct => await _httpClient.PostAsJsonAsync(_chatCompletionsUri, request, SerializerOptions, ct),
                 cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -158,5 +160,14 @@ public sealed class GroqOcrProvider : IOcrProvider
             [
                 new GroqChatMessage("user", userContent)
             ]);
+    }
+
+    private static Uri BuildChatCompletionsUri(string baseUrl)
+    {
+        var normalizedBaseUrl = string.IsNullOrWhiteSpace(baseUrl)
+            ? throw new InvalidOperationException("Groq OCR base URL is not configured.")
+            : baseUrl.TrimEnd('/') + "/";
+
+        return new Uri(new Uri(normalizedBaseUrl, UriKind.Absolute), "chat/completions");
     }
 }
