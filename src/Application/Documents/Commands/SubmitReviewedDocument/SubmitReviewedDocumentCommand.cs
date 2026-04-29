@@ -12,11 +12,10 @@ public sealed record SubmitReviewedDocumentLineItem(
 );
 
 public sealed record SubmitReviewedDocumentCommand(
-    Guid DocumentId,
+    Guid? DraftId,
     Guid TenantId,
     Guid MembershipId,
     string OriginalFileName,
-    string ContentType,
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
