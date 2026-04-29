@@ -34,9 +34,6 @@ public sealed class TenantUsageService : ITenantUsageService
         var result = snapshot.RecordOcrUsage(pageCount);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
-
-        if (!isNew)
-            _tenantUsageSnapshotRepository.Update(snapshot);
     }
 
     public async Task RecordChatbotUsageAsync(
@@ -50,9 +47,6 @@ public sealed class TenantUsageService : ITenantUsageService
         var result = snapshot.RecordChatbotUsage(messageCount);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
-
-        if (!isNew)
-            _tenantUsageSnapshotRepository.Update(snapshot);
     }
 
     public async Task SetStorageUsedBytesAsync(
@@ -66,9 +60,6 @@ public sealed class TenantUsageService : ITenantUsageService
         var result = snapshot.SetStorageUsedBytes(storageUsedBytes);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
-
-        if (!isNew)
-            _tenantUsageSnapshotRepository.Update(snapshot);
     }
 
     private async Task<(TenantUsageSnapshot Snapshot, bool IsNew)> GetOrCreateSnapshotAsync(

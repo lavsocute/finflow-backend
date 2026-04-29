@@ -27,6 +27,8 @@ public sealed class GetMySubmittedDocumentsQueryHandler
                 x.VendorName,
                 x.Reference,
                 x.TotalAmount,
+                x.Category,
+                x.Source,
                 ToPersonalHistoryStatus(x),
                 x.ReviewedByStaff,
                 x.SubmittedAt,

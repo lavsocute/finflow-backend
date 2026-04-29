@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FinFlow.Application.Documents.Queries.GetMyDocumentDraft;
 using FinFlow.Application.Documents.Queries.GetMyDocumentDrafts;
+using FinFlow.Application.Documents.Queries.GetMySubmittedDocument;
 using FinFlow.Application.Documents.Queries.GetMySubmittedDocuments;
 using FinFlow.Application.Documents.Queries.GetPendingApprovalItems;
 using FinFlow.Domain.Abstractions;
@@ -28,6 +29,8 @@ public sealed record MyDocumentDraftPayload(
     string VendorName,
     string Reference,
     decimal TotalAmount,
+    string Category,
+    string Source,
     string ConfidenceLabel,
     string OwnerEmail,
     DateTime UploadedAt);
@@ -38,11 +41,40 @@ public sealed record MySubmittedDocumentPayload(
     string VendorName,
     string Reference,
     decimal TotalAmount,
+    string Category,
+    string Source,
     string Status,
     string SubmittedByEmail,
     DateTime SubmittedAt,
     DateTime LastUpdatedAt,
     string? RejectionReason);
+
+public sealed record MySubmittedDocumentLineItemPayload(
+    string ItemName,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal Total);
+
+public sealed record MySubmittedDocumentDetailPayload(
+    Guid DocumentId,
+    string OriginalFileName,
+    string ContentType,
+    string VendorName,
+    string Reference,
+    DateOnly DocumentDate,
+    DateOnly DueDate,
+    string Category,
+    string VendorTaxId,
+    decimal Subtotal,
+    decimal Vat,
+    decimal TotalAmount,
+    string Source,
+    string Status,
+    string SubmittedByEmail,
+    DateTime SubmittedAt,
+    DateTime LastUpdatedAt,
+    string? RejectionReason,
+    IReadOnlyList<MySubmittedDocumentLineItemPayload> LineItems);
 
 [ExtendObjectType(typeof(global::Query))]
 public sealed class DocumentsQueries
@@ -92,6 +124,8 @@ public sealed class DocumentsQueries
                 x.VendorName,
                 x.Reference,
                 x.TotalAmount,
+                x.Category,
+                x.Source,
                 x.ConfidenceLabel,
                 x.OwnerEmail,
                 x.UploadedAt))
@@ -136,12 +170,59 @@ public sealed class DocumentsQueries
                 x.VendorName,
                 x.Reference,
                 x.TotalAmount,
+                x.Category,
+                x.Source,
                 x.Status,
                 x.SubmittedByEmail,
                 x.SubmittedAt,
                 x.LastUpdatedAt,
                 x.RejectionReason))
             .ToList();
+    }
+
+    [Authorize]
+    public async Task<MySubmittedDocumentDetailPayload> MySubmittedDocumentAsync(
+        Guid documentId,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+
+        var result = await mediator.Send(
+            new GetMySubmittedDocumentQuery(scope.TenantId, scope.MembershipId, documentId),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        var doc = result.Value;
+        return new MySubmittedDocumentDetailPayload(
+            doc.DocumentId,
+            doc.OriginalFileName,
+            doc.ContentType,
+            doc.VendorName,
+            doc.Reference,
+            doc.DocumentDate,
+            doc.DueDate,
+            doc.Category,
+            doc.VendorTaxId,
+            doc.Subtotal,
+            doc.Vat,
+            doc.TotalAmount,
+            doc.Source,
+            doc.Status,
+            doc.SubmittedByEmail,
+            doc.SubmittedAt,
+            doc.LastUpdatedAt,
+            doc.RejectionReason,
+            doc.LineItems
+                .Select(item => new MySubmittedDocumentLineItemPayload(
+                    item.ItemName,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.Total))
+                .ToList());
     }
 
     private static Guid EnsureAuthorizedTenant(IResolverContext context)
