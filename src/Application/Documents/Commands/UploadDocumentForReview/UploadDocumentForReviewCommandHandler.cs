@@ -328,15 +328,6 @@ public void Update(TenantSubscription subscription)
                 return Result.Failure(UploadedDocumentDraftErrors.LineItemTotalInvalid);
         }
 
-        var roundedTotalAmount = decimal.Round(extracted.TotalAmount, 2, MidpointRounding.AwayFromZero);
-        var roundedLineItemTotal = decimal.Round(extracted.LineItems.Sum(item => item.Total), 2, MidpointRounding.AwayFromZero);
-        if (roundedLineItemTotal != roundedTotalAmount)
-            return Result.Failure(UploadedDocumentDraftErrors.LineItemTotalsMismatch);
-
-        var roundedBreakdownTotal = decimal.Round(extracted.Subtotal + extracted.Vat, 2, MidpointRounding.AwayFromZero);
-        if (roundedBreakdownTotal != roundedTotalAmount)
-            return Result.Failure(UploadedDocumentDraftErrors.FinancialBreakdownMismatch);
-
         return Result.Success();
     }
 }

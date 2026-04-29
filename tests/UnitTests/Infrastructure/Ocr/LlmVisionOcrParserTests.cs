@@ -65,4 +65,22 @@ public sealed class LlmVisionOcrParserTests
         Assert.True(result.IsFailure);
         Assert.Equal(DocumentOcrErrors.OcrInvalidJson, result.Error);
     }
+
+    [Fact]
+    public void Parse_UsesFallbacks_WhenDueDateAndCategoryAreNull()
+    {
+        const string json =
+            """
+            {"vendorName":"BIG C DI AN","reference":"P Dong Hoa, TX Di An, Tinh Binh Duong","documentDate":"2018-10-02","dueDate":null,"category":null,"vendorTaxId":"3702058398","subtotal":17000,"vat":0,"totalAmount":0,"lineItems":[{"itemName":"SCU TT NUTI DAU 11","quantity":2,"unitPrice":17000,"total":17000},{"itemName":"SCU TT NUTI DAU 110M","quantity":1,"unitPrice":-17000,"total":-17000}]}
+            """;
+
+        var result = LlmVisionOcrParser.Parse(json, "openrouter");
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(new DateOnly(2018, 10, 02), result.Value.DocumentDate);
+        Assert.Equal(new DateOnly(2018, 10, 02), result.Value.DueDate);
+        Assert.Equal("Uncategorized", result.Value.Category);
+        Assert.Equal(0m, result.Value.TotalAmount);
+        Assert.Equal(2, result.Value.LineItems.Count);
+    }
 }

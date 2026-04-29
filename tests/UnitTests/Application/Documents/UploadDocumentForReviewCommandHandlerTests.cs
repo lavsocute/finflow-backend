@@ -508,8 +508,10 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ReturnsFailure_WhenOcrSuccessPayloadHasLineItemTotalsMismatch()
+    public async Task Handle_CreatesDraft_WhenOcrSuccessPayloadHasRoundedLineItemTotalsMismatch()
     {
+        var tenantId = Guid.NewGuid();
+        var subscriptionResult = TenantSubscription.Create(tenantId, PlanTier.Pro, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddMonths(1));
         var ocrService = new StubOcrExtractionService(
             Result.Success(CreateValidOcrResult([
                 new OcrExtractionLineItem("Cloud Compute Instance", 1m, 850.00m, 840.00m),
@@ -517,12 +519,19 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionFeatureGate(),
+            new NoOpTenantUsageService(),
+            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
                 Guid.NewGuid(),
-                Guid.NewGuid(),
+                tenantId,
                 Guid.NewGuid(),
                 "reviewer@finflow.test",
                 "invoice.pdf",
@@ -530,15 +539,54 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 [1, 2, 3]),
             CancellationToken.None);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(UploadedDocumentDraftErrors.LineItemTotalsMismatch, result.Error);
-        Assert.Empty(repository.AddedDrafts);
-        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Single(repository.AddedDrafts);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
     }
 
     [Fact]
-    public async Task Handle_ReturnsFailure_WhenOcrSuccessPayloadHasSubtotalVatMismatch()
+    public async Task Handle_CreatesDraft_WhenOcrSuccessPayloadHasLineItemTotalsMismatch()
     {
+        var tenantId = Guid.NewGuid();
+        var subscriptionResult = TenantSubscription.Create(tenantId, PlanTier.Pro, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddMonths(1));
+        var ocrService = new StubOcrExtractionService(
+            Result.Success(CreateValidOcrResult([
+                new OcrExtractionLineItem("Rounded OCR Item", 3m, 33.33m, 100.00m)
+            ], subtotal: 100.00m, vat: 0m, totalAmount: 100.00m)));
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionFeatureGate(),
+            new NoOpTenantUsageService(),
+            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new NoOpDocumentStorageProvider());
+
+        var result = await handler.Handle(
+            new UploadDocumentForReviewCommand(
+                Guid.NewGuid(),
+                tenantId,
+                Guid.NewGuid(),
+                "reviewer@finflow.test",
+                "invoice.jpg",
+                "image/jpeg",
+                [1, 2, 3]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Single(repository.AddedDrafts);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
+        Assert.Equal(100.00m, result.Value.TotalAmount);
+        Assert.Equal(100.00m, result.Value.LineItems.Single().Total);
+    }
+
+    [Fact]
+    public async Task Handle_CreatesDraft_WhenOcrSuccessPayloadHasSubtotalVatMismatch()
+    {
+        var tenantId = Guid.NewGuid();
+        var subscriptionResult = TenantSubscription.Create(tenantId, PlanTier.Pro, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddMonths(1));
         var ocrService = new StubOcrExtractionService(
             Result.Success(CreateValidOcrResult([
                 new OcrExtractionLineItem("Cloud Compute Instance", 1m, 850.00m, 850.00m),
@@ -546,12 +594,19 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ], subtotal: 1000.00m, vat: 240.00m, totalAmount: 1440.00m)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionFeatureGate(),
+            new NoOpTenantUsageService(),
+            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
                 Guid.NewGuid(),
-                Guid.NewGuid(),
+                tenantId,
                 Guid.NewGuid(),
                 "reviewer@finflow.test",
                 "invoice.pdf",
@@ -559,10 +614,9 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 [1, 2, 3]),
             CancellationToken.None);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(UploadedDocumentDraftErrors.FinancialBreakdownMismatch, result.Error);
-        Assert.Empty(repository.AddedDrafts);
-        Assert.Equal(0, unitOfWork.SaveChangesCallCount);
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Single(repository.AddedDrafts);
+        Assert.Equal(1, unitOfWork.SaveChangesCallCount);
     }
 
     [Fact]

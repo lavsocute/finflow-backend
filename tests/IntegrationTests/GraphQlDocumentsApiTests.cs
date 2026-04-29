@@ -317,6 +317,8 @@ public sealed class GraphQlDocumentsApiTests
 
         Assert.False(string.IsNullOrWhiteSpace(documentId));
 
+        await CreateVendorAsync(client);
+
         const string submitMutation = """
             mutation($input: SubmitReviewedDocumentInput!) {
               submitReviewedDocument(input: $input) {
@@ -336,15 +338,14 @@ public sealed class GraphQlDocumentsApiTests
         {
             input = new
             {
-                documentId,
+                draftId = documentId,
                 originalFileName = "invoice-aws-october.pdf",
-                contentType = "application/pdf",
-                vendorName = "Amazon Web Services, Inc.",
+                vendorName = TestVendorName,
                 reference = "INV-2026-0101",
                 documentDate = "2026-04-18",
                 dueDate = "2026-05-02",
                 category = "Software & SaaS",
-                vendorTaxId = "TX-990-2134",
+                vendorTaxId = TestVendorTaxCode,
                 subtotal = 1200.00m,
                 vat = 250.00m,
                 totalAmount = 1450.00m,
@@ -1001,6 +1002,142 @@ public sealed class GraphQlDocumentsApiTests
     }
 
     [Fact]
+    public async Task MySubmittedDocument_Query_Returns_Detail_For_CurrentMembership_Submitted_Document()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var account = Account.Create("detail.staff@finflow.test", "hashed-password").Value;
+        var tenant = Tenant.Create("Detail Workspace", "detail-workspace").Value;
+        var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.AddRange(account, tenant, membership);
+        });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
+
+        using var client = factory.CreateAuthenticatedClient(
+            account.Id,
+            account.Email,
+            RoleType.Staff,
+            tenant.Id,
+            membership.Id);
+
+        var submittedId = await SubmitReviewedDocumentAsync(client);
+
+        const string query = """
+            query($documentId: UUID!) {
+              mySubmittedDocument(documentId: $documentId) {
+                documentId
+                originalFileName
+                contentType
+                vendorName
+                reference
+                documentDate
+                dueDate
+                category
+                vendorTaxId
+                subtotal
+                vat
+                totalAmount
+                source
+                status
+                submittedByEmail
+                submittedAt
+                lastUpdatedAt
+                rejectionReason
+                lineItems {
+                  itemName
+                  quantity
+                  unitPrice
+                  total
+                }
+              }
+            }
+            """;
+
+        var payload = await GraphQlApiTestFactory.PostGraphQlAsync(client, query, new
+        {
+            documentId = submittedId
+        });
+
+        var doc = payload.RootElement.GetProperty("data").GetProperty("mySubmittedDocument");
+
+        Assert.Equal(submittedId, doc.GetProperty("documentId").GetString());
+        Assert.Equal("invoice-aws-october.pdf", doc.GetProperty("originalFileName").GetString());
+        Assert.Equal("application/pdf", doc.GetProperty("contentType").GetString());
+        Assert.Equal("Amazon Web Services, Inc.", doc.GetProperty("vendorName").GetString());
+        Assert.Equal("INV-2026-0101", doc.GetProperty("reference").GetString());
+        Assert.Equal("2026-04-18", doc.GetProperty("documentDate").GetString());
+        Assert.Equal("2026-05-02", doc.GetProperty("dueDate").GetString());
+        Assert.Equal("Software & SaaS", doc.GetProperty("category").GetString());
+        Assert.Equal(TestVendorTaxCode, doc.GetProperty("vendorTaxId").GetString());
+        Assert.Equal(1200.00m, doc.GetProperty("subtotal").GetDecimal());
+        Assert.Equal(250.00m, doc.GetProperty("vat").GetDecimal());
+        Assert.Equal(1450.00m, doc.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal("staff-upload", doc.GetProperty("source").GetString());
+        Assert.Equal("Submitted", doc.GetProperty("status").GetString());
+        Assert.Equal("detail.staff@finflow.test", doc.GetProperty("submittedByEmail").GetString());
+        Assert.Null(doc.GetProperty("rejectionReason").GetString());
+
+        var lineItems = doc.GetProperty("lineItems");
+        Assert.Equal(3, lineItems.GetArrayLength());
+        Assert.Equal("Cloud Compute Instance - t3.large", lineItems[0].GetProperty("itemName").GetString());
+        Assert.Equal(1m, lineItems[0].GetProperty("quantity").GetDecimal());
+        Assert.Equal(850.00m, lineItems[0].GetProperty("unitPrice").GetDecimal());
+        Assert.Equal(850.00m, lineItems[0].GetProperty("total").GetDecimal());
+    }
+
+    [Fact]
+    public async Task MySubmittedDocument_Query_Denies_SameTenantDifferentMembership_Access()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var ownerAccount = Account.Create("owner.detail@finflow.test", "hashed-password").Value;
+        var tenant = Tenant.Create("Detail Deny Workspace", "detail-deny-workspace").Value;
+        var ownerMembership = TenantMembership.Create(ownerAccount.Id, tenant.Id, RoleType.Staff).Value;
+        var otherAccount = Account.Create("other.detail@finflow.test", "hashed-password").Value;
+        var otherMembership = TenantMembership.Create(otherAccount.Id, tenant.Id, RoleType.Staff).Value;
+
+        await factory.SeedAsync(db =>
+        {
+            db.AddRange(ownerAccount, otherAccount, tenant, ownerMembership, otherMembership);
+        });
+        await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
+
+        using var ownerClient = factory.CreateAuthenticatedClient(
+            ownerAccount.Id,
+            ownerAccount.Email,
+            RoleType.Staff,
+            tenant.Id,
+            ownerMembership.Id);
+        using var otherClient = factory.CreateAuthenticatedClient(
+            otherAccount.Id,
+            otherAccount.Email,
+            RoleType.Staff,
+            tenant.Id,
+            otherMembership.Id);
+
+        var submittedId = await SubmitReviewedDocumentAsync(ownerClient);
+
+        const string query = """
+            query($documentId: UUID!) {
+              mySubmittedDocument(documentId: $documentId) {
+                documentId
+              }
+            }
+            """;
+
+        var payload = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(otherClient, query, new
+        {
+            documentId = submittedId
+        });
+
+        var errors = payload.RootElement.GetProperty("errors");
+        Assert.Equal("Reviewed document not found.", errors[0].GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task PendingApprovalItems_Query_Denies_StaffRole_Access()
     {
         await using var factory = new GraphQlApiTestFactory();
@@ -1136,6 +1273,7 @@ public sealed class GraphQlDocumentsApiTests
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
         var documentId = await UploadDraftAsync(client);
+        await CreateVendorAsync(client);
 
         const string submitMutation = """
             mutation($input: SubmitReviewedDocumentInput!) {
@@ -1150,15 +1288,14 @@ public sealed class GraphQlDocumentsApiTests
         {
             input = new
             {
-                documentId,
+                draftId = documentId,
                 originalFileName = "invoice-aws-october.pdf",
-                contentType = "application/pdf",
-                vendorName = "Amazon Web Services, Inc.",
+                vendorName = TestVendorName,
                 reference = "INV-2026-0101",
                 documentDate = "2026-04-18",
                 dueDate = "2026-05-02",
                 category = "Software & SaaS",
-                vendorTaxId = "TX-990-2134",
+                vendorTaxId = TestVendorTaxCode,
                 subtotal = 1200.00m,
                 vat = 250.00m,
                 totalAmount = 1450.00m,
@@ -1177,17 +1314,19 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal("Line item quantity must be greater than zero.", errors[0].GetProperty("message").GetString());
     }
 
-    private static object BuildSubmitInput(string? documentId) => new
+    private const string TestVendorTaxCode = "9902134567";
+    private const string TestVendorName = "Amazon Web Services, Inc.";
+
+    private static object BuildSubmitInput(string? draftId) => new
     {
-        documentId,
+        draftId,
         originalFileName = "invoice-aws-october.pdf",
-        contentType = "application/pdf",
-        vendorName = "Amazon Web Services, Inc.",
+        vendorName = TestVendorName,
         reference = "INV-2026-0101",
         documentDate = "2026-04-18",
         dueDate = "2026-05-02",
         category = "Software & SaaS",
-        vendorTaxId = "TX-990-2134",
+        vendorTaxId = TestVendorTaxCode,
         subtotal = 1200.00m,
         vat = 250.00m,
         totalAmount = 1450.00m,
@@ -1233,6 +1372,8 @@ public sealed class GraphQlDocumentsApiTests
 
     private static async Task<string> SubmitReviewedDocumentAsync(HttpClient client)
     {
+        await CreateVendorAsync(client);
+
         var documentId = await UploadDraftAsync(client);
 
         const string submitMutation = """
@@ -1251,6 +1392,36 @@ public sealed class GraphQlDocumentsApiTests
 
         Assert.Equal("ReadyForApproval", submitPayload.RootElement.GetProperty("data").GetProperty("submitReviewedDocument").GetProperty("status").GetString());
         return documentId!;
+    }
+
+    private static async Task CreateVendorAsync(HttpClient client)
+    {
+        const string createVendorMutation = """
+            mutation($input: CreateVendorInput!) {
+              createVendor(input: $input) {
+                vendorId
+                taxCode
+                name
+              }
+            }
+            """;
+
+        var result = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(client, createVendorMutation, new
+        {
+            input = new
+            {
+                taxCode = TestVendorTaxCode,
+                name = TestVendorName
+            }
+        });
+
+        if (result.RootElement.TryGetProperty("errors", out var errors))
+        {
+            var errorCode = errors[0].GetProperty("extensions").GetProperty("code").GetString();
+            if (errorCode == "Vendor.TaxCodeExists")
+                return;
+            throw new Exception($"Unexpected error creating vendor: {errors[0].GetProperty("message").GetString()}");
+        }
     }
 
     private static async Task<JsonElement[]> QueryDocumentsAsync(HttpClient client, string fieldName)
