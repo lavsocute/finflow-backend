@@ -9,6 +9,9 @@ public interface IDepartmentRepository
     Task<DepartmentSummary?> GetDefaultByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<DepartmentSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
 
+    // Read Methods (Entity)
+    Task<FinFlow.Domain.Entities.Department?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
     // Write Methods (Entity)
     void Add(FinFlow.Domain.Entities.Department department);
     void Update(FinFlow.Domain.Entities.Department department);
