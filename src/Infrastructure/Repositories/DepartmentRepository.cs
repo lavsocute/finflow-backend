@@ -34,6 +34,10 @@ internal sealed class DepartmentRepository : IDepartmentRepository
             .Select(d => new DepartmentSummary(d.Id, d.Name, d.IdTenant, d.ParentId, d.IsActive))
             .ToListAsync(cancellationToken);
 
+    public async Task<Department?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Department>()
+            .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+
     public void Add(Department department) => _dbContext.Set<Department>().Add(department);
     public void Update(Department department) => _dbContext.Set<Department>().Update(department);
     public void Remove(Department department) => _dbContext.Set<Department>().Remove(department);
