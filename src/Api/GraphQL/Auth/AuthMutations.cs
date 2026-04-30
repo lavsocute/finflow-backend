@@ -54,7 +54,7 @@ public record CreateIsolatedTenantInput(string Name, string TenantCode, string C
 public record RefreshTokenInput(string RefreshToken);
 public record SelectWorkspaceInput(Guid MembershipId);
 public record SwitchWorkspaceInput(Guid MembershipId, string CurrentRefreshToken);
-public record InviteMemberInput(string Email, RoleType Role);
+public record InviteMemberInput(string Email, RoleType Role, Guid DepartmentId);
 public record AcceptInviteInput(string InviteToken, string Password);
 public record ChangePasswordInput(string CurrentPassword, string NewPassword);
 public record ResetPasswordByOtpInput(string Email, string Otp, string NewPassword);
@@ -435,7 +435,7 @@ public class AuthMutations
             throw new GraphQLException(new HotChocolate.Error("User is not authenticated or token is invalid", "Account.Unauthorized"));
 
         var result = await mediator.Send(
-            new InviteMemberCommand(new InviteMemberRequest(accountId, membershipId, input.Email, input.Role)),
+            new InviteMemberCommand(new InviteMemberRequest(accountId, membershipId, input.Email, input.Role, input.DepartmentId)),
             cancellationToken);
 
         if (result.IsFailure)

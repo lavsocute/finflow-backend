@@ -26,7 +26,7 @@ public sealed class MembershipCommandValidatorTests
     public void InviteMemberCommandValidator_ReturnsErrors_ForInvalidEmailAndMissingIds()
     {
         var validator = new InviteMemberCommandValidator();
-        var command = new InviteMemberCommand(new InviteMemberRequest(Guid.Empty, Guid.Empty, "invalid", RoleType.Staff));
+        var command = new InviteMemberCommand(new InviteMemberRequest(Guid.Empty, Guid.Empty, "invalid", RoleType.Staff, Guid.Empty));
 
         var result = validator.Validate(command);
 

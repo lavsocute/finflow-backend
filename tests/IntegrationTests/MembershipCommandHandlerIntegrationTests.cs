@@ -109,7 +109,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var handler = scope.CreateInviteMemberHandler();
 
         var result = await handler.Handle(
-            new InviteMemberCommand(new InviteMemberRequest(inviterAccount.Id, inviterMembership.Id, "invited.user@finflow.test", RoleType.Staff)),
+            new InviteMemberCommand(new InviteMemberRequest(inviterAccount.Id, inviterMembership.Id, "invited.user@finflow.test", RoleType.Staff, department.Id)),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);

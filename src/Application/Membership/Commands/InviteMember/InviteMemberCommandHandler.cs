@@ -3,6 +3,7 @@ using FinFlow.Application.Membership.DTOs.Requests;
 using FinFlow.Application.Membership.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
+using FinFlow.Domain.Departments;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.Invitations;
@@ -16,6 +17,7 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
     private readonly IAccountRepository _accountRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly ITenantRepository _tenantRepository;
+    private readonly IDepartmentRepository _departmentRepository;
     private readonly IInvitationRepository _invitationRepository;
     private readonly ITokenService _tokenService;
     private readonly IUnitOfWork _unitOfWork;
@@ -25,6 +27,7 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
         IAccountRepository accountRepository,
         ITenantMembershipRepository membershipRepository,
         ITenantRepository tenantRepository,
+        IDepartmentRepository departmentRepository,
         IInvitationRepository invitationRepository,
         ITokenService tokenService,
         IUnitOfWork unitOfWork,
@@ -33,6 +36,7 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
         _accountRepository = accountRepository;
         _membershipRepository = membershipRepository;
         _tenantRepository = tenantRepository;
+        _departmentRepository = departmentRepository;
         _invitationRepository = invitationRepository;
         _tokenService = tokenService;
         _unitOfWork = unitOfWork;
@@ -63,6 +67,14 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
         var tenant = await _tenantRepository.GetByIdAsync(inviterMembership.IdTenant, cancellationToken);
         if (tenant == null || !tenant.IsActive)
             return Result.Failure<InvitationResponse>(TenantErrors.NotFound);
+
+        var department = await _departmentRepository.GetByIdAsync(request.DepartmentId, cancellationToken);
+        if (department == null)
+            return Result.Failure<InvitationResponse>(DepartmentErrors.NotFound);
+        if (department.IdTenant != inviterMembership.IdTenant)
+            return Result.Failure<InvitationResponse>(DepartmentErrors.NotFound);
+        if (!department.IsActive)
+            return Result.Failure<InvitationResponse>(DepartmentErrors.Inactive);
 
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 

@@ -7,4 +7,4 @@ public record InviteMemberRequest(
     Guid InviterMembershipId,
     string Email,
     RoleType Role,
-    Guid? DepartmentId = null);
+    Guid DepartmentId);
