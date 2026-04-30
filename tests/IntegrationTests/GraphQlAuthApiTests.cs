@@ -95,7 +95,7 @@ public sealed class GraphQlAuthApiTests
 
         using var json = await GraphQlApiTestFactory.PostGraphQlAsync(client, mutation, new
         {
-            input = new { email = "new.member@finflow.test", role = "ACCOUNTANT" }
+            input = new { email = "new.member@finflow.test", role = "ACCOUNTANT", departmentId = department.Id }
         });
 
         Assert.False(json.RootElement.TryGetProperty("errors", out _), json.RootElement.ToString());

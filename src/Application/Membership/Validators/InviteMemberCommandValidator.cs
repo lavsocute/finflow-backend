@@ -11,5 +11,6 @@ public sealed class InviteMemberCommandValidator : AbstractValidator<InviteMembe
         RuleFor(x => x.Request.InviterAccountId).NotEmpty();
         RuleFor(x => x.Request.InviterMembershipId).NotEmpty();
         RuleFor(x => x.Request.Email).NotEmpty().EmailAddress();
+        RuleFor(x => x.Request.DepartmentId).NotEmpty();
     }
 }

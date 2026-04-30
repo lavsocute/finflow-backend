@@ -6,13 +6,30 @@ using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Documents.Ocr;
 using FinFlow.Application.Membership.Authorization;
+using FinFlow.Application.Subscriptions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
+using FinFlow.Domain.TenantApprovals;
+using FinFlow.Domain.TenantMemberships;
+using FinFlow.Domain.TenantSubscriptions;
+using FinFlow.Domain.TenantUsageSnapshots;
+using FinFlow.Domain.Tenants;
+using FinFlow.Domain.Vendors;
+using FinFlow.Domain.Invitations;
+using FinFlow.Domain.RefreshTokens;
+using FinFlow.Domain.PasswordResetChallenges;
+using FinFlow.Domain.EmailChallenges;
+using FinFlow.Domain.Audit;
+using FinFlow.Domain.Accounts;
+using FinFlow.Domain.Departments;
+using FinFlow.Domain.Documents;
 using FinFlow.Infrastructure;
+using FinFlow.Infrastructure.Auth.Email;
 using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Pdf;
+using FinFlow.Infrastructure.Subscriptions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -53,13 +70,22 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(IEmailSender));
             services.RemoveAll(typeof(IOcrExtractionService));
             services.RemoveAll(typeof(IOcrProvider));
-            services.RemoveAll(typeof(IPasswordResetChallengeSecretService));
-            services.RemoveAll(typeof(IPasswordResetSettings));
+            services.RemoveAll(typeof(IOtpOperationLockService));
+            services.RemoveAll(typeof(IClock));
+            services.RemoveAll(typeof(ITokenService));
+            services.RemoveAll(typeof(IPasswordHasher));
+            services.RemoveAll(typeof(IOptions<AuthChallengeOptions>));
             services.RemoveAll(typeof(IDocumentStorageProvider));
+            services.RemoveAll(typeof(IRegistrationChallengeSettings));
+            services.RemoveAll(typeof(AuthChallengeOptions));
+            services.RemoveAll(typeof(ISubscriptionFeatureGate));
+            services.RemoveAll(typeof(ITenantUsageService));
+
+            services.AddDbContext<ApplicationDbContext>(options =>
+                options.UseInMemoryDatabase(_databaseName));
+            services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
-            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
-            services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
             services.AddScoped<IMembershipAuthorizationService, MembershipAuthorizationService>();
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
@@ -84,6 +110,24 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
             services.AddSingleton<IPasswordResetChallengeSecretService, TestPasswordResetChallengeSecretService>();
             services.AddSingleton<IPasswordResetSettings, TestPasswordResetSettings>();
+            services.Configure<AuthChallengeOptions>(options =>
+            {
+                options.TokenHashKey = "test-email-challenge-secret-key";
+                options.VerificationTokenLifetimeMinutes = 15;
+                options.VerificationCooldownSeconds = 90;
+                options.OtpLength = 6;
+                options.TokenByteLength = 32;
+                options.VerificationLinkBaseUrl = "https://verify.finflow.test/email";
+            });
+            services.AddSingleton<IRegistrationChallengeSettings>(sp => sp.GetRequiredService<IOptions<AuthChallengeOptions>>().Value);
+            services.AddSingleton<IEmailChallengeSecretService, TestEmailChallengeSecretService>();
+            services.AddSingleton<IOtpOperationLockService, TestOtpOperationLockService>();
+            services.AddSingleton<IClock, TestClock>();
+            services.AddSingleton<ITokenService, TestTokenService>();
+            services.AddSingleton<IPasswordHasher, TestPasswordHasher>();
+            services.AddSingleton<PlanEntitlementCatalog>();
+            services.AddScoped<ITenantUsageService, TenantUsageService>();
+            services.AddScoped<ISubscriptionFeatureGate, SubscriptionFeatureGate>();
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddAuthentication(options =>
                 {
@@ -396,6 +440,90 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         public int TokenByteLength => 32;
         public int MaxOtpAttempts => 5;
         public string ResetLinkBaseUrl => "https://reset.finflow.test/password";
+    }
+
+    private sealed class TestEmailChallengeSecretService : IEmailChallengeSecretService
+    {
+        private static readonly byte[] Key = System.Text.Encoding.UTF8.GetBytes("test-email-challenge-secret-key");
+
+        public string GenerateVerificationToken() => "test-verification-token";
+        public string GenerateVerificationOtp() => "123456";
+
+        public string HashChallengeToken(string token) => HashWithSecret(token);
+        public string HashChallengeOtp(string otp) => HashWithSecret(otp);
+
+        private static string HashWithSecret(string value)
+        {
+            using var hmac = new System.Security.Cryptography.HMACSHA256(Key);
+            var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(value));
+            return Convert.ToHexString(hash);
+        }
+    }
+
+    private sealed class TestTenantUsageService : ITenantUsageService
+    {
+        public Task<TenantUsageSnapshot> GetCurrentUsageAsync(Guid tenantId, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.FromResult(TenantUsageSnapshot.Create(tenantId, periodStart, periodEnd).Value);
+
+        public Task RecordOcrUsageAsync(Guid tenantId, int pageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RecordChatbotUsageAsync(Guid tenantId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task SetStorageUsedBytesAsync(Guid tenantId, long storageUsedBytes, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class TestSubscriptionFeatureGate : ISubscriptionFeatureGate
+    {
+        public Task<PlanEntitlements> GetEntitlementsAsync(Guid tenantId, CancellationToken cancellationToken)
+            => Task.FromResult(new PlanEntitlements(true, true, true, long.MaxValue, int.MaxValue, int.MaxValue));
+
+        public Task<Result> EnsureFeatureEnabledAsync(Guid tenantId, SubscriptionFeature feature, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+    }
+
+    private sealed class TestOtpOperationLockService : IOtpOperationLockService
+    {
+        public Task<IAsyncDisposable?> AcquireLockAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IAsyncDisposable?>(new NoOpOtpLock());
+        }
+
+        private sealed class NoOpOtpLock : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class TestClock : IClock
+    {
+        public DateTime UtcNow => DateTime.UtcNow;
+    }
+
+    private sealed class TestTokenService : ITokenService
+    {
+        public int RefreshTokenExpirationDays => 30;
+
+        public string GenerateAccountAccessToken(Guid id, string email) => "test-account-access-token";
+
+        public string GenerateAccessToken(Guid id, string email, string role, Guid idTenant, Guid membershipId)
+            => "test-access-token";
+
+        public string GenerateRefreshToken() => "test-refresh-token";
+    }
+
+    private sealed class TestPasswordHasher : IPasswordHasher
+    {
+        public string HashPassword(string password) => BCrypt.Net.BCrypt.HashPassword(password);
+        public bool VerifyPassword(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);
     }
 
     private sealed class TestHttpCurrentTenant : ICurrentTenant

@@ -41,7 +41,12 @@ public sealed class VendorMutations
             new Application.Vendors.Queries.GetVendorByTaxCode.GetVendorByTaxCodeQuery(scope.TenantId, input.TaxCode),
             cancellationToken);
 
-        return ToVendorPayload(summary.Value!);
+        if (summary.IsFailure)
+            throw ToGraphQlException(summary.Error);
+        if (summary.Value == null)
+            throw ToGraphQlException(new DomainError("Vendor.NotFound", "Vendor not found after creation"));
+
+        return ToVendorPayload(summary.Value);
     }
 
     [Authorize]
