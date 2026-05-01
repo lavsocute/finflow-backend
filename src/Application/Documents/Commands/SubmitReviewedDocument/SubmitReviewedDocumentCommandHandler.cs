@@ -2,6 +2,7 @@ using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.TenantMemberships;
 using FinFlow.Domain.Vendors;
 using MediatR;
 
@@ -12,23 +13,33 @@ public sealed class SubmitReviewedDocumentCommandHandler
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
     private readonly IUploadedDocumentDraftRepository _uploadedDocumentDraftRepository;
+    private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IVendorRepository _vendorRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public SubmitReviewedDocumentCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
         IUploadedDocumentDraftRepository uploadedDocumentDraftRepository,
+        ITenantMembershipRepository membershipRepository,
         IVendorRepository vendorRepository,
         IUnitOfWork unitOfWork)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
+        _membershipRepository = membershipRepository;
         _vendorRepository = vendorRepository;
         _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<ReviewedDocumentResponse>> Handle(SubmitReviewedDocumentCommand request, CancellationToken cancellationToken)
     {
+        var membership = await _membershipRepository.GetByIdAsync(request.MembershipId, cancellationToken);
+        if (membership is null)
+            return Result.Failure<ReviewedDocumentResponse>(TenantMembershipErrors.NotFound);
+
+        if (!membership.DepartmentId.HasValue)
+            return Result.Failure<ReviewedDocumentResponse>(ReviewedDocumentErrors.DepartmentRequired);
+
         UploadedDocumentDraft? draft = null;
         Guid documentId;
         string contentType;
@@ -69,6 +80,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         var documentResult = ReviewedDocument.CreateSubmitted(
             documentId,
             request.TenantId,
+            membership.DepartmentId.Value,
             request.MembershipId,
             originalFileName,
             contentType,
