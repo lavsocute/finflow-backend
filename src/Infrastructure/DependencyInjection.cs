@@ -2,6 +2,7 @@ using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.Authorization;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
+using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Departments;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.EmailChallenges;
@@ -13,8 +14,10 @@ using FinFlow.Domain.TenantMemberships;
 using FinFlow.Domain.TenantSubscriptions;
 using FinFlow.Domain.TenantUsageSnapshots;
 using FinFlow.Domain.Tenants;
+using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Vendors;
 using FinFlow.Infrastructure.Auth.Email;
+using FinFlow.Infrastructure.Caching;
 using FinFlow.Infrastructure.Documents;
 using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Groq;
@@ -55,6 +58,7 @@ public static class DependencyInjection
 
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
+        services.AddScoped<IBudgetRepository, BudgetRepository>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IEmailChallengeRepository, EmailChallengeRepository>();
         services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
@@ -63,6 +67,9 @@ public static class DependencyInjection
         services.AddScoped<ITenantApprovalRequestRepository, TenantApprovalRequestRepository>();
         services.AddScoped<ITenantSubscriptionRepository, TenantSubscriptionRepository>();
         services.AddScoped<IVendorRepository, VendorRepository>();
+        services.AddScoped<ICategoryRepository, CategoryRepository>();
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<ITenantUsageSnapshotRepository, TenantUsageSnapshotRepository>();
         services.AddScoped<ITenantUsageService, TenantUsageService>();
         services.AddSingleton<PlanEntitlementCatalog>();
@@ -121,6 +128,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton<ILoginRateLimiter, Auth.RedisLoginRateLimiter>();
         services.AddSingleton<IOtpOperationLockService, Auth.RedisOtpOperationLockService>();
+        services.AddSingleton<ICacheService, Caching.RedisCacheService>();
         services.AddSingleton<ITokenService, Auth.JwtTokenService>();
         services.AddSingleton<Auth.JwtTokenService>(sp => (Auth.JwtTokenService)sp.GetRequiredService<ITokenService>());
         services.AddSingleton<IPasswordHasher, Auth.BcryptPasswordHasher>();

@@ -14,6 +14,7 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         builder.Property(x => x.Id).ValueGeneratedNever();
 
         builder.Property(x => x.IdTenant).HasColumnName("id_tenant").IsRequired();
+        builder.Property(x => x.IdDepartment).HasColumnName("id_department").IsRequired();
         builder.Property(x => x.MembershipId).HasColumnName("membership_id").IsRequired();
         builder.Property(x => x.OriginalFileName).HasColumnName("original_file_name").HasMaxLength(255).IsRequired();
         builder.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(100).IsRequired();
@@ -37,6 +38,7 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
         builder.HasIndex(x => new { x.IdTenant, x.Status, x.SubmittedAt });
+        builder.HasIndex(x => x.IdDepartment);
 
         builder.OwnsMany(x => x.LineItems, ownedBuilder =>
         {

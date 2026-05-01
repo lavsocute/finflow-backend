@@ -1,6 +1,7 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +23,10 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<UploadedDocumentDraft> UploadedDocumentDrafts => Set<UploadedDocumentDraft>();
     public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
     public DbSet<TenantUsageSnapshot> TenantUsageSnapshots => Set<TenantUsageSnapshot>();
+    public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Expense> Expenses => Set<Expense>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -142,7 +147,19 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         builder.Entity<TenantUsageSnapshot>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
+        builder.Entity<Budget>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+
         builder.Entity<AuditLog>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || (e.IdTenant == _currentTenant.Id));
+
+        builder.Entity<Category>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<Payment>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+
+        builder.Entity<Expense>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
     }
 }
