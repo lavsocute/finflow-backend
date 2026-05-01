@@ -11,6 +11,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     private ReviewedDocument(
         Guid id,
         Guid idTenant,
+        Guid idDepartment,
         Guid membershipId,
         string originalFileName,
         string contentType,
@@ -31,6 +32,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     {
         Id = id;
         IdTenant = idTenant;
+        IdDepartment = idDepartment;
         MembershipId = membershipId;
         OriginalFileName = originalFileName;
         ContentType = contentType;
@@ -57,6 +59,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     private ReviewedDocument() { }
 
     public Guid IdTenant { get; private set; }
+    public Guid IdDepartment { get; private set; }
     public Guid MembershipId { get; private set; }
     public string OriginalFileName { get; private set; } = null!;
     public string ContentType { get; private set; } = null!;
@@ -83,6 +86,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     public static Result<ReviewedDocument> CreateSubmitted(
         Guid documentId,
         Guid idTenant,
+        Guid idDepartment,
         Guid membershipId,
         string originalFileName,
         string contentType,
@@ -105,6 +109,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DocumentIdRequired);
         if (idTenant == Guid.Empty)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.TenantRequired);
+        if (idDepartment == Guid.Empty)
+            return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DepartmentRequired);
         if (membershipId == Guid.Empty)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.MembershipRequired);
         if (string.IsNullOrWhiteSpace(originalFileName))
@@ -148,6 +154,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         return Result.Success(new ReviewedDocument(
             documentId,
             idTenant,
+            idDepartment,
             membershipId,
             originalFileName.Trim(),
             string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim(),

@@ -8,6 +8,7 @@ public static class ReviewedDocumentErrors
     public static readonly Error Unauthorized = new("ReviewedDocument.Unauthorized", "The current user is not authorized to access this resource.");
     public static readonly Error AlreadyProcessed = new("ReviewedDocument.AlreadyProcessed", "This reviewed document has already been processed.");
     public static readonly Error TenantRequired = new("ReviewedDocument.TenantRequired", "Tenant is required.");
+    public static readonly Error DepartmentRequired = new("ReviewedDocument.DepartmentRequired", "Department is required.");
     public static readonly Error MembershipRequired = new("ReviewedDocument.MembershipRequired", "Membership is required.");
     public static readonly Error DocumentIdRequired = new("ReviewedDocument.DocumentIdRequired", "Document id is required.");
     public static readonly Error FileNameRequired = new("ReviewedDocument.FileNameRequired", "Original file name is required.");

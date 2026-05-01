@@ -68,6 +68,7 @@ public sealed class ReviewedDocumentTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
+            Guid.NewGuid(),
             "invoice.pdf",
             "application/pdf",
             "Amazon Web Services, Inc.",
@@ -101,6 +102,7 @@ public sealed class ReviewedDocumentTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
+            Guid.NewGuid(),
             "invoice.pdf",
             "application/pdf",
             "Amazon Web Services, Inc.",
@@ -129,6 +131,7 @@ public sealed class ReviewedDocumentTests
 
     private static ReviewedDocument CreateDocument() =>
         ReviewedDocument.CreateSubmitted(
+            Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),

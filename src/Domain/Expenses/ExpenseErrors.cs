@@ -1,0 +1,14 @@
+using FinFlow.Domain.Abstractions;
+
+namespace FinFlow.Domain.Expenses;
+
+public static class ExpenseErrors
+{
+    public static readonly Error NotFound = new("Expense.NotFound", "Expense not found");
+    public static readonly Error AlreadyProcessed = new("Expense.AlreadyProcessed", "Expense has already been processed");
+    public static readonly Error RejectionReasonRequired = new("Expense.RejectionReasonRequired", "Rejection reason is required");
+    public static readonly Error TenantRequired = new("Expense.TenantRequired", "Tenant ID is required");
+    public static readonly Error DepartmentRequired = new("Expense.DepartmentRequired", "Department ID is required");
+    public static readonly Error CategoryRequired = new("Expense.CategoryRequired", "Category ID is required");
+    public static readonly Error InvalidAmount = new("Expense.InvalidAmount", "Amount must be greater than zero");
+}
