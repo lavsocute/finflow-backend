@@ -13,15 +13,18 @@ public sealed class ReactivateMemberCommandHandler : ICommandHandler<ReactivateM
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IMembershipAuthorizationService _authorizationService;
     private readonly ICurrentTenant _currentTenant;
+    private readonly IUnitOfWork _unitOfWork;
 
     public ReactivateMemberCommandHandler(
         ITenantMembershipRepository membershipRepository,
         IMembershipAuthorizationService authorizationService,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        IUnitOfWork unitOfWork)
     {
         _membershipRepository = membershipRepository;
         _authorizationService = authorizationService;
         _currentTenant = currentTenant;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result> Handle(ReactivateMemberCommand request, CancellationToken cancellationToken)
@@ -43,6 +46,13 @@ public sealed class ReactivateMemberCommandHandler : ICommandHandler<ReactivateM
         if (membership.IsOwner)
             return Result.Failure(TenantMembershipErrors.OwnerMustBeTenantAdmin);
 
-        return membership.Activate();
+        var activateResult = membership.Activate();
+        if (activateResult.IsFailure)
+            return activateResult;
+
+        _membershipRepository.Update(membership);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
     }
 }
