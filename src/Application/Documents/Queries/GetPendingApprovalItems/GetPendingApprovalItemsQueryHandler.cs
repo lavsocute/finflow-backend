@@ -23,12 +23,17 @@ public sealed class GetPendingApprovalItemsQueryHandler
             .Select(x => new PendingApprovalItemResponse(
                 x.Id,
                 $"{x.VendorName} · {x.Reference}",
+                x.VendorName,
                 x.ReviewedByStaff,
+                string.Empty,
                 $"{x.Category} · {x.Source}",
                 x.TotalAmount,
+                "VND",
                 x.DueDate,
+                x.SubmittedAt,
                 x.TotalAmount >= 5000m ? "High" : "Medium",
-                x.Status.ToString()))
+                x.Status.ToString(),
+                null))
             .ToList();
 
         return Result.Success<IReadOnlyList<PendingApprovalItemResponse>>(items);

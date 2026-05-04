@@ -48,4 +48,61 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
             .Where(x => x.IdTenant == tenantId && x.MembershipId == membershipId && x.IsActive)
             .OrderByDescending(x => x.SubmittedAt)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ReviewedDocument>> GetByStatusAsync(Guid tenantId, ApprovalStatusFilter status, string? search, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.IdTenant == tenantId && x.IsActive);
+
+        query = status switch
+        {
+            ApprovalStatusFilter.Pending => query.Where(x => x.Status == ReviewedDocumentStatus.ReadyForApproval),
+            ApprovalStatusFilter.Approved => query.Where(x => x.Status == ReviewedDocumentStatus.Approved),
+            ApprovalStatusFilter.Rejected => query.Where(x => x.Status == ReviewedDocumentStatus.Rejected),
+            _ => query
+        };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.ToLowerInvariant();
+            query = query.Where(x =>
+                x.VendorName.ToLower().Contains(searchLower) ||
+                x.Reference.ToLower().Contains(searchLower) ||
+                x.Category.ToLower().Contains(searchLower));
+        }
+
+        return await query
+            .OrderByDescending(x => x.SubmittedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountByStatusAsync(Guid tenantId, ApprovalStatusFilter status, string? search, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .Where(x => x.IdTenant == tenantId && x.IsActive);
+
+        query = status switch
+        {
+            ApprovalStatusFilter.Pending => query.Where(x => x.Status == ReviewedDocumentStatus.ReadyForApproval),
+            ApprovalStatusFilter.Approved => query.Where(x => x.Status == ReviewedDocumentStatus.Approved),
+            ApprovalStatusFilter.Rejected => query.Where(x => x.Status == ReviewedDocumentStatus.Rejected),
+            _ => query
+        };
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.ToLowerInvariant();
+            query = query.Where(x =>
+                x.VendorName.ToLower().Contains(searchLower) ||
+                x.Reference.ToLower().Contains(searchLower) ||
+                x.Category.ToLower().Contains(searchLower));
+        }
+
+        return await query.CountAsync(cancellationToken);
+    }
 }

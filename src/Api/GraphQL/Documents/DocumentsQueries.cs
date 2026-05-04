@@ -1,10 +1,14 @@
 using System.Security.Claims;
+using FinFlow.Application.Documents.Queries.GetApprovalDetail;
+using FinFlow.Application.Documents.Queries.GetApprovalQueue;
 using FinFlow.Application.Documents.Queries.GetMyDocumentDraft;
 using FinFlow.Application.Documents.Queries.GetMyDocumentDrafts;
 using FinFlow.Application.Documents.Queries.GetMySubmittedDocument;
 using FinFlow.Application.Documents.Queries.GetMySubmittedDocuments;
 using FinFlow.Application.Documents.Queries.GetPendingApprovalItems;
+using FinFlow.Application.Documents.Queries.ExportApprovalQueue;
 using FinFlow.Domain.Abstractions;
+using FinFlow.Domain.Enums;
 using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
 using HotChocolate.Types;
@@ -16,12 +20,40 @@ namespace FinFlow.Api.GraphQL.Documents;
 public sealed record PendingApprovalItemPayload(
     Guid DocumentId,
     string Title,
+    string VendorName,
     string Requester,
+    string RequesterEmail,
     string Department,
     decimal Amount,
+    string Currency,
     DateOnly DueDate,
+    DateTime SubmittedAt,
     string Priority,
-    string Status);
+    string Status,
+    string? PolicySummary);
+
+public sealed record ApprovalDetailPayload(
+    Guid DocumentId,
+    string RequestCode,
+    string Title,
+    string VendorName,
+    string RequesterName,
+    string RequesterEmail,
+    string Department,
+    decimal Amount,
+    string Currency,
+    DateOnly DueDate,
+    DateTime SubmittedAt,
+    string Priority,
+    string Status,
+    string? PolicySummary,
+    IReadOnlyList<ApprovalLineItemPayload> LineItems);
+
+public sealed record ApprovalLineItemPayload(
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal Total);
 
 public sealed record MyDocumentDraftPayload(
     Guid DocumentId,
@@ -76,6 +108,32 @@ public sealed record MySubmittedDocumentDetailPayload(
     string? RejectionReason,
     IReadOnlyList<MySubmittedDocumentLineItemPayload> LineItems);
 
+public sealed record ApprovalQueueItemPayload(
+    Guid DocumentId,
+    string Title,
+    string VendorName,
+    string Requester,
+    string RequesterEmail,
+    string Department,
+    decimal Amount,
+    string Currency,
+    DateOnly DueDate,
+    DateTime SubmittedAt,
+    string Priority,
+    string Status,
+    string? PolicySummary);
+
+public sealed record ApprovalQueuePayload(
+    IReadOnlyList<ApprovalQueueItemPayload> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
+
+public sealed record ExportApprovalQueuePayload(
+    string FileName,
+    string DownloadUrl);
+
 [ExtendObjectType(typeof(global::Query))]
 public sealed class DocumentsQueries
 {
@@ -96,13 +154,60 @@ public sealed class DocumentsQueries
             .Select(x => new PendingApprovalItemPayload(
                 x.DocumentId,
                 x.Title,
+                x.VendorName,
                 x.Requester,
+                x.RequesterEmail,
                 x.Department,
                 x.Amount,
+                x.Currency,
                 x.DueDate,
+                x.SubmittedAt,
                 x.Priority,
-                x.Status))
+                x.Status,
+                x.PolicySummary))
             .ToList();
+    }
+
+    [Authorize]
+    public async Task<ApprovalDetailPayload?> ApprovalDetailAsync(
+        Guid documentId,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        DocumentsMutations.EnsureApproverRole(context);
+        var tenantId = EnsureAuthorizedTenant(context);
+
+        var result = await mediator.Send(new GetApprovalDetailQuery(tenantId, documentId), cancellationToken);
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        if (result.Value is null)
+            return null;
+
+        var detail = result.Value;
+        return new ApprovalDetailPayload(
+            detail.DocumentId,
+            detail.RequestCode,
+            detail.Title,
+            detail.VendorName,
+            detail.RequesterName,
+            detail.RequesterEmail,
+            detail.Department,
+            detail.Amount,
+            detail.Currency,
+            detail.DueDate,
+            detail.SubmittedAt,
+            detail.Priority,
+            detail.Status,
+            detail.PolicySummary,
+            detail.LineItems
+                .Select(item => new ApprovalLineItemPayload(
+                    item.Description,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.Total))
+                .ToList());
     }
 
     [Authorize]
@@ -223,6 +328,69 @@ public sealed class DocumentsQueries
                     item.UnitPrice,
                     item.Total))
                 .ToList());
+    }
+
+    [Authorize]
+    public async Task<ApprovalQueuePayload> ApprovalQueueAsync(
+        ApprovalStatusFilter status,
+        string? search,
+        int page,
+        int pageSize,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        DocumentsMutations.EnsureApproverRole(context);
+        var tenantId = EnsureAuthorizedTenant(context);
+
+        var result = await mediator.Send(
+            new GetApprovalQueueQuery(tenantId, status, search, page, pageSize),
+            cancellationToken);
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        var queue = result.Value;
+        return new ApprovalQueuePayload(
+            queue.Items
+                .Select(x => new ApprovalQueueItemPayload(
+                    x.DocumentId,
+                    x.Title,
+                    x.VendorName,
+                    x.Requester,
+                    x.RequesterEmail,
+                    x.Department,
+                    x.Amount,
+                    x.Currency,
+                    x.DueDate,
+                    x.SubmittedAt,
+                    x.Priority,
+                    x.Status,
+                    x.PolicySummary))
+                .ToList(),
+            queue.Page,
+            queue.PageSize,
+            queue.TotalCount,
+            queue.TotalPages);
+    }
+
+    [Authorize]
+    public async Task<ExportApprovalQueuePayload> ExportApprovalQueueAsync(
+        ApprovalStatusFilter status,
+        string? search,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        DocumentsMutations.EnsureApproverRole(context);
+        var tenantId = EnsureAuthorizedTenant(context);
+
+        var result = await mediator.Send(
+            new ExportApprovalQueueQuery(tenantId, status, search),
+            cancellationToken);
+        if (result.IsFailure)
+            throw new GraphQLException(new HotChocolate.Error(result.Error.Description, result.Error.Code));
+
+        return new ExportApprovalQueuePayload(result.Value.FileName, result.Value.DownloadUrl);
     }
 
     private static Guid EnsureAuthorizedTenant(IResolverContext context)

@@ -4,4 +4,4 @@ using FinFlow.Domain.Abstractions;
 
 namespace FinFlow.Application.Documents.Commands.RejectReviewedDocument;
 
-public sealed record RejectReviewedDocumentCommand(Guid DocumentId, Guid TenantId, Guid MembershipId, string Reason) : ICommand<Result<ReviewedDocumentResponse>>;
+public sealed record RejectReviewedDocumentCommand(Guid DocumentId, Guid TenantId, Guid MembershipId, string Reason, string? Comment = null) : ICommand<Result<ReviewedDocumentResponse>>;

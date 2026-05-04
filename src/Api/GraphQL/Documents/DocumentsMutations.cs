@@ -45,9 +45,9 @@ public sealed record SubmitReviewedDocumentInput(
     string? ConfidenceLabel,
     IReadOnlyList<SubmitReviewedDocumentLineItemInput> LineItems);
 
-public sealed record ApproveReviewedDocumentInput(Guid DocumentId);
+public sealed record ApproveReviewedDocumentInput(Guid DocumentId, string? Comment);
 
-public sealed record RejectReviewedDocumentInput(Guid DocumentId, string Reason);
+public sealed record RejectReviewedDocumentInput(Guid DocumentId, string Reason, string? Comment);
 
 public sealed record SaveManualDraftLineItemInput(
     string ItemName,
@@ -287,7 +287,7 @@ public sealed class DocumentsMutations
         var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
         var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
 
-        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId), cancellationToken);
+        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Comment), cancellationToken);
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
@@ -305,7 +305,7 @@ public sealed class DocumentsMutations
         var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
         var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
 
-        var result = await mediator.Send(new RejectReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Reason), cancellationToken);
+        var result = await mediator.Send(new RejectReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Reason, input.Comment), cancellationToken);
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
