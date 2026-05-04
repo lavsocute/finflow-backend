@@ -1,7 +1,9 @@
 using FinFlow.Application.Tenant.DTOs.Responses;
+using FinFlow.Application.Tenant.Support;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.TenantApprovals;
 using FinFlow.Domain.TenantMemberships;
@@ -16,6 +18,7 @@ public sealed class ApproveTenantCommandHandler : MediatR.IRequestHandler<Approv
     private readonly ITenantApprovalRequestRepository _tenantApprovalRequestRepository;
     private readonly ITenantRepository _tenantRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public ApproveTenantCommandHandler(
@@ -23,12 +26,14 @@ public sealed class ApproveTenantCommandHandler : MediatR.IRequestHandler<Approv
         ITenantApprovalRequestRepository tenantApprovalRequestRepository,
         ITenantRepository tenantRepository,
         ITenantMembershipRepository membershipRepository,
+        ICategoryRepository categoryRepository,
         IUnitOfWork unitOfWork)
     {
         _currentTenant = currentTenant;
         _tenantApprovalRequestRepository = tenantApprovalRequestRepository;
         _tenantRepository = tenantRepository;
         _membershipRepository = membershipRepository;
+        _categoryRepository = categoryRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -78,6 +83,9 @@ public sealed class ApproveTenantCommandHandler : MediatR.IRequestHandler<Approv
         _tenantRepository.Add(tenant);
         _membershipRepository.Add(membershipResult.Value);
         _tenantApprovalRequestRepository.Update(approvalRequest);
+
+        SeedDefaultCategories(tenant.Id);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success(new TenantApprovalDecisionResponse(
@@ -86,5 +94,14 @@ public sealed class ApproveTenantCommandHandler : MediatR.IRequestHandler<Approv
             tenant.Id,
             tenant.TenantCode,
             tenant.Name));
+    }
+
+    private void SeedDefaultCategories(Guid tenantId)
+    {
+        var categories = CategorySeedData.GetDefaultCategories(tenantId);
+        foreach (var category in categories)
+        {
+            _categoryRepository.Add(category);
+        }
     }
 }

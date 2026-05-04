@@ -11,18 +11,15 @@ namespace FinFlow.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "image_content_type",
-                table: "uploaded_document_draft",
-                type: "character varying(100)",
-                maxLength: 100,
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE uploaded_document_draft
+                ADD COLUMN IF NOT EXISTS image_content_type character varying(100);
+                """);
 
-            migrationBuilder.AddColumn<byte[]>(
-                name: "image_data",
-                table: "uploaded_document_draft",
-                type: "bytea",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE uploaded_document_draft
+                ADD COLUMN IF NOT EXISTS image_data bytea;
+                """);
 
             migrationBuilder.AlterColumn<DateTime>(
                 name: "period_start",
@@ -40,144 +37,146 @@ namespace FinFlow.Infrastructure.Data.Migrations
                 oldClrType: typeof(DateTime),
                 oldType: "timestamp with time zone");
 
-            migrationBuilder.AddColumn<DateTime>(
-                name: "DeactivatedAt",
-                table: "tenant_membership",
-                type: "timestamp with time zone",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                ADD COLUMN IF NOT EXISTS "DeactivatedAt" timestamp with time zone;
+                """);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "DeactivatedBy",
-                table: "tenant_membership",
-                type: "uuid",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                ADD COLUMN IF NOT EXISTS "DeactivatedBy" uuid;
+                """);
 
-            migrationBuilder.AddColumn<string>(
-                name: "DeactivatedReason",
-                table: "tenant_membership",
-                type: "text",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                ADD COLUMN IF NOT EXISTS "DeactivatedReason" text;
+                """);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "department_id",
-                table: "tenant_membership",
-                type: "uuid",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                ADD COLUMN IF NOT EXISTS department_id uuid;
+                """);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "DepartmentId",
-                table: "invitation",
-                type: "uuid",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE invitation
+                ADD COLUMN IF NOT EXISTS "DepartmentId" uuid;
+                """);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "RevokedByMembershipId",
-                table: "invitation",
-                type: "uuid",
-                nullable: true);
+            migrationBuilder.Sql("""
+                ALTER TABLE invitation
+                ADD COLUMN IF NOT EXISTS "RevokedByMembershipId" uuid;
+                """);
 
-            migrationBuilder.CreateTable(
-                name: "tenant_usage_snapshot",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    id_tenant = table.Column<Guid>(type: "uuid", nullable: false),
-                    period_start = table.Column<DateOnly>(type: "date", nullable: false),
-                    period_end = table.Column<DateOnly>(type: "date", nullable: false),
-                    ocr_pages_used = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    chatbot_messages_used = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    storage_used_bytes = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
-                    is_active = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_tenant_usage_snapshot", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_tenant_usage_snapshot_tenant_id_tenant",
-                        column: x => x.id_tenant,
-                        principalTable: "tenant",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
+            migrationBuilder.Sql("""
+                CREATE TABLE IF NOT EXISTS tenant_usage_snapshot (
+                    "Id" uuid NOT NULL,
+                    id_tenant uuid NOT NULL,
+                    period_start date NOT NULL,
+                    period_end date NOT NULL,
+                    ocr_pages_used integer NOT NULL DEFAULT 0,
+                    chatbot_messages_used integer NOT NULL DEFAULT 0,
+                    storage_used_bytes bigint NOT NULL DEFAULT 0,
+                    is_active boolean NOT NULL DEFAULT TRUE,
+                    CONSTRAINT "PK_tenant_usage_snapshot" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_tenant_usage_snapshot_tenant_id_tenant"
+                        FOREIGN KEY (id_tenant) REFERENCES tenant ("Id") ON DELETE RESTRICT
+                );
+                """);
 
-            migrationBuilder.CreateTable(
-                name: "vendor",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    id_tenant = table.Column<Guid>(type: "uuid", nullable: false),
-                    tax_code = table.Column<string>(type: "character varying(14)", maxLength: 14, nullable: false),
-                    name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    is_verified = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    verified_by_membership_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    verified_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    is_active = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_vendor", x => x.Id);
-                });
+            migrationBuilder.Sql("""
+                CREATE TABLE IF NOT EXISTS vendor (
+                    "Id" uuid NOT NULL,
+                    id_tenant uuid NOT NULL,
+                    tax_code character varying(14) NOT NULL,
+                    name character varying(200) NOT NULL,
+                    is_verified boolean NOT NULL DEFAULT FALSE,
+                    verified_by_membership_id uuid NULL,
+                    verified_at timestamp with time zone NULL,
+                    created_at timestamp with time zone NOT NULL,
+                    updated_at timestamp with time zone NOT NULL,
+                    is_active boolean NOT NULL DEFAULT TRUE,
+                    CONSTRAINT "PK_vendor" PRIMARY KEY ("Id")
+                );
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "ux_tenant_usage_snapshot_period",
-                table: "tenant_usage_snapshot",
-                columns: new[] { "id_tenant", "period_start", "period_end" },
-                unique: true);
+            migrationBuilder.Sql("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_tenant_usage_snapshot_period
+                ON tenant_usage_snapshot (id_tenant, period_start, period_end);
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_vendor_id_tenant_tax_code",
-                table: "vendor",
-                columns: new[] { "id_tenant", "tax_code" },
-                unique: true);
+            migrationBuilder.Sql("""
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_vendor_id_tenant_tax_code"
+                ON vendor (id_tenant, tax_code);
+                """);
 
-            migrationBuilder.CreateIndex(
-                name: "IX_vendor_is_verified",
-                table: "vendor",
-                column: "is_verified");
+            migrationBuilder.Sql("""
+                CREATE INDEX IF NOT EXISTS "IX_vendor_is_verified"
+                ON vendor (is_verified);
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "tenant_usage_snapshot");
+            migrationBuilder.Sql("""
+                DROP INDEX IF EXISTS ux_tenant_usage_snapshot_period;
+                """);
 
-            migrationBuilder.DropTable(
-                name: "vendor");
+            migrationBuilder.Sql("""
+                DROP INDEX IF EXISTS "IX_vendor_id_tenant_tax_code";
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "image_content_type",
-                table: "uploaded_document_draft");
+            migrationBuilder.Sql("""
+                DROP INDEX IF EXISTS "IX_vendor_is_verified";
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "image_data",
-                table: "uploaded_document_draft");
+            migrationBuilder.Sql("""
+                DROP TABLE IF EXISTS tenant_usage_snapshot;
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "DeactivatedAt",
-                table: "tenant_membership");
+            migrationBuilder.Sql("""
+                DROP TABLE IF EXISTS vendor;
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "DeactivatedBy",
-                table: "tenant_membership");
+            migrationBuilder.Sql("""
+                ALTER TABLE uploaded_document_draft
+                DROP COLUMN IF EXISTS image_content_type;
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "DeactivatedReason",
-                table: "tenant_membership");
+            migrationBuilder.Sql("""
+                ALTER TABLE uploaded_document_draft
+                DROP COLUMN IF EXISTS image_data;
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "department_id",
-                table: "tenant_membership");
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                DROP COLUMN IF EXISTS "DeactivatedAt";
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "DepartmentId",
-                table: "invitation");
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                DROP COLUMN IF EXISTS "DeactivatedBy";
+                """);
 
-            migrationBuilder.DropColumn(
-                name: "RevokedByMembershipId",
-                table: "invitation");
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                DROP COLUMN IF EXISTS "DeactivatedReason";
+                """);
+
+            migrationBuilder.Sql("""
+                ALTER TABLE tenant_membership
+                DROP COLUMN IF EXISTS department_id;
+                """);
+
+            migrationBuilder.Sql("""
+                ALTER TABLE invitation
+                DROP COLUMN IF EXISTS "DepartmentId";
+                """);
+
+            migrationBuilder.Sql("""
+                ALTER TABLE invitation
+                DROP COLUMN IF EXISTS "RevokedByMembershipId";
+                """);
 
             migrationBuilder.AlterColumn<DateTime>(
                 name: "period_start",

@@ -18,6 +18,7 @@ using FinFlow.Application.Membership.Commands.SwitchWorkspace;
 using FinFlow.Application.Tenant.Commands.ApproveTenant;
 using FinFlow.Application.Tenant.Commands.CreateIsolatedTenant;
 using FinFlow.Application.Tenant.Commands.CreateSharedTenant;
+using FinFlow.Domain.Expenses;
 using FinFlow.Application.Tenant.Commands.RejectTenant;
 using FinFlow.Application.Tenant.Queries.GetPendingTenantRequests;
 using FinFlow.Domain.Abstractions;
@@ -79,6 +80,7 @@ internal sealed class AuthFlowTestFixture
         services.AddLogging();
         services.AddApplication();
 
+        services.AddScoped<ICategoryRepository>(_ => new CategoryRepository(dbContext));
         services.AddScoped<IAccountRepository>(_ => new AccountRepository(dbContext));
         services.AddScoped<ITenantRepository>(_ => new TenantRepository(dbContext));
         services.AddScoped<ITenantApprovalRequestRepository>(_ => new TenantApprovalRequestRepository(dbContext));

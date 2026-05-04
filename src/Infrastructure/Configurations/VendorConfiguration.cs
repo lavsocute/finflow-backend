@@ -25,6 +25,7 @@ internal sealed class VendorConfiguration : IEntityTypeConfiguration<Vendor>
 
         builder.HasIndex(x => new { x.IdTenant, x.TaxCode }).IsUnique();
         builder.HasIndex(x => x.IsVerified);
+        builder.HasIndex(x => new { x.IdTenant, x.IsVerified });
 
         builder.HasQueryFilter(x => x.IsActive);
     }

@@ -55,7 +55,7 @@ internal sealed class RefreshTokenRepository : IRefreshTokenRepository
     public void Add(RefreshToken refreshToken) => _dbContext.Set<RefreshToken>().Add(refreshToken);
     public void Update(RefreshToken refreshToken) => _dbContext.Set<RefreshToken>().Update(refreshToken);
 
-    public async Task RevokeAllForAccountAsync(Guid accountId, string reason, CancellationToken cancellationToken = default)
+public async Task RevokeAllForAccountAsync(Guid accountId, string reason, CancellationToken cancellationToken = default)
     {
         var tokens = await _dbContext.Set<RefreshToken>()
             .Where(rt => rt.AccountId == accountId && !rt.IsRevoked)
