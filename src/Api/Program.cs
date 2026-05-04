@@ -1,5 +1,6 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
+using FinFlow.Api.GraphQL.Departments;
 using FinFlow.Api.GraphQL.Documents;
 using FinFlow.Api.GraphQL.Membership;
 using FinFlow.Api.GraphQL.Platform;
@@ -82,12 +83,10 @@ builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy("Application is running"), tags: ["live"])
     .AddDbContextCheck<ApplicationDbContext>("database", tags: ["ready"]);
 
-// Cấu hình Forwarded Headers cho Reverse Proxy (Nginx/Ingress)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    
-    // Đọc danh sách Proxy tin cậy từ cấu hình (Environment Variables trong Production)
+
     var knownProxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
     if (knownProxies != null)
     {
@@ -98,7 +97,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         }
     }
 
-    // Đọc danh sách dải mạng tin cậy (CIDR)
     var knownNetworks = builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>();
     if (knownNetworks != null)
     {
@@ -111,8 +109,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
             }
         }
     }
-    
-    // Trong development, cho phép tất cả (không an toàn cho production)
+
     if (builder.Environment.IsDevelopment())
     {
         options.KnownNetworks.Clear();
@@ -161,9 +158,10 @@ builder.Services.AddCors(options =>
     });
 });
 
-    builder.Services.AddGraphQLServer()
+builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
     .AddTypeExtension<AuthQueries>()
+    .AddTypeExtension<DepartmentQueries>()
     .AddTypeExtension<DocumentsQueries>()
     .AddTypeExtension<SubscriptionsQueries>()
     .AddTypeExtension<MembershipQueries>()
@@ -216,16 +214,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowAngular");
 
-// Forwarded Headers middleware phải chạy trước Authentication
 app.UseForwardedHeaders();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Multi-tenant Middleware (phải chạy sau Authentication để lấy được IdTenant từ JWT)
 app.UseMiddleware<FinFlow.Infrastructure.Middleware.TenantMiddleware>();
-
-// Audit Middleware phải chạy sau Authentication để lấy được thông tin User
+app.UseMiddleware<FinFlow.Infrastructure.Middleware.RequestTimeoutMiddleware>();
 app.UseMiddleware<FinFlow.Infrastructure.Audit.AuditMiddleware>();
 
 app.MapHealthChecks("/health", new HealthCheckOptions

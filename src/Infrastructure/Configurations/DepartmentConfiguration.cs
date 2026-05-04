@@ -24,5 +24,6 @@ internal sealed class DepartmentConfiguration : IEntityTypeConfiguration<Departm
 
         builder.HasIndex(x => x.IdTenant);
         builder.HasIndex(x => x.ParentId);
+        builder.HasIndex(x => new { x.IdTenant, x.IsActive });
     }
 }
