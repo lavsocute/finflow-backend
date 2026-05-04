@@ -13,15 +13,18 @@ public sealed class RemoveMemberCommandHandler : ICommandHandler<RemoveMemberCom
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IMembershipAuthorizationService _authorizationService;
     private readonly ICurrentTenant _currentTenant;
+    private readonly IUnitOfWork _unitOfWork;
 
     public RemoveMemberCommandHandler(
         ITenantMembershipRepository membershipRepository,
         IMembershipAuthorizationService authorizationService,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        IUnitOfWork unitOfWork)
     {
         _membershipRepository = membershipRepository;
         _authorizationService = authorizationService;
         _currentTenant = currentTenant;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result> Handle(RemoveMemberCommand request, CancellationToken cancellationToken)
@@ -43,6 +46,13 @@ public sealed class RemoveMemberCommandHandler : ICommandHandler<RemoveMemberCom
         if (membership.IsOwner)
             return Result.Failure(TenantMembershipErrors.OwnerMustBeTenantAdmin);
 
-        return membership.Deactivate(request.ActorMembershipId, request.Reason);
+        var deactivateResult = membership.Deactivate(request.ActorMembershipId, request.Reason);
+        if (deactivateResult.IsFailure)
+            return deactivateResult;
+
+        _membershipRepository.Update(membership);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
     }
 }

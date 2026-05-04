@@ -10,7 +10,10 @@ public record TenantMembershipSummary(
     RoleType Role,
     bool IsOwner,
     bool IsActive,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? DeactivatedAt,
+    Guid? DeactivatedBy,
+    string? DeactivatedReason);
 
 public interface ITenantMembershipRepository
 {
