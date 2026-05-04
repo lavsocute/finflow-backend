@@ -15,7 +15,7 @@ internal sealed class AccountRepository : IAccountRepository
         await _dbContext.Set<Account>()
             .AsNoTracking()
             .Where(a => a.Id == id)
-            .Select(a => new AccountSummary(a.Id, a.Email, a.IsActive, a.IsEmailVerified, a.EmailVerifiedAt))
+            .Select(a => new AccountSummary(a.Id, a.Email, a.FullName, a.IsActive, a.IsEmailVerified, a.EmailVerifiedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
     // Read Method: Returns DTO via Select projection 
