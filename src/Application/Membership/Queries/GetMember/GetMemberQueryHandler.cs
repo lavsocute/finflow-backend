@@ -3,6 +3,8 @@ using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.Authorization;
 using FinFlow.Application.Membership.DTOs;
 using FinFlow.Domain.Abstractions;
+using FinFlow.Domain.Accounts;
+using FinFlow.Domain.Departments;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.TenantMemberships;
@@ -12,15 +14,21 @@ namespace FinFlow.Application.Membership.Queries.GetMember;
 public sealed class GetMemberQueryHandler : IQueryHandler<GetMemberQuery, Result<MemberDto>>
 {
     private readonly ITenantMembershipRepository _membershipRepository;
+    private readonly IAccountRepository _accountRepository;
+    private readonly IDepartmentRepository _departmentRepository;
     private readonly IMembershipAuthorizationService _authorizationService;
     private readonly ICurrentTenant _currentTenant;
 
     public GetMemberQueryHandler(
         ITenantMembershipRepository membershipRepository,
+        IAccountRepository accountRepository,
+        IDepartmentRepository departmentRepository,
         IMembershipAuthorizationService authorizationService,
         ICurrentTenant currentTenant)
     {
         _membershipRepository = membershipRepository;
+        _accountRepository = accountRepository;
+        _departmentRepository = departmentRepository;
         _authorizationService = authorizationService;
         _currentTenant = currentTenant;
     }
@@ -46,15 +54,28 @@ public sealed class GetMemberQueryHandler : IQueryHandler<GetMemberQuery, Result
         if (member is null)
             return Result.Failure<MemberDto>(TenantMembershipErrors.NotFound);
 
+        var account = await _accountRepository.GetByIdAsync(member.AccountId, cancellationToken);
+        var departmentName = member.DepartmentId.HasValue
+            ? (await _departmentRepository.GetByIdAsync(member.DepartmentId.Value, cancellationToken))?.Name
+            : null;
+
+        var lastActive = request.MembershipId == _currentTenant.MembershipId
+            ? DateTime.UtcNow
+            : (member.IsActive ? null : member.DeactivatedAt);
+
         return Result.Success(new MemberDto(
             member.Id,
             member.AccountId,
             member.IdTenant,
             member.DepartmentId,
+            account?.FullName ?? account?.Email.Split('@')[0],
+            account?.Email,
+            departmentName,
             member.Role,
             member.IsOwner,
             member.IsActive,
             member.CreatedAt,
+            lastActive,
             member.DeactivatedAt,
             member.DeactivatedBy,
             member.DeactivatedReason));

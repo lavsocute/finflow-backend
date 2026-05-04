@@ -9,10 +9,14 @@ public sealed class MemberType
     public Guid AccountId { get; set; }
     public Guid TenantId { get; set; }
     public Guid? DepartmentId { get; set; }
+    public string? FullName { get; set; }
+    public string? Email { get; set; }
+    public string? DepartmentName { get; set; }
     public RoleType Role { get; set; }
     public bool IsOwner { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? LastActiveAt { get; set; }
     public DateTime? DeactivatedAt { get; set; }
     public Guid? DeactivatedBy { get; set; }
     public string? DeactivatedReason { get; set; }
@@ -23,10 +27,14 @@ public sealed class MemberType
         AccountId = dto.AccountId,
         TenantId = dto.TenantId,
         DepartmentId = dto.DepartmentId,
+        FullName = dto.FullName,
+        Email = dto.Email,
+        DepartmentName = dto.DepartmentName,
         Role = dto.Role,
         IsOwner = dto.IsOwner,
         IsActive = dto.IsActive,
         CreatedAt = dto.CreatedAt,
+        LastActiveAt = dto.LastActiveAt,
         DeactivatedAt = dto.DeactivatedAt,
         DeactivatedBy = dto.DeactivatedBy,
         DeactivatedReason = dto.DeactivatedReason

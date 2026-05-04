@@ -33,7 +33,10 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
                     RoleType.Accountant,
                     false,
                     true,
-                    DateTime.UtcNow)),
+                    DateTime.UtcNow,
+                    null,
+                    null,
+                    null)),
             new StubTenantRepository(new TenantSummary(
                 tenantId,
                 "Claims Only Workspace",
@@ -64,7 +67,7 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
         public Task<AccountSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<AccountSummary?>(_loginInfo is null
                 ? null
-                : new AccountSummary(_loginInfo.Id, _loginInfo.Email, _loginInfo.IsActive, _loginInfo.IsEmailVerified, _loginInfo.EmailVerifiedAt));
+                : new AccountSummary(_loginInfo.Id, _loginInfo.Email, null, _loginInfo.IsActive, _loginInfo.IsEmailVerified, _loginInfo.EmailVerifiedAt));
 
         public Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default)
             => Task.FromResult<AccountLoginInfo?>(_loginInfo);
