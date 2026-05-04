@@ -33,6 +33,7 @@ public sealed class Account : Entity
     public bool IsActive { get; private set; }
     public bool IsEmailVerified { get; private set; }
     public DateTime? EmailVerifiedAt { get; private set; }
+    public string? FullName { get; private set; }
 
     public static Result<Account> Create(string email, string passwordHash)
     {

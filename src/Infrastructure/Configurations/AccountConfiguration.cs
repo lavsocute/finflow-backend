@@ -19,6 +19,7 @@ internal sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
         builder.Property(x => x.IsEmailVerified).HasColumnName("is_email_verified").HasDefaultValue(false).IsRequired();
         builder.Property(x => x.EmailVerifiedAt).HasColumnName("email_verified_at");
+        builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(200);
 
         builder.HasIndex(x => x.Email).IsUnique();
     }
