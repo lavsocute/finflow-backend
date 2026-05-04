@@ -28,13 +28,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.documents@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace", "finance-ops").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.Add(account);
-            db.Add(tenant);
-            db.Add(membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -101,13 +101,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.documents.pdf@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace PDF", "finance-ops-pdf").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.Add(account);
-            db.Add(tenant);
-            db.Add(membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -154,13 +154,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.unsupported@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace", "finance-ops-unsupported").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.Add(account);
-            db.Add(tenant);
-            db.Add(membership);
+            db.AddRange(account, tenant, department, membership);
         });
 
         using var client = factory.CreateAuthenticatedClient(account.Id, account.Email, RoleType.Staff, tenant.Id, membership.Id);
@@ -236,13 +236,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.documents.quota@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace Quota", "finance-ops-quota").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.Add(account);
-            db.Add(tenant);
-            db.Add(membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionWithUsageAsync(tenant.Id, PlanTier.Pro, ocrPagesUsed: 1_000);
 
@@ -278,13 +278,16 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.approvals@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace", "finance-ops").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
         var managerAccount = Account.Create("manager.approvals@finflow.test", "hashed-password").Value;
         var managerMembership = TenantMembership.Create(managerAccount.Id, tenant.Id, RoleType.Manager).Value;
+        managerMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership, managerAccount, managerMembership);
+            db.AddRange(account, tenant, department, membership, managerAccount, managerMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -400,13 +403,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("manager.self.approve@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace", "finance-ops-approve").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Manager).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.Add(account);
-            db.Add(tenant);
-            db.Add(membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -459,13 +462,16 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.reject@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Finance Ops Workspace", "finance-ops-reject").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
         var managerAccount = Account.Create("manager.reject@finflow.test", "hashed-password").Value;
         var managerMembership = TenantMembership.Create(managerAccount.Id, tenant.Id, RoleType.Manager).Value;
+        managerMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership, managerAccount, managerMembership);
+            db.AddRange(account, tenant, department, membership, managerAccount, managerMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -524,15 +530,19 @@ public sealed class GraphQlDocumentsApiTests
 
         var sourceAccount = Account.Create("staff.source@finflow.test", "hashed-password").Value;
         var sourceTenant = Tenant.Create("Source Workspace", "source-workspace").Value;
+        var sourceDepartment = Department.Create("Finance", sourceTenant.Id).Value;
         var sourceMembership = TenantMembership.Create(sourceAccount.Id, sourceTenant.Id, RoleType.Staff).Value;
+        sourceMembership.SetDepartment(sourceDepartment.Id);
 
         var otherAccount = Account.Create("manager.other@finflow.test", "hashed-password").Value;
         var otherTenant = Tenant.Create("Other Workspace", "other-workspace").Value;
+        var otherDepartment = Department.Create("Finance", otherTenant.Id).Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, otherTenant.Id, RoleType.Manager).Value;
+        otherMembership.SetDepartment(otherDepartment.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(sourceAccount, sourceTenant, sourceMembership, otherAccount, otherTenant, otherMembership);
+            db.AddRange(sourceAccount, sourceTenant, sourceDepartment, sourceMembership, otherAccount, otherTenant, otherDepartment, otherMembership);
         });
         await factory.SeedTenantSubscriptionAsync(sourceTenant.Id, PlanTier.Pro);
 
@@ -585,14 +595,17 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Shared Approval Workspace", "shared-approval-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var staffAccount = Account.Create("staff.shared.approval@finflow.test", "hashed-password").Value;
         var staffMembership = TenantMembership.Create(staffAccount.Id, tenant.Id, RoleType.Staff).Value;
+        staffMembership.SetDepartment(department.Id);
         var managerAccount = Account.Create("manager.shared.approval@finflow.test", "hashed-password").Value;
         var managerMembership = TenantMembership.Create(managerAccount.Id, tenant.Id, RoleType.Manager).Value;
+        managerMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
+            db.AddRange(tenant, department, staffAccount, staffMembership, managerAccount, managerMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -647,14 +660,17 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Approve Role Workspace", "approve-role-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var ownerAccount = Account.Create("owner.approve.role@finflow.test", "hashed-password").Value;
         var ownerMembership = TenantMembership.Create(ownerAccount.Id, tenant.Id, RoleType.Staff).Value;
+        ownerMembership.SetDepartment(department.Id);
         var staffAccount = Account.Create("staff.approve.role@finflow.test", "hashed-password").Value;
         var staffMembership = TenantMembership.Create(staffAccount.Id, tenant.Id, RoleType.Staff).Value;
+        staffMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, ownerAccount, ownerMembership, staffAccount, staffMembership);
+            db.AddRange(tenant, department, ownerAccount, ownerMembership, staffAccount, staffMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -698,15 +714,19 @@ public sealed class GraphQlDocumentsApiTests
 
         var sourceAccount = Account.Create("staff.source.submit@finflow.test", "hashed-password").Value;
         var sourceTenant = Tenant.Create("Source Submit Workspace", "source-submit-workspace").Value;
+        var sourceDepartment = Department.Create("Finance", sourceTenant.Id).Value;
         var sourceMembership = TenantMembership.Create(sourceAccount.Id, sourceTenant.Id, RoleType.Staff).Value;
+        sourceMembership.SetDepartment(sourceDepartment.Id);
 
         var otherAccount = Account.Create("staff.other.submit@finflow.test", "hashed-password").Value;
         var otherTenant = Tenant.Create("Other Submit Workspace", "other-submit-workspace").Value;
+        var otherDepartment = Department.Create("Finance", otherTenant.Id).Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, otherTenant.Id, RoleType.Staff).Value;
+        otherMembership.SetDepartment(otherDepartment.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(sourceAccount, sourceTenant, sourceMembership, otherAccount, otherTenant, otherMembership);
+            db.AddRange(sourceAccount, sourceTenant, sourceDepartment, sourceMembership, otherAccount, otherTenant, otherDepartment, otherMembership);
         });
         await factory.SeedTenantSubscriptionAsync(sourceTenant.Id, PlanTier.Pro);
 
@@ -750,16 +770,19 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Shared Workspace", "shared-docs").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
 
         var ownerAccount = Account.Create("owner.documents@finflow.test", "hashed-password").Value;
         var ownerMembership = TenantMembership.Create(ownerAccount.Id, tenant.Id, RoleType.Staff).Value;
+        ownerMembership.SetDepartment(department.Id);
 
         var otherAccount = Account.Create("other.documents@finflow.test", "hashed-password").Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, tenant.Id, RoleType.Manager).Value;
+        otherMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, ownerAccount, ownerMembership, otherAccount, otherMembership);
+            db.AddRange(tenant, department, ownerAccount, ownerMembership, otherAccount, otherMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -802,14 +825,17 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Workspace Drafts", "workspace-drafts").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var staffAccount = Account.Create("staff.one@finflow.test", "hashed-password").Value;
         var staffMembership = TenantMembership.Create(staffAccount.Id, tenant.Id, RoleType.Staff).Value;
+        staffMembership.SetDepartment(department.Id);
         var managerAccount = Account.Create("manager.one@finflow.test", "hashed-password").Value;
         var managerMembership = TenantMembership.Create(managerAccount.Id, tenant.Id, RoleType.Manager).Value;
+        managerMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
+            db.AddRange(tenant, department, staffAccount, staffMembership, managerAccount, managerMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -847,11 +873,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("draft.owner@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Draft Owner Workspace", "draft-owner-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -882,14 +910,17 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Draft Shared Workspace", "draft-shared-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var ownerAccount = Account.Create("draft.owner.shared@finflow.test", "hashed-password").Value;
         var ownerMembership = TenantMembership.Create(ownerAccount.Id, tenant.Id, RoleType.Staff).Value;
+        ownerMembership.SetDepartment(department.Id);
         var otherAccount = Account.Create("draft.other.shared@finflow.test", "hashed-password").Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, tenant.Id, RoleType.Manager).Value;
+        otherMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, ownerAccount, ownerMembership, otherAccount, otherMembership);
+            db.AddRange(tenant, department, ownerAccount, ownerMembership, otherAccount, otherMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -931,14 +962,17 @@ public sealed class GraphQlDocumentsApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenant = Tenant.Create("Workspace History", "workspace-history").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var staffAccount = Account.Create("history.staff@finflow.test", "hashed-password").Value;
         var staffMembership = TenantMembership.Create(staffAccount.Id, tenant.Id, RoleType.Staff).Value;
+        staffMembership.SetDepartment(department.Id);
         var managerAccount = Account.Create("history.manager@finflow.test", "hashed-password").Value;
         var managerMembership = TenantMembership.Create(managerAccount.Id, tenant.Id, RoleType.Manager).Value;
+        managerMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(tenant, staffAccount, staffMembership, managerAccount, managerMembership);
+            db.AddRange(tenant, department, staffAccount, staffMembership, managerAccount, managerMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -976,11 +1010,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("history.documents@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("History Workspace", "history-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Accountant).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -1008,11 +1044,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("detail.staff@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Detail Workspace", "detail-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -1095,13 +1133,16 @@ public sealed class GraphQlDocumentsApiTests
 
         var ownerAccount = Account.Create("owner.detail@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Detail Deny Workspace", "detail-deny-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var ownerMembership = TenantMembership.Create(ownerAccount.Id, tenant.Id, RoleType.Staff).Value;
+        ownerMembership.SetDepartment(department.Id);
         var otherAccount = Account.Create("other.detail@finflow.test", "hashed-password").Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, tenant.Id, RoleType.Staff).Value;
+        otherMembership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(ownerAccount, otherAccount, tenant, ownerMembership, otherMembership);
+            db.AddRange(ownerAccount, otherAccount, tenant, department, ownerMembership, otherMembership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
@@ -1144,11 +1185,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.pending.denied@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Pending Denied Workspace", "pending-denied-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership);
+            db.AddRange(account, tenant, department, membership);
         });
 
         using var client = factory.CreateAuthenticatedClient(
@@ -1178,25 +1221,33 @@ public sealed class GraphQlDocumentsApiTests
 
         var sourceAccount = Account.Create("manager.pending.source@finflow.test", "hashed-password").Value;
         var sourceTenant = Tenant.Create("Pending Source Workspace", "pending-source-workspace").Value;
+        var sourceDepartment = Department.Create("Finance", sourceTenant.Id).Value;
         var sourceMembership = TenantMembership.Create(sourceAccount.Id, sourceTenant.Id, RoleType.Manager).Value;
+        sourceMembership.SetDepartment(sourceDepartment.Id);
 
         var otherAccount = Account.Create("manager.pending.other@finflow.test", "hashed-password").Value;
         var otherTenant = Tenant.Create("Pending Other Workspace", "pending-other-workspace").Value;
+        var otherDepartment = Department.Create("Finance", otherTenant.Id).Value;
         var otherMembership = TenantMembership.Create(otherAccount.Id, otherTenant.Id, RoleType.Manager).Value;
+        otherMembership.SetDepartment(otherDepartment.Id);
 
         var sourceSubmitter = Account.Create("staff.pending.source@finflow.test", "hashed-password").Value;
         var sourceSubmitterMembership = TenantMembership.Create(sourceSubmitter.Id, sourceTenant.Id, RoleType.Staff).Value;
+        sourceSubmitterMembership.SetDepartment(sourceDepartment.Id);
         var otherSubmitter = Account.Create("staff.pending.other@finflow.test", "hashed-password").Value;
         var otherSubmitterMembership = TenantMembership.Create(otherSubmitter.Id, otherTenant.Id, RoleType.Staff).Value;
+        otherSubmitterMembership.SetDepartment(otherDepartment.Id);
 
         await factory.SeedAsync(db =>
         {
             db.AddRange(
                 sourceAccount,
                 sourceTenant,
+                sourceDepartment,
                 sourceMembership,
                 otherAccount,
                 otherTenant,
+                otherDepartment,
                 otherMembership,
                 sourceSubmitter,
                 sourceSubmitterMembership,
@@ -1263,11 +1314,13 @@ public sealed class GraphQlDocumentsApiTests
 
         var account = Account.Create("staff.negative.quantity@finflow.test", "hashed-password").Value;
         var tenant = Tenant.Create("Negative Quantity Workspace", "negative-quantity-workspace").Value;
+        var department = Department.Create("Finance", tenant.Id).Value;
         var membership = TenantMembership.Create(account.Id, tenant.Id, RoleType.Staff).Value;
+        membership.SetDepartment(department.Id);
 
         await factory.SeedAsync(db =>
         {
-            db.AddRange(account, tenant, membership);
+            db.AddRange(account, tenant, department, membership);
         });
         await factory.SeedTenantSubscriptionAsync(tenant.Id, PlanTier.Pro);
 
