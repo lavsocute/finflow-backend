@@ -3,12 +3,18 @@ using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
+using FinFlow.Domain.Documents;
+using FinFlow.Domain.Chat;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Pgvector;
 
 namespace FinFlow.Infrastructure;
 
 public class ApplicationDbContext : DbContext, IUnitOfWork
 {
+    internal const int DocumentChunkEmbeddingDimensions = 2048;
     private readonly ICurrentTenant _currentTenant;
 
     public ApplicationDbContext(
@@ -27,6 +33,9 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -122,6 +131,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        ConfigureDocumentChunkModel(builder);
 
         builder.Entity<Account>().HasQueryFilter(e => e.IsActive);
 
@@ -161,5 +171,41 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
 
         builder.Entity<Expense>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+
+        builder.Entity<ChatSession>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || e.IdTenant == _currentTenant.Id);
+    }
+
+    private void ConfigureDocumentChunkModel(ModelBuilder builder)
+    {
+        var documentChunk = builder.Entity<DocumentChunk>();
+
+        documentChunk.Property(x => x.Embedding)
+            .Metadata.SetValueComparer(new ValueComparer<float[]>(
+                (left, right) =>
+                    ReferenceEquals(left, right) ||
+                    (left != null && right != null && left.SequenceEqual(right)),
+                value => value.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+                value => value.ToArray()));
+
+        documentChunk.Property(x => x.Embedding)
+            .IsRequired();
+
+        documentChunk.HasIndex(x => x.IdTenant);
+        documentChunk.HasIndex(x => new { x.IdTenant, x.Type });
+        documentChunk.HasIndex(x => new { x.IdTenant, x.OwnerMembershipId });
+        documentChunk.HasIndex(x => new { x.IdTenant, x.DepartmentId });
+
+        if (!Database.IsNpgsql())
+            return;
+
+        builder.HasPostgresExtension("vector");
+
+        documentChunk.Property(x => x.Embedding)
+            .HasConversion(new ValueConverter<float[], Vector>(
+                value => new Vector(value),
+                value => value.ToArray()))
+            .HasColumnType($"vector({DocumentChunkEmbeddingDimensions})");
+
     }
 }
