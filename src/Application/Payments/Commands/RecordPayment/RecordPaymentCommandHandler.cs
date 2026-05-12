@@ -21,8 +21,14 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
 
-    private const decimal DefaultAutoConfirmThreshold = 5_000_000m;
     private const decimal DefaultExchangeRate = 1m;
+    private static readonly HashSet<PaymentMethod> AllowedReimbursementMethods =
+    [
+        PaymentMethod.BankTransfer,
+        PaymentMethod.Payroll,
+        PaymentMethod.Cash,
+        PaymentMethod.Other
+    ];
 
     public RecordPaymentCommandHandler(
         IPaymentRepository paymentRepository,
@@ -60,19 +66,20 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
         if (hasPayment)
             return Result.Failure<PaymentResponse>(PaymentErrors.DocumentAlreadyHasPayment);
 
-        if (!Enum.TryParse<CurrencyCode>(request.CurrencyCode, ignoreCase: true, out var currencyCode))
-            return Result.Failure<PaymentResponse>(new Error("Payment.InvalidCurrency", $"Currency '{request.CurrencyCode}' is not supported."));
-
         if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var paymentMethod))
             return Result.Failure<PaymentResponse>(new Error("Payment.InvalidMethod", $"Payment method '{request.PaymentMethod}' is not supported."));
 
-        var exchangeRate = request.ExchangeRate ?? (currencyCode == CurrencyCode.VND ? DefaultExchangeRate : 1m);
+        if (!AllowedReimbursementMethods.Contains(paymentMethod))
+            return Result.Failure<PaymentResponse>(new Error("Payment.InvalidMethod", $"Payment method '{request.PaymentMethod}' is not supported for employee reimbursement."));
+
+        var currencyCode = CurrencyCode.VND;
+        var exchangeRate = DefaultExchangeRate;
 
         var paymentResult = Payment.Create(
             _currentTenant.Id.Value,
             request.DocumentId,
             document.IdDepartment,
-            request.Amount,
+            document.TotalAmount,
             currencyCode,
             exchangeRate,
             _currentTenant.MembershipId.Value,
@@ -84,19 +91,7 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
 
         var payment = paymentResult.Value;
 
-        bool autoConfirmed = false;
-        if (payment.AmountInVnd < DefaultAutoConfirmThreshold)
-        {
-            payment.AutoConfirm();
-            autoConfirmed = true;
-        }
-
         _paymentRepository.Add(payment);
-
-        if (autoConfirmed)
-        {
-            await CreateExpenseAndUpdateBudgetAsync(payment, document, cancellationToken);
-        }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -113,53 +108,4 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
             payment.Notes));
     }
 
-    private async Task CreateExpenseAndUpdateBudgetAsync(Payment payment, ReviewedDocument document, CancellationToken cancellationToken)
-    {
-        var categories = await _categoryRepository.GetByTenantIdAsync(_currentTenant.Id.Value, includeInactive: true, cancellationToken);
-
-        var category = categories.FirstOrDefault(c =>
-            !string.IsNullOrWhiteSpace(document.Category) &&
-            c.Name.Equals(document.Category, StringComparison.OrdinalIgnoreCase))
-            ?? categories.FirstOrDefault(c => c.IsSystem)
-            ?? categories.FirstOrDefault();
-
-        if (category == null)
-            return;
-
-        var expense = Expense.Create(
-            payment.IdTenant,
-            payment.IdDepartment,
-            payment.DocumentId,
-            payment.Id,
-            category.Id,
-            document.VendorName,
-            payment.Amount,
-            payment.CurrencyCode,
-            payment.AmountInVnd,
-            document.DocumentDate.Month,
-            document.DocumentDate.Year,
-            document.DocumentDate.ToDateTime(TimeOnly.MinValue),
-            _currentTenant.MembershipId.Value);
-
-        _expenseRepository.Add(expense);
-
-        var budget = await _budgetRepository.GetEntityByIdAsync(
-            await GetBudgetIdAsync(payment.IdDepartment, document.DocumentDate.Month, document.DocumentDate.Year, cancellationToken),
-            cancellationToken);
-
-        if (budget != null)
-        {
-            var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                payment.IdDepartment, document.DocumentDate.Month, document.DocumentDate.Year, cancellationToken);
-
-            budget.RecalculateSpent(spentAmount);
-            _budgetRepository.Update(budget);
-        }
-    }
-
-    private async Task<Guid> GetBudgetIdAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken)
-    {
-        var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(departmentId, month, year, cancellationToken);
-        return budget?.Id ?? Guid.Empty;
-    }
 }

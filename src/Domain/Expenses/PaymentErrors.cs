@@ -16,4 +16,5 @@ public static class PaymentErrors
     public static readonly Error RejectedByRequired = new("Payment.RejectedByRequired", "Rejected by membership ID is required");
     public static readonly Error RejectionReasonRequired = new("Payment.RejectionReasonRequired", "Rejection reason is required");
     public static readonly Error DocumentNotApproved = new("Payment.DocumentNotApproved", "Document must be approved before recording payment");
+    public static readonly Error RejectionTypeRequired = new("Payment.RejectionTypeRequired", "Rejection type is required");
 }

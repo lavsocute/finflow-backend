@@ -4,9 +4,11 @@ using FinFlow.Application.Payments.Commands.RejectPayment;
 using FinFlow.Application.Expenses.Commands.RejectExpense;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.Expenses;
 using FinFlow.Api.GraphQL.Documents;
 using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
+using HotChocolate.Types;
 using MediatR;
 using DomainError = FinFlow.Domain.Abstractions.Error;
 
@@ -14,11 +16,8 @@ namespace FinFlow.Api.GraphQL.Payments;
 
 public sealed record RecordPaymentInput(
     Guid DocumentId,
-    decimal Amount,
-    string CurrencyCode,
     string PaymentMethod,
-    string? Notes,
-    decimal? ExchangeRate);
+    string? Notes);
 
 [ExtendObjectType(typeof(FinFlow.Api.GraphQL.Auth.AuthMutations))]
 public sealed class PaymentMutations
@@ -36,11 +35,8 @@ public sealed class PaymentMutations
         var result = await mediator.Send(
             new RecordPaymentCommand(
                 input.DocumentId,
-                input.Amount,
-                input.CurrencyCode,
                 input.PaymentMethod,
-                input.Notes,
-                input.ExchangeRate),
+                input.Notes),
             cancellationToken);
 
         if (result.IsFailure)
@@ -71,23 +67,24 @@ public sealed class PaymentMutations
 
         if (Enum.TryParse<RoleType>(rawRole, out var role))
         {
-            if (role is RoleType.Accountant or RoleType.Manager or RoleType.TenantAdmin)
+            if (role is RoleType.Accountant or RoleType.TenantAdmin)
                 return;
         }
 
-        throw ToGraphQlException(new DomainError("Payment.Forbidden", "Only Accountant, Manager, or Admin can record payments."));
+        throw ToGraphQlException(new DomainError("Payment.Forbidden", "Only Accountant or Admin can manage reimbursement payments."));
     }
 
     [Authorize]
     public async Task<PaymentPayload> ConfirmPaymentAsync(
         Guid paymentId,
+        string? executionReference,
         [Service] IMediator mediator,
         IResolverContext context,
         CancellationToken cancellationToken)
     {
-        EnsureManagerRole(context);
+        EnsureAccountantRole(context);
 
-        var result = await mediator.Send(new ConfirmPaymentCommand(paymentId), cancellationToken);
+        var result = await mediator.Send(new ConfirmPaymentCommand(paymentId, executionReference), cancellationToken);
 
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
@@ -98,14 +95,15 @@ public sealed class PaymentMutations
     [Authorize]
     public async Task<PaymentPayload> RejectPaymentAsync(
         Guid paymentId,
-        string reason,
+        [GraphQLType(typeof(RejectTypeType))] PaymentRejectType type,
+        string? reason,
         [Service] IMediator mediator,
         IResolverContext context,
         CancellationToken cancellationToken)
     {
-        EnsureManagerRole(context);
+        EnsureAccountantRole(context);
 
-        var result = await mediator.Send(new RejectPaymentCommand(paymentId, reason), cancellationToken);
+        var result = await mediator.Send(new RejectPaymentCommand(paymentId, type, reason), cancellationToken);
 
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
@@ -143,7 +141,7 @@ public sealed class PaymentMutations
                 return;
         }
 
-        throw ToGraphQlException(new DomainError("Payment.Forbidden", "Only Manager or Admin can confirm/reject payments."));
+        throw ToGraphQlException(new DomainError("Payment.Forbidden", "Only Manager or Admin can reject approved expenses."));
     }
 
     private static GraphQLException ToGraphQlException(DomainError error) =>

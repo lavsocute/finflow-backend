@@ -1,0 +1,55 @@
+namespace FinFlow.Application.Payments.DTOs;
+
+public sealed record PaymentQueueItemResponse(
+    Guid? PaymentId,
+    Guid DocumentId,
+    string Reference,
+    string DocumentFileName,
+    string EmployeeName,
+    string EmployeeMembershipId,
+    string? EmployeeCode,
+    string? MerchantName,
+    string Department,
+    decimal Amount,
+    string CurrencyCode,
+    decimal AmountInVnd,
+    DateOnly ExpenseDate,
+    DateTime SubmittedAt,
+    string QueueStatus,
+    string? PaymentMethod,
+    DateTime? RecordedAt,
+    DateTime? ConfirmedAt,
+    string? RejectionReason,
+    string? Notes);
+
+public sealed record PaymentAuditTrailItemResponse(
+    string Type,
+    string Title,
+    string Actor,
+    DateTime Timestamp,
+    string? Note);
+
+public sealed record PaymentDetailResponse(
+    Guid? PaymentId,
+    Guid DocumentId,
+    string Reference,
+    string? SettlementRef,
+    string ApprovalRecordId,
+    string EmployeeName,
+    string EmployeeMembershipId,
+    string? EmployeeCode,
+    string? MerchantName,
+    string Department,
+    string? CostCenter,
+    decimal Amount,
+    string CurrencyCode,
+    decimal AmountInVnd,
+    DateOnly ExpenseDate,
+    string? PaymentMethod,
+    string QueueStatus,
+    string DocumentFileName,
+    string? DocumentDownloadUrl,
+    string? DocumentViewUrl,
+    IReadOnlyList<PaymentAuditTrailItemResponse> AuditTrail,
+    string? MethodSource,
+    bool MethodEditable);

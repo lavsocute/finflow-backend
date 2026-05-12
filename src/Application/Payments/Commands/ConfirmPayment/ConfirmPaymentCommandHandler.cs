@@ -51,7 +51,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         if (payment.Status != PaymentStatus.Pending)
             return Result.Failure<PaymentResponse>(PaymentErrors.AlreadyProcessed);
 
-        var confirmResult = payment.Confirm(_currentTenant.MembershipId.Value);
+        var confirmResult = payment.Confirm(_currentTenant.MembershipId.Value, request.ExecutionReference);
         if (confirmResult.IsFailure)
             return Result.Failure<PaymentResponse>(confirmResult.Error);
 
