@@ -29,7 +29,7 @@ public sealed class GetPendingApprovalItemsQueryHandler
                 $"{x.Category} · {x.Source}",
                 x.TotalAmount,
                 "VND",
-                x.DueDate,
+                x.DocumentDate,
                 x.SubmittedAt,
                 x.TotalAmount >= 5000m ? "High" : "Medium",
                 x.Status.ToString(),

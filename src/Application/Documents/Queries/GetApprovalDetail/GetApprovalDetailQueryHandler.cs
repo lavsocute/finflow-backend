@@ -72,7 +72,7 @@ public sealed class GetApprovalDetailQueryHandler
             departmentName,
             document.TotalAmount,
             "VND",
-            document.DueDate,
+            document.DocumentDate,
             document.SubmittedAt,
             document.TotalAmount >= 5000m ? "High" : "Medium",
             document.Status.ToString(),

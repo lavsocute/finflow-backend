@@ -99,7 +99,7 @@ public sealed class GroqOcrProvider : IOcrProvider
                 parseResult.Value.VendorName,
                 parseResult.Value.Reference,
                 parseResult.Value.DocumentDate,
-                parseResult.Value.DueDate,
+                parseResult.Value.ExtractedInvoiceDueDate,
                 parseResult.Value.Category,
                 parseResult.Value.VendorTaxId,
                 parseResult.Value.Subtotal,

@@ -78,7 +78,7 @@ public sealed class ExportApprovalQueueQueryHandler
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("DocumentId,Title,VendorName,Requester,RequesterEmail,Department,Amount,Currency,DueDate,SubmittedAt,Priority,Status,PolicySummary");
+        sb.AppendLine("DocumentId,Title,VendorName,Requester,RequesterEmail,Department,Amount,Currency,ExpenseDate,SubmittedAt,Priority,Status,PolicySummary");
 
         foreach (var doc in documents)
         {
@@ -97,7 +97,7 @@ public sealed class ExportApprovalQueueQueryHandler
 
             var priority = doc.TotalAmount >= 5_000_000m ? "High" : "Medium";
 
-            sb.AppendLine($"{doc.Id},{Escape(doc.VendorName + " · " + doc.Reference)},{Escape(doc.VendorName)},{Escape(account.FullName ?? account.Email.Split('@')[0])},{Escape(account.Email)},{Escape(departmentName ?? "")},{doc.TotalAmount},VND,{doc.DueDate:yyyy-MM-dd},{doc.SubmittedAt:yyyy-MM-dd HH:mm},{priority},{doc.Status},{Escape(policySummary)}");
+            sb.AppendLine($"{doc.Id},{Escape(doc.VendorName + " · " + doc.Reference)},{Escape(doc.VendorName)},{Escape(account.FullName ?? account.Email.Split('@')[0])},{Escape(account.Email)},{Escape(departmentName ?? "")},{doc.TotalAmount},VND,{doc.DocumentDate:yyyy-MM-dd},{doc.SubmittedAt:yyyy-MM-dd HH:mm},{priority},{doc.Status},{Escape(policySummary)}");
         }
 
         var csvContent = sb.ToString();

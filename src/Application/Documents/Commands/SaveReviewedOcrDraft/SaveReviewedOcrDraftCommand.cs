@@ -17,7 +17,6 @@ public sealed record SaveReviewedOcrDraftCommand(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string? VendorTaxId,
     decimal Subtotal,

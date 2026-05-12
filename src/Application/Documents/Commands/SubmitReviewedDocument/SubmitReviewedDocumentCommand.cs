@@ -19,7 +19,6 @@ public sealed record SubmitReviewedDocumentCommand(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string? VendorTaxId,
     decimal Subtotal,

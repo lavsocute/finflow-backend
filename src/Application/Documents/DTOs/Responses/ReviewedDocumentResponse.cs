@@ -7,6 +7,5 @@ public sealed record ReviewedDocumentResponse(
     string VendorName,
     string Reference,
     decimal TotalAmount,
-    DateOnly DueDate,
     string ReviewedByStaff
 );

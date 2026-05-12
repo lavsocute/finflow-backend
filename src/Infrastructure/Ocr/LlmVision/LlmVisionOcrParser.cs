@@ -19,7 +19,7 @@ public static class LlmVisionOcrParser
             var vendorName = GetRequiredString(root, "vendorName");
             var reference = GetRequiredString(root, "reference");
             var documentDate = GetRequiredDate(root, "documentDate");
-            var dueDate = GetOptionalDate(root, "dueDate") ?? documentDate;
+            var extractedInvoiceDueDate = GetOptionalDate(root, "extractedInvoiceDueDate");
             var category = GetOptionalString(root, "category");
             var vendorTaxId = NormalizeVendorTaxId(GetOptionalString(root, "vendorTaxId"));
             var subtotal = GetRequiredDecimal(root, "subtotal");
@@ -43,7 +43,7 @@ public static class LlmVisionOcrParser
                 vendorName,
                 reference,
                 documentDate,
-                dueDate,
+                extractedInvoiceDueDate,
                 string.IsNullOrWhiteSpace(category) ? "Uncategorized" : category,
                 vendorTaxId,
                 subtotal,

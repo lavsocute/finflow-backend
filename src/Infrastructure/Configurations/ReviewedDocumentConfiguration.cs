@@ -21,7 +21,6 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         builder.Property(x => x.VendorName).HasColumnName("vendor_name").HasMaxLength(200).IsRequired();
         builder.Property(x => x.Reference).HasColumnName("reference").HasMaxLength(100).IsRequired();
         builder.Property(x => x.DocumentDate).HasColumnName("document_date").IsRequired();
-        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired();
         builder.Property(x => x.Category).HasColumnName("category").HasMaxLength(100).IsRequired();
         builder.Property(x => x.VendorTaxId).HasColumnName("vendor_tax_id").HasMaxLength(50);
         builder.Property(x => x.Subtotal).HasColumnName("subtotal").HasColumnType("numeric(18,2)").IsRequired();

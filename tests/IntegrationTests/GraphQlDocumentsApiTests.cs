@@ -49,7 +49,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName
                 reference
                 documentDate
-                dueDate
                 category
                 vendorTaxId
                 subtotal
@@ -331,7 +330,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName
                 reference
                 totalAmount
-                dueDate
                 reviewedByStaff
               }
             }
@@ -346,7 +344,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName = TestVendorName,
                 reference = "INV-2026-0101",
                 documentDate = "2026-04-18",
-                dueDate = "2026-05-02",
                 category = "Software & SaaS",
                 vendorTaxId = TestVendorTaxCode,
                 subtotal = 1200.00m,
@@ -375,7 +372,7 @@ public sealed class GraphQlDocumentsApiTests
                 requester
                 department
                 amount
-                dueDate
+                expenseDate
                 priority
                 status
               }
@@ -1072,7 +1069,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName
                 reference
                 documentDate
-                dueDate
                 category
                 vendorTaxId
                 subtotal
@@ -1107,7 +1103,6 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal("Amazon Web Services, Inc.", doc.GetProperty("vendorName").GetString());
         Assert.Equal("INV-2026-0101", doc.GetProperty("reference").GetString());
         Assert.Equal("2026-04-18", doc.GetProperty("documentDate").GetString());
-        Assert.Equal("2026-05-02", doc.GetProperty("dueDate").GetString());
         Assert.Equal("Software & SaaS", doc.GetProperty("category").GetString());
         Assert.Equal(TestVendorTaxCode, doc.GetProperty("vendorTaxId").GetString());
         Assert.Equal(1200.00m, doc.GetProperty("subtotal").GetDecimal());
@@ -1346,7 +1341,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName = TestVendorName,
                 reference = "INV-2026-0101",
                 documentDate = "2026-04-18",
-                dueDate = "2026-05-02",
                 category = "Software & SaaS",
                 vendorTaxId = TestVendorTaxCode,
                 subtotal = 1200.00m,
@@ -1377,7 +1371,6 @@ public sealed class GraphQlDocumentsApiTests
         vendorName = TestVendorName,
         reference = "INV-2026-0101",
         documentDate = "2026-04-18",
-        dueDate = "2026-05-02",
         category = "Software & SaaS",
         vendorTaxId = TestVendorTaxCode,
         subtotal = 1200.00m,
@@ -1533,7 +1526,6 @@ public sealed class GraphQlDocumentsApiTests
                 vendorName
                 reference
                 documentDate
-                dueDate
                 category
                 vendorTaxId
                 subtotal

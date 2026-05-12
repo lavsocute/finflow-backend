@@ -38,7 +38,6 @@ public sealed class GetMyDocumentDraftQueryHandler
             draft.VendorName,
             draft.Reference,
             draft.DocumentDate,
-            draft.DueDate,
             draft.Category,
             draft.VendorTaxId ?? string.Empty,
             draft.Subtotal,
