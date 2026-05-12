@@ -23,7 +23,7 @@ public sealed class OpenRouterOcrProviderTests
                   "choices": [
                     {
                       "message": {
-                        "content": "```json\n{\"vendorName\":\"OpenRouter Vendor\",\"reference\":\"INV-2026-1188\",\"documentDate\":\"2026-04-20\",\"dueDate\":\"2026-05-05\",\"category\":\"Marketing\",\"vendorTaxId\":\"TX-789\",\"subtotal\":900.00,\"vat\":90.00,\"totalAmount\":990.00,\"lineItems\":[{\"itemName\":\"Campaign Creative\",\"quantity\":1,\"unitPrice\":900.00,\"total\":900.00},{\"itemName\":\"VAT\",\"quantity\":1,\"unitPrice\":90.00,\"total\":90.00}]}\n```"
+                        "content": "```json\n{\"vendorName\":\"OpenRouter Vendor\",\"reference\":\"INV-2026-1188\",\"documentDate\":\"2026-04-20\",\"extractedInvoiceDueDate\":\"2026-05-05\",\"category\":\"Marketing\",\"vendorTaxId\":\"TX-789\",\"subtotal\":900.00,\"vat\":90.00,\"totalAmount\":990.00,\"lineItems\":[{\"itemName\":\"Campaign Creative\",\"quantity\":1,\"unitPrice\":900.00,\"total\":900.00},{\"itemName\":\"VAT\",\"quantity\":1,\"unitPrice\":90.00,\"total\":90.00}]}\n```"
                       }
                     }
                   ]

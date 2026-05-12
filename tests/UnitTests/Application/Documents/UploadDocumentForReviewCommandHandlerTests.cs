@@ -159,7 +159,6 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         Assert.Equal("Acme Cloud Ltd.", result.Value.VendorName);
         Assert.Equal("INV-2026-0042", result.Value.Reference);
         Assert.Equal(new DateOnly(2026, 4, 18), result.Value.DocumentDate);
-        Assert.Equal(new DateOnly(2026, 5, 2), result.Value.DueDate);
         Assert.Equal("Software & SaaS", result.Value.Category);
         Assert.Equal("TX-123", result.Value.VendorTaxId);
         Assert.Equal(1200.00m, result.Value.Subtotal);
@@ -188,7 +187,6 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         Assert.Equal("Acme Cloud Ltd.", persistedDraft.VendorName);
         Assert.Equal("INV-2026-0042", persistedDraft.Reference);
         Assert.Equal(new DateOnly(2026, 4, 18), persistedDraft.DocumentDate);
-        Assert.Equal(new DateOnly(2026, 5, 2), persistedDraft.DueDate);
         Assert.Equal("Software & SaaS", persistedDraft.Category);
         Assert.Equal("TX-123", persistedDraft.VendorTaxId);
         Assert.Equal(1200.00m, persistedDraft.Subtotal);

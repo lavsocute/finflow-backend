@@ -35,7 +35,6 @@ public sealed class GetMySubmittedDocumentQueryHandler
             document.VendorName,
             document.Reference,
             document.DocumentDate,
-            document.DueDate,
             document.Category,
             document.VendorTaxId ?? string.Empty,
             document.Subtotal,

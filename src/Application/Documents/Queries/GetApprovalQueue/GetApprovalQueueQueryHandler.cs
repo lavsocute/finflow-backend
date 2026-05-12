@@ -106,7 +106,7 @@ public sealed class GetApprovalQueueQueryHandler
                 departmentName ?? string.Empty,
                 doc.TotalAmount,
                 "VND",
-                doc.DueDate,
+                doc.DocumentDate,
                 doc.SubmittedAt,
                 doc.TotalAmount >= 5_000_000m ? "High" : "Medium",
                 doc.Status.ToString(),

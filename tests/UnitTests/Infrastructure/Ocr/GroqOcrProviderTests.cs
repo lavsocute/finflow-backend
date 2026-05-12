@@ -23,7 +23,7 @@ public sealed class GroqOcrProviderTests
                   "choices": [
                     {
                       "message": {
-                        "content": "{\"vendorName\":\"Acme Cloud Ltd.\",\"reference\":\"INV-2026-0042\",\"documentDate\":\"2026-04-18\",\"dueDate\":\"2026-05-02\",\"category\":\"Software & SaaS\",\"vendorTaxId\":\"TX-123\",\"subtotal\":1200.00,\"vat\":240.00,\"totalAmount\":1440.00,\"lineItems\":[{\"itemName\":\"Cloud Compute Instance\",\"quantity\":1,\"unitPrice\":1200.00,\"total\":1200.00},{\"itemName\":\"Tax Adjustment\",\"quantity\":1,\"unitPrice\":240.00,\"total\":240.00}]}"
+                        "content": "{\"vendorName\":\"Acme Cloud Ltd.\",\"reference\":\"INV-2026-0042\",\"documentDate\":\"2026-04-18\",\"extractedInvoiceDueDate\":\"2026-05-02\",\"category\":\"Software & SaaS\",\"vendorTaxId\":\"TX-123\",\"subtotal\":1200.00,\"vat\":240.00,\"totalAmount\":1440.00,\"lineItems\":[{\"itemName\":\"Cloud Compute Instance\",\"quantity\":1,\"unitPrice\":1200.00,\"total\":1200.00},{\"itemName\":\"Tax Adjustment\",\"quantity\":1,\"unitPrice\":240.00,\"total\":240.00}]}"
                       }
                     }
                   ]

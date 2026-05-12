@@ -23,7 +23,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -56,7 +55,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "  Vendor Co  ",
                 "  INV-001  ",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "  Office Supplies  ",
                 "  TX-123  ",
                 1000m,
@@ -79,6 +77,39 @@ public sealed class SaveManualDraftCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_PersistsDocumentDate_WhenSavingManualDraft()
+    {
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+
+        var documentDate = new DateOnly(2026, 4, 1);
+
+        var result = await handler.Handle(
+            new SaveManualDraftCommand(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "invoice.pdf",
+                "Vendor Co",
+                "INV-001",
+                documentDate,
+                "Office Supplies",
+                "TX-123",
+                1000m,
+                100m,
+                1100m,
+                "staff@finflow.test",
+                [
+                    new SaveManualDraftLineItem("Item 1", 1m, 1000m, 1000m)
+                ]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var draft = repository.AddedDrafts.Single();
+        Assert.Equal(documentDate, draft.DocumentDate);
+    }
+
+    [Fact]
     public async Task Handle_ReturnsVendorNameRequired_WhenVendorNameIsBlank()
     {
         var repository = new StubUploadedDocumentDraftRepository();
@@ -93,7 +124,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "   ",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -124,7 +154,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "   ",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -155,7 +184,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "   ",
                 "TX-123",
                 1000m,
@@ -186,7 +214,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 0m,
@@ -217,7 +244,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 -100m,
@@ -248,7 +274,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -277,7 +302,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -308,7 +332,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -339,7 +362,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,
@@ -370,7 +392,6 @@ public sealed class SaveManualDraftCommandHandlerTests
                 "Vendor Co",
                 "INV-001",
                 new DateOnly(2026, 4, 1),
-                new DateOnly(2026, 5, 1),
                 "Office Supplies",
                 "TX-123",
                 1000m,

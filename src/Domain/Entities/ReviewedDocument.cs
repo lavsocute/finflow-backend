@@ -18,7 +18,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         string vendorName,
         string reference,
         DateOnly documentDate,
-        DateOnly dueDate,
         string category,
         string? vendorTaxId,
         decimal subtotal,
@@ -39,7 +38,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         VendorName = vendorName;
         Reference = reference;
         DocumentDate = documentDate;
-        DueDate = dueDate;
         Category = category;
         VendorTaxId = vendorTaxId;
         Subtotal = subtotal;
@@ -66,7 +64,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     public string VendorName { get; private set; } = null!;
     public string Reference { get; private set; } = null!;
     public DateOnly DocumentDate { get; private set; }
-    public DateOnly DueDate { get; private set; }
     public string Category { get; private set; } = null!;
     public string? VendorTaxId { get; private set; }
     public decimal Subtotal { get; private set; }
@@ -93,7 +90,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         string vendorName,
         string reference,
         DateOnly documentDate,
-        DateOnly dueDate,
         string category,
         string? vendorTaxId,
         decimal subtotal,
@@ -161,7 +157,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
             vendorName.Trim(),
             reference.Trim(),
             documentDate,
-            dueDate,
             category.Trim(),
             string.IsNullOrWhiteSpace(vendorTaxId) ? null : vendorTaxId.Trim(),
             subtotal,

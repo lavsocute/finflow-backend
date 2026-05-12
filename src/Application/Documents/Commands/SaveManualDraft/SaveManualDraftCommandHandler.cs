@@ -39,7 +39,6 @@ public sealed class SaveManualDraftCommandHandler
             request.VendorName,
             request.Reference,
             request.DocumentDate,
-            request.DueDate,
             request.Category,
             request.VendorTaxId,
             request.Subtotal,
