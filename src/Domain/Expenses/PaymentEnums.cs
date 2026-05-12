@@ -16,6 +16,7 @@ public enum PaymentMethod
     BankTransfer,
     Check,
     CreditCard,
+    Payroll,
     Other
 }
 
@@ -24,4 +25,14 @@ public enum PaymentStatus
     Pending,
     Confirmed,
     Rejected
+}
+
+public enum PaymentRejectType
+{
+    InsufficientDocumentation,
+    DuplicateClaim,
+    PolicyViolation,
+    InvalidAmount,
+    NotReimbursable,
+    Other
 }

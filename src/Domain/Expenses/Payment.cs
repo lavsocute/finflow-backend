@@ -20,6 +20,8 @@ public sealed class Payment : Entity, IMultiTenant
         PaymentStatus status,
         Guid? confirmedByMembershipId,
         DateTime? confirmedAt,
+        string? executionReference,
+        PaymentRejectType? rejectionType,
         string? rejectionReason,
         string? notes,
         DateTime createdAt,
@@ -39,6 +41,8 @@ public sealed class Payment : Entity, IMultiTenant
         Status = status;
         ConfirmedByMembershipId = confirmedByMembershipId;
         ConfirmedAt = confirmedAt;
+        ExecutionReference = executionReference;
+        RejectionType = rejectionType;
         RejectionReason = rejectionReason;
         Notes = notes;
         CreatedAt = createdAt;
@@ -60,6 +64,8 @@ public sealed class Payment : Entity, IMultiTenant
     public PaymentStatus Status { get; private set; }
     public Guid? ConfirmedByMembershipId { get; private set; }
     public DateTime? ConfirmedAt { get; private set; }
+    public string? ExecutionReference { get; private set; }
+    public PaymentRejectType? RejectionType { get; private set; }
     public string? RejectionReason { get; private set; }
     public string? Notes { get; private set; }
     public DateTime CreatedAt { get; private set; }
@@ -106,23 +112,14 @@ public sealed class Payment : Entity, IMultiTenant
             null,
             null,
             null,
+            null,
+            null,
             notes?.Trim(),
             now,
             now));
     }
 
-    public void AutoConfirm()
-    {
-        if (Status != PaymentStatus.Pending)
-            return;
-
-        Status = PaymentStatus.Confirmed;
-        ConfirmedByMembershipId = null;
-        ConfirmedAt = DateTime.UtcNow;
-        UpdatedAt = DateTime.UtcNow;
-    }
-
-    public Result Confirm(Guid confirmedByMembershipId)
+    public Result Confirm(Guid confirmedByMembershipId, string? executionReference)
     {
         if (Status != PaymentStatus.Pending)
             return Result.Failure(PaymentErrors.AlreadyProcessed);
@@ -132,24 +129,30 @@ public sealed class Payment : Entity, IMultiTenant
         Status = PaymentStatus.Confirmed;
         ConfirmedByMembershipId = confirmedByMembershipId;
         ConfirmedAt = DateTime.UtcNow;
+        ExecutionReference = string.IsNullOrWhiteSpace(executionReference)
+            ? null
+            : executionReference.Trim();
         UpdatedAt = DateTime.UtcNow;
 
         return Result.Success();
     }
 
-    public Result Reject(Guid rejectedByMembershipId, string reason)
+    public Result Reject(Guid rejectedByMembershipId, PaymentRejectType rejectionType, string? reason)
     {
         if (Status != PaymentStatus.Pending)
             return Result.Failure(PaymentErrors.AlreadyProcessed);
         if (rejectedByMembershipId == Guid.Empty)
             return Result.Failure(PaymentErrors.RejectedByRequired);
-        if (string.IsNullOrWhiteSpace(reason))
+        if (!Enum.IsDefined(rejectionType))
+            return Result.Failure(PaymentErrors.RejectionTypeRequired);
+        if (rejectionType == PaymentRejectType.Other && string.IsNullOrWhiteSpace(reason))
             return Result.Failure(PaymentErrors.RejectionReasonRequired);
 
         Status = PaymentStatus.Rejected;
         ConfirmedByMembershipId = rejectedByMembershipId;
         ConfirmedAt = DateTime.UtcNow;
-        RejectionReason = reason.Trim();
+        RejectionType = rejectionType;
+        RejectionReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         UpdatedAt = DateTime.UtcNow;
 
         return Result.Success();

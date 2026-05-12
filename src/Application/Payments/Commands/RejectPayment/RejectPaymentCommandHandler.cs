@@ -37,7 +37,7 @@ internal sealed class RejectPaymentCommandHandler : IRequestHandler<RejectPaymen
         if (payment.Status != PaymentStatus.Pending)
             return Result.Failure<PaymentResponse>(PaymentErrors.AlreadyProcessed);
 
-        var rejectResult = payment.Reject(_currentTenant.MembershipId.Value, request.Reason);
+        var rejectResult = payment.Reject(_currentTenant.MembershipId.Value, request.Type, request.Reason);
         if (rejectResult.IsFailure)
             return Result.Failure<PaymentResponse>(rejectResult.Error);
 

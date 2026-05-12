@@ -26,6 +26,8 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(50).IsRequired();
         builder.Property(x => x.ConfirmedByMembershipId).HasColumnName("confirmed_by_membership_id");
         builder.Property(x => x.ConfirmedAt).HasColumnName("confirmed_at");
+        builder.Property(x => x.ExecutionReference).HasColumnName("execution_reference").HasMaxLength(200);
+        builder.Property(x => x.RejectionType).HasColumnName("rejection_type").HasConversion<string>().HasMaxLength(50);
         builder.Property(x => x.RejectionReason).HasColumnName("rejection_reason").HasMaxLength(500);
         builder.Property(x => x.Notes).HasColumnName("notes").HasColumnType("text");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
