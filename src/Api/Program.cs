@@ -1,9 +1,11 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
+using FinFlow.Api.GraphQL.Chat;
 using FinFlow.Api.GraphQL.Departments;
 using FinFlow.Api.GraphQL.Documents;
 using FinFlow.Api.GraphQL.Membership;
 using FinFlow.Api.GraphQL.Platform;
+using FinFlow.Api.GraphQL.Payments;
 using FinFlow.Api.GraphQL.Subscriptions;
 using FinFlow.Api.GraphQL.Vendors;
 using FinFlow.Api.Observability;
@@ -160,17 +162,22 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddGraphQLServer()
     .AddQueryType<Query>()
+    .AddType<RejectTypeType>()
     .AddTypeExtension<AuthQueries>()
     .AddTypeExtension<DepartmentQueries>()
     .AddTypeExtension<DocumentsQueries>()
+    .AddTypeExtension<PaymentQueries>()
     .AddTypeExtension<SubscriptionsQueries>()
     .AddTypeExtension<MembershipQueries>()
     .AddTypeExtension<PlatformQueries>()
+    .AddTypeExtension<ChatQueries>()
     .AddMutationType<AuthMutations>()
     .AddTypeExtension<DocumentsMutations>()
+    .AddTypeExtension<PaymentMutations>()
     .AddTypeExtension<MembershipMutations>()
     .AddTypeExtension<PlatformMutations>()
     .AddTypeExtension<VendorMutations>()
+    .AddTypeExtension<ChatMutations>()
     .AddAuthorization()
     .AddErrorFilter(error =>
     {

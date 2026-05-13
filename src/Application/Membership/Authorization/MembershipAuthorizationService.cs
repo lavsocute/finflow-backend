@@ -41,9 +41,7 @@ public sealed class MembershipAuthorizationService : IMembershipAuthorizationSer
                 return actor.IdTenant == _currentTenant.Id;
             case RoleType.Manager:
             case RoleType.Accountant:
-                return actor.IdTenant == _currentTenant.Id && actorDepartmentId == targetDepartmentId;
             case RoleType.Staff:
-            case RoleType.Guest:
                 return actor.IdTenant == _currentTenant.Id && actorDepartmentId == targetDepartmentId;
             default:
                 return false;

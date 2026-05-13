@@ -6,6 +6,5 @@ public enum RoleType
     TenantAdmin,
     Manager,
     Accountant,
-    Staff,
-    Guest
+    Staff
 }

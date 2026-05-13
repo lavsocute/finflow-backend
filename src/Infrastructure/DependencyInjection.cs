@@ -1,5 +1,8 @@
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.Authorization;
+using FinFlow.Application.Chat.Interfaces;
+using FinFlow.Application.Chat.Services;
+using FinFlow.Infrastructure.Chat;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
 using FinFlow.Domain.Budgets;
@@ -7,6 +10,7 @@ using FinFlow.Domain.Departments;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.EmailChallenges;
 using FinFlow.Domain.Invitations;
+using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.PasswordResetChallenges;
 using FinFlow.Domain.RefreshTokens;
 using FinFlow.Domain.TenantApprovals;
@@ -29,6 +33,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pgvector.EntityFrameworkCore;
 using StackExchange.Redis;
 using System.Net.Http.Headers;
 
@@ -51,7 +56,11 @@ public static class DependencyInjection
             ?? throw new ArgumentNullException(nameof(configuration));
 
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionString, b => b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName)));
+            options.UseNpgsql(connectionString, b =>
+            {
+                b.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+                b.UseVector();
+            }));
 
         services.AddHttpContextAccessor();
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
@@ -116,6 +125,36 @@ public static class DependencyInjection
                 client.DefaultRequestHeaders.TryAddWithoutValidation("X-Title", options.Title);
             }
         });
+        services.Configure<OpenRouterEmbeddingOptions>(configuration.GetSection("Embedding:OpenRouter"));
+        services.AddHttpClient<OpenRouterEmbeddingService>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<OpenRouterEmbeddingOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(options.RequestTimeoutSeconds);
+
+            var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY") ?? options.ApiKey;
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+        });
+        services.AddScoped<IEmbeddingService>(sp => sp.GetRequiredService<OpenRouterEmbeddingService>());
+
+        services.Configure<Application.Chat.Services.GroqChatOptions>(configuration.GetSection("Chat"));
+        services.AddHttpClient<Application.Chat.Services.ChatService>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Application.Chat.Services.GroqChatOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(60);
+
+            var apiKey = ResolveChatApiKey(options.BaseUrl, options.ApiKey);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+        });
 
         services.AddScoped<Domain.Interfaces.ICurrentTenant, Security.CurrentTenant>();
         services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<GroqOcrProvider>());
@@ -139,6 +178,29 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordResetSettings, PasswordResetSettings>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
 
+        services.AddScoped<IChatRepository, ChatRepository>();
+        services.AddScoped<IPromptBuilder, PromptBuilder>();
+        services.AddScoped<IChunkingService, ChunkingService>();
+        services.AddScoped<IReviewedDocumentChunkIndexer, ReviewedDocumentChunkIndexer>();
+        services.AddScoped<IRerankService, RerankService>();
+        services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
+        services.AddScoped<IVectorStore, PgVectorStore>();
+        services.AddScoped<IChatService>(sp => sp.GetRequiredService<Application.Chat.Services.ChatService>());
+
         return services;
+    }
+
+    private static string ResolveChatApiKey(string baseUrl, string configuredApiKey)
+    {
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            if (uri.Host.Contains("groq", StringComparison.OrdinalIgnoreCase))
+                return Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? configuredApiKey;
+
+            if (uri.Host.Contains("openrouter", StringComparison.OrdinalIgnoreCase))
+                return Environment.GetEnvironmentVariable("OPENROUTER_API_KEY") ?? configuredApiKey;
+        }
+
+        return configuredApiKey;
     }
 }
