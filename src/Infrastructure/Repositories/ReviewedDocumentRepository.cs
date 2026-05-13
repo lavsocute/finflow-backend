@@ -33,6 +33,14 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
             .IgnoreQueryFilters()
             .AnyAsync(x => x.Id == id && x.IdTenant == tenantId && x.IsActive, cancellationToken);
 
+    public async Task<IReadOnlyList<ReviewedDocument>> GetAllActiveByTenantAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.IdTenant == tenantId && x.IsActive)
+            .OrderByDescending(x => x.SubmittedAt)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<ReviewedDocument>> GetReadyForApprovalAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .IgnoreQueryFilters()

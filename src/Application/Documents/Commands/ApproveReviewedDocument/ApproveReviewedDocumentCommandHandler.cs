@@ -1,8 +1,10 @@
 using FinFlow.Application.Documents.DTOs.Responses;
+using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace FinFlow.Application.Documents.Commands.ApproveReviewedDocument;
 
@@ -11,13 +13,19 @@ public sealed class ApproveReviewedDocumentCommandHandler
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IReviewedDocumentChunkIndexer _documentChunkIndexer;
+    private readonly ILogger<ApproveReviewedDocumentCommandHandler> _logger;
 
     public ApproveReviewedDocumentCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IReviewedDocumentChunkIndexer documentChunkIndexer,
+        ILogger<ApproveReviewedDocumentCommandHandler> logger)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _unitOfWork = unitOfWork;
+        _documentChunkIndexer = documentChunkIndexer;
+        _logger = logger;
     }
 
     public async Task<Result<ReviewedDocumentResponse>> Handle(ApproveReviewedDocumentCommand request, CancellationToken cancellationToken)
@@ -36,6 +44,19 @@ public sealed class ApproveReviewedDocumentCommandHandler
         _reviewedDocumentRepository.Update(document);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        try
+        {
+            await _documentChunkIndexer.ReindexAsync(document, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Reviewed document auto-index failed after approval for tenant {TenantId} document {DocumentId}",
+                document.IdTenant,
+                document.Id);
+        }
+
         return Result.Success(new ReviewedDocumentResponse(
             document.Id,
             document.Status.ToString(),
@@ -43,7 +64,6 @@ public sealed class ApproveReviewedDocumentCommandHandler
             document.VendorName,
             document.Reference,
             document.TotalAmount,
-            document.DueDate,
             document.ReviewedByStaff));
     }
 }
