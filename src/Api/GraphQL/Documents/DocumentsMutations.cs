@@ -6,6 +6,7 @@ using FinFlow.Application.Documents.Commands.RejectReviewedDocument;
 using FinFlow.Application.Documents.Commands.UploadDocumentForReview;
 using FinFlow.Application.Documents.Commands.SaveManualDraft;
 using FinFlow.Application.Documents.Commands.SaveReviewedOcrDraft;
+using FinFlow.Application.Documents.Commands.ReindexReviewedDocuments;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
@@ -35,7 +36,6 @@ public sealed record SubmitReviewedDocumentInput(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string? VendorTaxId,
     decimal Subtotal,
@@ -60,7 +60,6 @@ public sealed record SaveManualDraftInput(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string? VendorTaxId,
     decimal Subtotal,
@@ -81,7 +80,6 @@ public sealed record SaveReviewedOcrDraftInput(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string? VendorTaxId,
     decimal Subtotal,
@@ -91,6 +89,14 @@ public sealed record SaveReviewedOcrDraftInput(
     IReadOnlyList<SaveReviewedOcrDraftLineItemInput> LineItems);
 
 public sealed record SaveReviewedOcrDraftPayload(Guid DraftId);
+
+public sealed record ReindexReviewedDocumentsInput(Guid? DocumentId);
+
+public sealed record ReindexReviewedDocumentsPayload(
+    int ScannedDocuments,
+    int IndexedDocuments,
+    int FailedDocuments,
+    int TotalChunks);
 
 public sealed record DocumentOcrDraftLineItemPayload(
     string ItemName,
@@ -105,7 +111,6 @@ public sealed record DocumentOcrDraftPayload(
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
-    DateOnly DueDate,
     string Category,
     string VendorTaxId,
     decimal Subtotal,
@@ -124,7 +129,6 @@ public sealed record ReviewedDocumentPayload(
     string VendorName,
     string Reference,
     decimal TotalAmount,
-    DateOnly DueDate,
     string ReviewedByStaff);
 
 [ExtendObjectType(typeof(FinFlow.Api.GraphQL.Auth.AuthMutations))]
@@ -180,7 +184,6 @@ public sealed class DocumentsMutations
                 input.VendorName,
                 input.Reference,
                 input.DocumentDate,
-                input.DueDate,
                 input.Category,
                 input.VendorTaxId,
                 input.Subtotal,
@@ -203,7 +206,6 @@ public sealed class DocumentsMutations
             result.Value.VendorName,
             result.Value.Reference,
             result.Value.TotalAmount,
-            result.Value.DueDate,
             result.Value.ReviewedByStaff);
     }
 
@@ -226,7 +228,6 @@ public sealed class DocumentsMutations
                 input.VendorName,
                 input.Reference,
                 input.DocumentDate,
-                input.DueDate,
                 input.Category,
                 input.VendorTaxId,
                 input.Subtotal,
@@ -260,7 +261,6 @@ public sealed class DocumentsMutations
                 input.VendorName,
                 input.Reference,
                 input.DocumentDate,
-                input.DueDate,
                 input.Category,
                 input.VendorTaxId,
                 input.Subtotal,
@@ -310,6 +310,30 @@ public sealed class DocumentsMutations
             throw ToGraphQlException(result.Error);
 
         return ToReviewedDocumentPayload(result.Value);
+    }
+
+    [Authorize]
+    public async Task<ReindexReviewedDocumentsPayload> ReindexReviewedDocumentsAsync(
+        ReindexReviewedDocumentsInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        EnsureTenantAdminRole(context);
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+
+        var result = await mediator.Send(
+            new ReindexReviewedDocumentsCommand(tenantId, input.DocumentId),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return new ReindexReviewedDocumentsPayload(
+            result.Value.ScannedDocuments,
+            result.Value.IndexedDocuments,
+            result.Value.FailedDocuments,
+            result.Value.TotalChunks);
     }
 
     private static byte[] DecodeBase64(string base64Content)
@@ -371,6 +395,15 @@ public sealed class DocumentsMutations
         throw ToGraphQlException(ReviewedDocumentErrors.ForbiddenApproval);
     }
 
+    internal static void EnsureTenantAdminRole(IResolverContext context)
+    {
+        var role = GetRequiredRole(context);
+        if (role == RoleType.TenantAdmin)
+            return;
+
+        throw new GraphQLException(new HotChocolate.Error("The current user is not authorized to access this resource.", "Account.Unauthorized"));
+    }
+
     private static string? GetOptionalClaim(IResolverContext context, string claimType, string? fallbackClaimType = null)
     {
         var user = context.Service<IHttpContextAccessor>().HttpContext?.User;
@@ -386,7 +419,6 @@ public sealed class DocumentsMutations
             response.VendorName,
             response.Reference,
             response.TotalAmount,
-            response.DueDate,
             response.ReviewedByStaff);
 
     internal static DocumentOcrDraftPayload ToDocumentOcrDraftPayload(DocumentOcrDraftResponse response) =>
@@ -397,7 +429,6 @@ public sealed class DocumentsMutations
             response.VendorName,
             response.Reference,
             response.DocumentDate,
-            response.DueDate,
             response.Category,
             response.VendorTaxId,
             response.Subtotal,

@@ -43,7 +43,6 @@ public sealed class RejectReviewedDocumentCommandHandler
             document.VendorName,
             document.Reference,
             document.TotalAmount,
-            document.DueDate,
             document.ReviewedByStaff));
     }
 }
