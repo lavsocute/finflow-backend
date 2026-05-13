@@ -21,6 +21,11 @@ public class GroqChatOptions
 
 public sealed class ChatService : IChatService
 {
+    private const string AuthorizedNoContextMessage = "There is not enough authorized context to answer that question.";
+    private const string ForbiddenScopeMessage = "Chat access denied: the requested chat scope is outside your scope and allowed department or ownership boundary.";
+    private const string MissingDepartmentBoundaryMessage = "Chat access denied: your membership is missing a required department boundary for this chat scope.";
+    private const string OutOfScopeChunkMessage = "Chat retrieval returned out-of-scope document chunks.";
+
     private readonly IChatRepository _chatRepository;
     private readonly IChatAuthorizationService _chatAuthorizationService;
     private readonly ISubscriptionFeatureGate _subscriptionFeatureGate;
@@ -81,32 +86,30 @@ public sealed class ChatService : IChatService
         if (subscriptionCheck.IsFailure)
             throw new InvalidOperationException(subscriptionCheck.Error.Description);
 
+        var accessScope = await _chatAuthorizationService.GetChatAccessScopeAsync(request.MembershipId, ct);
+        EnsureTenantAccess(request, accessScope);
+        var effectiveDepartmentId = ResolveDepartmentFilter(request.DepartmentId, accessScope);
+        var ownerFilter = ResolveOwnerFilter(accessScope);
+
         Guid actualSessionId;
-        ChatSession? activeSession = null;
+        ChatSession activeSession;
 
         if (request.SessionId.HasValue)
         {
             activeSession = await _chatRepository.GetSessionByIdAndMembershipAsync(request.SessionId.Value, request.MembershipId, ct)
-                ?? throw new InvalidOperationException("Chat session not found or access denied.");
+                ?? throw new InvalidOperationException("Chat access denied: session was not found for the current membership.");
             actualSessionId = activeSession.Id;
         }
         else
         {
             activeSession = ChatSession.Create(request.TenantId, request.MembershipId, $"Chat {DateTime.UtcNow:yyyy-MM-dd HH:mm}");
-            await _chatRepository.AddSessionAsync(activeSession, ct);
             actualSessionId = activeSession.Id;
         }
-
-        var accessScope = await _chatAuthorizationService.GetChatAccessScopeAsync(request.MembershipId, ct);
-        EnsureTenantAccess(request, accessScope);
 
         var queryEmbedding = await _embeddingService.EmbedAsync(request.Query, ct);
 
         if (queryEmbedding == null || queryEmbedding.Length == 0)
             throw new InvalidOperationException("Failed to generate embedding for query.");
-
-        var effectiveDepartmentId = ResolveDepartmentFilter(request.DepartmentId, accessScope);
-        var ownerFilter = ResolveOwnerFilter(accessScope);
 
         var searchChunks = await _vectorStore.SearchAsync(
             queryEmbedding,
@@ -117,8 +120,11 @@ public sealed class ChatService : IChatService
             20,
             ct);
 
+        EnsureChunksWithinScope(searchChunks, request, accessScope, effectiveDepartmentId, ownerFilter);
+
         var rerankedResults = await _rerankService.RerankAsync(request.Query, searchChunks, 5, ct);
         var topChunks = rerankedResults.Select(r => r.Chunk).ToList();
+        EnsureChunksWithinScope(topChunks, request, accessScope, effectiveDepartmentId, ownerFilter);
 
         LogRetrievalAudit(
             actualSessionId,
@@ -129,18 +135,32 @@ public sealed class ChatService : IChatService
             searchChunks,
             topChunks);
 
-        var history = await _chatRepository.GetMessagesBySessionAsync(actualSessionId, ct);
-        var prompt = _promptBuilder.BuildFullPrompt(request.Query, topChunks, accessScope, history);
+        string assistantResponse;
+        if (topChunks.Count == 0)
+        {
+            _logger.LogWarning(
+                "Chat retrieval returned no authorized context for session {SessionId} and membership {MembershipId}.",
+                actualSessionId,
+                request.MembershipId);
+            assistantResponse = AuthorizedNoContextMessage;
+        }
+        else
+        {
+            var history = await _chatRepository.GetMessagesBySessionAsync(actualSessionId, ct);
+            var prompt = _promptBuilder.BuildFullPrompt(request.Query, topChunks, accessScope, history);
+            assistantResponse = await CallOpenRouterAsync(prompt, ct);
+        }
 
-        var llmResponse = await CallOpenRouterAsync(prompt, ct);
+        if (!request.SessionId.HasValue)
+            await _chatRepository.AddSessionAsync(activeSession, ct);
 
         var userMessage = ChatMessage.Create(actualSessionId, request.MembershipId, ChatMessageRole.User, request.Query);
-        var assistantMessage = ChatMessage.Create(actualSessionId, request.MembershipId, ChatMessageRole.Assistant, llmResponse);
+        var assistantMessage = ChatMessage.Create(actualSessionId, request.MembershipId, ChatMessageRole.Assistant, assistantResponse);
 
         await _chatRepository.AddMessageAsync(userMessage, ct);
         await _chatRepository.AddMessageAsync(assistantMessage, ct);
 
-        activeSession!.UpdateTitle(TruncateForTitle(request.Query));
+        activeSession.UpdateTitle(TruncateForTitle(request.Query));
         await _unitOfWork.SaveChangesAsync(ct);
 
         var periodStart = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
@@ -148,11 +168,39 @@ public sealed class ChatService : IChatService
         await _tenantUsageService.RecordChatbotUsageAsync(request.TenantId, 2, periodStart, periodEnd, ct);
 
         return new ChatResponse(
-            llmResponse,
+            assistantResponse,
             actualSessionId,
             assistantMessage.Id,
             topChunks.Count,
-            EstimateTokenCount(llmResponse));
+            EstimateTokenCount(assistantResponse));
+    }
+
+    private void EnsureChunksWithinScope(
+        IReadOnlyList<DocumentChunk> chunks,
+        ChatRequest request,
+        ChatAccessScope scope,
+        Guid? effectiveDepartmentId,
+        Guid? ownerFilter)
+    {
+        var invalidChunk = chunks.FirstOrDefault(chunk =>
+            !IsChunkWithinScope(chunk, request.TenantId, scope, effectiveDepartmentId, ownerFilter));
+
+        if (invalidChunk is null)
+            return;
+
+        _logger.LogError(
+            "Chat retrieval returned out-of-scope chunk metadata. ChunkId: {ChunkId}, ChunkTenantId: {ChunkTenantId}, ChunkOwnerMembershipId: {ChunkOwnerMembershipId}, ChunkDepartmentId: {ChunkDepartmentId}, ChunkType: {ChunkType}, MembershipId: {MembershipId}, ExpectedTenantId: {ExpectedTenantId}, EffectiveDepartmentId: {EffectiveDepartmentId}, OwnerFilter: {OwnerFilter}",
+            invalidChunk.Id,
+            invalidChunk.IdTenant,
+            invalidChunk.OwnerMembershipId,
+            invalidChunk.DepartmentId,
+            invalidChunk.Type,
+            request.MembershipId,
+            scope.TenantId,
+            effectiveDepartmentId,
+            ownerFilter);
+
+        throw new InvalidOperationException(OutOfScopeChunkMessage);
     }
 
     private static void EnsureTenantAccess(ChatRequest request, ChatAccessScope scope)
@@ -177,16 +225,24 @@ public sealed class ChatService : IChatService
             if (scope.PermittedDepartmentIds.Count == 0 || scope.PermittedDepartmentIds.Contains(requestedDepartmentId.Value))
                 return requestedDepartmentId;
 
-            throw new InvalidOperationException("Chat access denied: requested department is outside your scope.");
+            throw new InvalidOperationException(ForbiddenScopeMessage);
         }
 
         if (!scope.DepartmentId.HasValue)
+        {
+            if (scope.ApprovalAccess != ApprovalAccessLevel.OwnOnly)
+                throw new InvalidOperationException(MissingDepartmentBoundaryMessage);
+
+            if (requestedDepartmentId.HasValue)
+                throw new InvalidOperationException(ForbiddenScopeMessage);
+
             return null;
+        }
 
         if (!requestedDepartmentId.HasValue || requestedDepartmentId == scope.DepartmentId)
             return scope.DepartmentId;
 
-        throw new InvalidOperationException("Chat access denied: requested department is outside your scope.");
+        throw new InvalidOperationException(ForbiddenScopeMessage);
     }
 
     private static Guid? ResolveOwnerFilter(ChatAccessScope scope)
@@ -199,6 +255,31 @@ public sealed class ChatService : IChatService
             : null;
     }
 
+    private static bool IsChunkWithinScope(
+        DocumentChunk chunk,
+        Guid tenantId,
+        ChatAccessScope scope,
+        Guid? effectiveDepartmentId,
+        Guid? ownerFilter)
+    {
+        if (chunk.IdTenant != tenantId || chunk.IdTenant != scope.TenantId)
+            return false;
+
+        if (!scope.AllowedChunkTypes.Contains(chunk.Type))
+            return false;
+
+        if (ownerFilter.HasValue && chunk.OwnerMembershipId != ownerFilter.Value)
+            return false;
+
+        if (effectiveDepartmentId.HasValue)
+            return chunk.DepartmentId == effectiveDepartmentId.Value;
+
+        if (scope.PermittedDepartmentIds.Count > 0)
+            return chunk.DepartmentId.HasValue && scope.PermittedDepartmentIds.Contains(chunk.DepartmentId.Value);
+
+        return true;
+    }
+
     private void LogRetrievalAudit(
         Guid sessionId,
         ChatRequest request,
@@ -208,37 +289,38 @@ public sealed class ChatService : IChatService
         IReadOnlyList<DocumentChunk> retrievedChunks,
         IReadOnlyList<DocumentChunk> rerankedChunks)
     {
-        var allowedChunkTypes = string.Join(
-            ",",
-            accessScope.AllowedChunkTypes
-                .OrderBy(static type => type.ToString(), StringComparer.Ordinal)
-                .Select(static type => type.ToString()));
+        var allowedChunkTypes = accessScope.AllowedChunkTypes
+            .OrderBy(static type => type.ToString(), StringComparer.Ordinal)
+            .Select(static type => type.ToString())
+            .ToArray();
 
-        var topChunkIds = string.Join(
-            ",",
-            rerankedChunks
-                .Select(static chunk => chunk.Id.ToString())
-                .Distinct(StringComparer.Ordinal));
+        var topChunkIds = rerankedChunks
+            .Select(static chunk => chunk.Id)
+            .Distinct()
+            .Take(5)
+            .ToArray();
 
         _logger.LogInformation(
-            "Chat retrieval audit for session {SessionId}: tenant={TenantId}, membership={MembershipId}, role={Role}, requestedDepartmentId={RequestedDepartmentId}, effectiveDepartmentId={EffectiveDepartmentId}, ownerFilter={OwnerFilter}, allowedChunkTypes={AllowedChunkTypes}, retrievedChunkCount={RetrievedChunkCount}, rerankedChunkCount={RerankedChunkCount}, topChunkIds={TopChunkIds}",
-            sessionId,
-            request.TenantId,
-            request.MembershipId,
-            accessScope.Role.ToString(),
-            request.DepartmentId,
-            effectiveDepartmentId,
-            ownerFilter,
-            allowedChunkTypes,
-            retrievedChunks.Count,
-            rerankedChunks.Count,
-            topChunkIds);
+            "Chat retrieval audit {@RetrievalAudit}",
+            new
+            {
+                SessionId = sessionId,
+                TenantId = accessScope.TenantId,
+                MembershipId = request.MembershipId,
+                Role = accessScope.Role.ToString(),
+                RequestedDepartmentId = request.DepartmentId,
+                EffectiveDepartmentId = effectiveDepartmentId,
+                OwnerFilter = ownerFilter,
+                AllowedChunkTypes = allowedChunkTypes,
+                RetrievedChunkCount = retrievedChunks.Count,
+                TopChunkIds = topChunkIds
+            });
     }
 
     public async Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(Guid sessionId, Guid membershipId, CancellationToken ct = default)
     {
         var session = await _chatRepository.GetSessionByIdAndMembershipAsync(sessionId, membershipId, ct)
-            ?? throw new InvalidOperationException("Chat session not found or access denied.");
+            ?? throw new InvalidOperationException("Chat access denied: session was not found for the current membership.");
 
         return await _chatRepository.GetMessagesBySessionAsync(sessionId, ct);
     }

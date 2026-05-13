@@ -40,6 +40,8 @@ public class PgVectorStore : IVectorStore
         int topK = 20,
         CancellationToken ct = default)
     {
+        ValidateSearchRequest(queryEmbedding, tenantId, allowedTypes, topK);
+
         var command = PgVectorSearchSqlBuilder.Build(
             tenantId,
             departmentId,
@@ -77,5 +79,24 @@ public class PgVectorStore : IVectorStore
 
         _dbContext.DocumentChunks.RemoveRange(chunks);
         await _dbContext.SaveChangesAsync(ct);
+    }
+
+    private static void ValidateSearchRequest(
+        float[] queryEmbedding,
+        Guid tenantId,
+        IReadOnlyCollection<DocumentChunkType>? allowedTypes,
+        int topK)
+    {
+        ArgumentNullException.ThrowIfNull(queryEmbedding);
+        ArgumentNullException.ThrowIfNull(allowedTypes);
+
+        if (tenantId == Guid.Empty)
+            throw new ArgumentException("tenantId is required.", nameof(tenantId));
+
+        if (allowedTypes.Count == 0)
+            throw new ArgumentException("allowedTypes cannot be empty when provided.", nameof(allowedTypes));
+
+        if (topK <= 0)
+            throw new ArgumentOutOfRangeException(nameof(topK), topK, "topK must be greater than zero.");
     }
 }

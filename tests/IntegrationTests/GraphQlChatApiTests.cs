@@ -83,11 +83,9 @@ public sealed class GraphQlChatApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenantId = Guid.NewGuid();
-        var membershipId = Guid.NewGuid();
-        var accountId = Guid.NewGuid();
 
         await factory.SeedTenantSubscriptionAsync(tenantId, PlanTier.Pro);
-        await factory.SeedAsync(db => { });
+        var member = await factory.CreateMembershipAsync(RoleType.TenantAdmin, tenantId);
 
         var mutation = @"
             mutation Chat($input: ChatInput!) {
@@ -110,12 +108,7 @@ public sealed class GraphQlChatApiTests
             }
         };
 
-        using var client = factory.CreateAuthenticatedClient(
-            accountId,
-            "test@example.com",
-            RoleType.TenantAdmin,
-            tenantId,
-            membershipId);
+        using var client = factory.CreateAuthenticatedClient(member);
 
         using var json = await GraphQlApiTestFactory.PostGraphQlAsync(client, mutation, variables);
 
@@ -133,10 +126,7 @@ public sealed class GraphQlChatApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenantId = Guid.NewGuid();
-        var membershipId = Guid.NewGuid();
-        var accountId = Guid.NewGuid();
-
-        await factory.SeedAsync(db => { });
+        var member = await factory.CreateMembershipAsync(RoleType.TenantAdmin, tenantId);
 
         var mutation = @"
             mutation Chat($input: ChatInput!) {
@@ -155,12 +145,7 @@ public sealed class GraphQlChatApiTests
             }
         };
 
-        using var client = factory.CreateAuthenticatedClient(
-            accountId,
-            "test@example.com",
-            RoleType.TenantAdmin,
-            tenantId,
-            membershipId);
+        using var client = factory.CreateAuthenticatedClient(member);
 
         using var json = await GraphQlApiTestFactory.PostGraphQlAllowingErrorsAsync(client, mutation, variables);
 
@@ -176,11 +161,9 @@ public sealed class GraphQlChatApiTests
         await using var factory = new GraphQlApiTestFactory();
 
         var tenantId = Guid.NewGuid();
-        var membershipId = Guid.NewGuid();
-        var accountId = Guid.NewGuid();
 
         await factory.SeedTenantSubscriptionAsync(tenantId, PlanTier.Pro);
-        await factory.SeedAsync(db => { });
+        var member = await factory.CreateMembershipAsync(RoleType.TenantAdmin, tenantId);
 
         var query = @"
             query GetChatSessions {
@@ -192,12 +175,7 @@ public sealed class GraphQlChatApiTests
                 }
             }";
 
-        using var client = factory.CreateAuthenticatedClient(
-            accountId,
-            "test@example.com",
-            RoleType.TenantAdmin,
-            tenantId,
-            membershipId);
+        using var client = factory.CreateAuthenticatedClient(member);
 
         using var json = await GraphQlApiTestFactory.PostGraphQlAsync(client, query);
 

@@ -9,15 +9,32 @@ namespace FinFlow.UnitTests.Application.Chat;
 
 public class ChatAuthorizationServiceTests
 {
+    private static ChatAuthorizationService CreateService(
+        TenantMembershipSummary? membership,
+        Guid currentTenantId,
+        bool isSuperAdmin = false,
+        Guid? membershipId = null)
+    {
+        var resolvedMembershipId = membershipId ?? membership?.Id ?? Guid.Empty;
+        var repository = new Mock<ITenantMembershipRepository>();
+        repository
+            .Setup(x => x.GetByIdAsync(resolvedMembershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(membership);
+
+        var currentTenant = new Mock<ICurrentTenant>();
+        currentTenant.SetupGet(x => x.Id).Returns(currentTenantId);
+        currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(isSuperAdmin);
+
+        return new ChatAuthorizationService(repository.Object, currentTenant.Object);
+    }
+
     [Fact]
     public async Task GetChatAccessScopeAsync_ThrowsForSuperAdminMembership()
     {
         var membershipId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
-        var membershipRepository = new Mock<ITenantMembershipRepository>();
-        membershipRepository
-            .Setup(x => x.GetByIdAsync(membershipId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TenantMembershipSummary(
+        var service = CreateService(
+            new TenantMembershipSummary(
                 membershipId,
                 Guid.NewGuid(),
                 tenantId,
@@ -28,13 +45,9 @@ public class ChatAuthorizationServiceTests
                 DateTime.UtcNow,
                 null,
                 null,
-                null));
-
-        var currentTenant = new Mock<ICurrentTenant>();
-        currentTenant.SetupGet(x => x.Id).Returns(tenantId);
-        currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(false);
-
-        var service = new ChatAuthorizationService(membershipRepository.Object, currentTenant.Object);
+                null),
+            tenantId,
+            membershipId: membershipId);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetChatAccessScopeAsync(membershipId));
 
@@ -47,10 +60,8 @@ public class ChatAuthorizationServiceTests
         var membershipId = Guid.NewGuid();
         var tenantId = Guid.NewGuid();
         var departmentId = Guid.NewGuid();
-        var membershipRepository = new Mock<ITenantMembershipRepository>();
-        membershipRepository
-            .Setup(x => x.GetByIdAsync(membershipId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TenantMembershipSummary(
+        var service = CreateService(
+            new TenantMembershipSummary(
                 membershipId,
                 Guid.NewGuid(),
                 tenantId,
@@ -61,13 +72,9 @@ public class ChatAuthorizationServiceTests
                 DateTime.UtcNow,
                 null,
                 null,
-                null));
-
-        var currentTenant = new Mock<ICurrentTenant>();
-        currentTenant.SetupGet(x => x.Id).Returns(tenantId);
-        currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(false);
-
-        var service = new ChatAuthorizationService(membershipRepository.Object, currentTenant.Object);
+                null),
+            tenantId,
+            membershipId: membershipId);
 
         var scope = await service.GetChatAccessScopeAsync(membershipId);
 
@@ -75,6 +82,61 @@ public class ChatAuthorizationServiceTests
         Assert.Equal(membershipId, scope.OwnerMembershipId);
         Assert.Equal(departmentId, scope.DepartmentId);
         Assert.Equal(new HashSet<DocumentChunkType> { DocumentChunkType.Expense, DocumentChunkType.Receipt }, scope.AllowedChunkTypes);
+    }
+
+    [Fact]
+    public async Task GetChatAccessScopeAsync_ThrowsWhenMembershipBelongsToAnotherTenant()
+    {
+        var membershipId = Guid.NewGuid();
+        var membershipTenantId = Guid.NewGuid();
+        var currentTenantId = Guid.NewGuid();
+
+        var service = CreateService(
+            new TenantMembershipSummary(
+                membershipId,
+                Guid.NewGuid(),
+                membershipTenantId,
+                Guid.NewGuid(),
+                RoleType.Manager,
+                false,
+                true,
+                DateTime.UtcNow,
+                null,
+                null,
+                null),
+            currentTenantId,
+            membershipId: membershipId);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetChatAccessScopeAsync(membershipId));
+
+        Assert.Contains("does not belong to the current tenant", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetChatAccessScopeAsync_ThrowsWhenManagerHasNoDepartmentBoundary()
+    {
+        var membershipId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+
+        var service = CreateService(
+            new TenantMembershipSummary(
+                membershipId,
+                Guid.NewGuid(),
+                tenantId,
+                null,
+                RoleType.Manager,
+                false,
+                true,
+                DateTime.UtcNow,
+                null,
+                null,
+                null),
+            tenantId,
+            membershipId: membershipId);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetChatAccessScopeAsync(membershipId));
+
+        Assert.Contains("department boundary", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
 

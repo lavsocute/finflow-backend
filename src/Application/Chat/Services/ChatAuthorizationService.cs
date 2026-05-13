@@ -8,6 +8,8 @@ namespace FinFlow.Application.Chat.Services;
 
 public sealed class ChatAuthorizationService : IChatAuthorizationService
 {
+    private const string MissingDepartmentBoundaryMessage = "Chat access denied: your membership is missing a required department boundary for this chat scope.";
+
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly ICurrentTenant _currentTenant;
 
@@ -29,6 +31,9 @@ public sealed class ChatAuthorizationService : IChatAuthorizationService
 
         if (_currentTenant.Id != membership.IdTenant && !_currentTenant.IsSuperAdmin)
             throw new InvalidOperationException("Chat access denied: membership does not belong to the current tenant.");
+
+        if (membership.Role == RoleType.Manager && !membership.DepartmentId.HasValue)
+            throw new InvalidOperationException(MissingDepartmentBoundaryMessage);
 
         return BuildScope(membership);
     }

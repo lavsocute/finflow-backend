@@ -167,6 +167,17 @@ public class ChatServiceTests
         return null;
     }
 
+    private static IReadOnlyDictionary<string, object?>? TryGetPropertyBag(object? value)
+    {
+        if (value is null)
+            return null;
+
+        return value
+            .GetType()
+            .GetProperties()
+            .ToDictionary(property => property.Name, property => property.GetValue(value));
+    }
+
     [Fact]
     public async Task ChatAsync_ThrowsWhenQueryEmpty()
     {
@@ -433,22 +444,114 @@ public class ChatServiceTests
             [chunk],
             [(chunk, 0.99f)]);
 
-        var request = new ChatRequest(membershipId, tenantId, null, "Show my receipt", null);
+        var request = new ChatRequest(membershipId, tenantId, null, "Show my receipt", departmentId);
 
-        await service.ChatAsync(request);
+        var response = await service.ChatAsync(request);
 
         var structuredState = TryGetStructuredState(_loggerMock, "Chat retrieval audit");
+        var retrievalAuditPayload = structuredState?.TryGetValue("RetrievalAudit", out var retrievalAuditValue) == true
+            ? retrievalAuditValue
+            : structuredState?.TryGetValue("@RetrievalAudit", out var destructuredRetrievalAuditValue) == true
+                ? destructuredRetrievalAuditValue
+                : null;
+        var retrievalAudit = TryGetPropertyBag(retrievalAuditPayload);
 
         Assert.NotNull(structuredState);
-        Assert.Equal(tenantId, structuredState["TenantId"]);
-        Assert.Equal(membershipId, structuredState["MembershipId"]);
-        Assert.Equal(nameof(RoleType.Staff), structuredState["Role"]);
-        Assert.Equal(1, structuredState["RetrievedChunkCount"]);
-        Assert.Equal(1, structuredState["RerankedChunkCount"]);
-        Assert.Equal(membershipId, structuredState["OwnerFilter"]);
-        Assert.Equal(departmentId, structuredState["EffectiveDepartmentId"]);
-        Assert.Equal("Expense,Receipt", structuredState["AllowedChunkTypes"]);
-        Assert.Contains(chunk.Id.ToString(), structuredState["TopChunkIds"]?.ToString());
+        Assert.NotNull(retrievalAudit);
+        Assert.Equal(response.SessionId, retrievalAudit["SessionId"]);
+        Assert.Equal(tenantId, retrievalAudit["TenantId"]);
+        Assert.Equal(membershipId, retrievalAudit["MembershipId"]);
+        Assert.Equal(nameof(RoleType.Staff), retrievalAudit["Role"]);
+        Assert.Equal(departmentId, retrievalAudit["RequestedDepartmentId"]);
+        Assert.Equal(departmentId, retrievalAudit["EffectiveDepartmentId"]);
+        Assert.Equal(membershipId, retrievalAudit["OwnerFilter"]);
+        Assert.Equal(1, retrievalAudit["RetrievedChunkCount"]);
+
+        var allowedChunkTypes = Assert.IsAssignableFrom<string[]>(retrievalAudit["AllowedChunkTypes"]);
+        Assert.Equal(["Expense", "Receipt"], allowedChunkTypes.OrderBy(x => x, StringComparer.Ordinal).ToArray());
+
+        var topChunkIds = Assert.IsAssignableFrom<Guid[]>(retrievalAudit["TopChunkIds"]);
+        Assert.Contains(chunk.Id, topChunkIds);
+
+        Assert.DoesNotContain("Employee expense receipt", retrievalAuditPayload?.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatAsync_ReturnsAuthorizedNoContextMessage_WhenSearchReturnsZeroChunks()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.Staff,
+            departmentId,
+            [departmentId],
+            membershipId,
+            false,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.LimitOnly,
+            ApprovalAccessLevel.OwnOnly);
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [], []);
+
+        var response = await service.ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Show me my expenses", null),
+            CancellationToken.None);
+
+        Assert.Equal(0, response.DocumentCount);
+        Assert.Contains("not enough authorized context", response.Answer, StringComparison.OrdinalIgnoreCase);
+
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                It.IsAny<ChatAccessScope>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>()),
+            Times.Never);
+
+        _chatRepositoryMock.Verify(
+            x => x.AddMessageAsync(
+                It.Is<ChatMessage>(message =>
+                    message.Role == ChatMessageRole.Assistant &&
+                    message.Content.Contains("not enough authorized context", StringComparison.OrdinalIgnoreCase)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ChatAsync_ThrowsWhenDepartmentScopedRoleHasNoDepartmentBoundary()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+
+        _subscriptionFeatureGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _chatAuthServiceMock
+            .Setup(x => x.GetChatAccessScopeAsync(membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatAccessScope(
+                tenantId,
+                "Tenant",
+                RoleType.Manager,
+                null,
+                [],
+                membershipId,
+                false,
+                [DocumentChunkType.Expense, DocumentChunkType.Receipt, DocumentChunkType.ApprovalFlow, DocumentChunkType.Budget],
+                BudgetAccessLevel.AggregateSpent,
+                ApprovalAccessLevel.DeptApproval));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Show department expenses", null),
+            CancellationToken.None));
+
+        Assert.Contains("department boundary", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -575,6 +678,111 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task ChatAsync_DeniedRequest_DoesNotCallAddSessionAsync()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var requestedDepartmentId = Guid.NewGuid();
+        var scopedDepartmentId = Guid.NewGuid();
+
+        _subscriptionFeatureGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
+        _chatAuthServiceMock
+            .Setup(x => x.GetChatAccessScopeAsync(membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatAccessScope(
+                tenantId,
+                "Tenant",
+                RoleType.Staff,
+                scopedDepartmentId,
+                [],
+                membershipId,
+                false,
+                [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+                BudgetAccessLevel.LimitOnly,
+                ApprovalAccessLevel.OwnOnly));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Hello", requestedDepartmentId),
+            CancellationToken.None));
+
+        Assert.Contains("outside your scope", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        _chatRepositoryMock.Verify(
+            x => x.AddSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatRepositoryMock.Verify(
+            x => x.AddMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(
+            x => x.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_RejectsOutOfScopeReturnedChunk_BeforePromptBuildingOrPersistence()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var foreignOwnerMembershipId = Guid.NewGuid();
+
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.Staff,
+            departmentId,
+            [departmentId],
+            membershipId,
+            false,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.LimitOnly,
+            ApprovalAccessLevel.OwnOnly);
+
+        var outOfScopeChunk = DocumentChunk.Create(
+            tenantId,
+            foreignOwnerMembershipId,
+            Guid.NewGuid(),
+            departmentId,
+            "Another employee expense",
+            "hash-foreign-owner",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [outOfScopeChunk], [(outOfScopeChunk, 0.99f)]);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Show my expense", null),
+            CancellationToken.None));
+
+        Assert.Contains("out-of-scope", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        _rerankServiceMock.Verify(
+            x => x.RerankAsync(It.IsAny<string>(), It.IsAny<IEnumerable<DocumentChunk>>(), 5, It.IsAny<CancellationToken>()),
+            Times.Never);
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                It.IsAny<ChatAccessScope>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>()),
+            Times.Never);
+        _chatRepositoryMock.Verify(
+            x => x.AddSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatRepositoryMock.Verify(
+            x => x.AddMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(
+            x => x.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task GetHistoryAsync_ThrowsWhenSessionNotFound()
     {
         var service = CreateService();
@@ -626,7 +834,18 @@ var expectedSessions = new List<ChatSessionSummary>
             BudgetAccessLevel.FullBudget,
             ApprovalAccessLevel.AllApprovals);
 
-        SetupHappyPath(tenantId, membershipId, accessScope);
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            Guid.NewGuid(),
+            null,
+            "Recent expense summary",
+            "hash-1",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.95f)]);
 
         var handler = new StubHttpMessageHandler(request =>
         {

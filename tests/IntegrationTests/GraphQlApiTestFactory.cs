@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using FinFlow.Application.Chat.Interfaces;
@@ -32,6 +34,7 @@ using FinFlow.Infrastructure;
 using FinFlow.Infrastructure.Auth.Email;
 using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Pdf;
+using FinFlow.Infrastructure.Repositories;
 using FinFlow.Infrastructure.Subscriptions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
@@ -83,6 +86,12 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(AuthChallengeOptions));
             services.RemoveAll(typeof(ISubscriptionFeatureGate));
             services.RemoveAll(typeof(ITenantUsageService));
+            services.RemoveAll(typeof(IChatRepository));
+            services.RemoveAll(typeof(IEmbeddingService));
+            services.RemoveAll(typeof(IVectorStore));
+            services.RemoveAll(typeof(IChatAuthorizationService));
+            services.RemoveAll(typeof(IChatService));
+            services.RemoveAll(typeof(FinFlow.Application.Chat.Services.ChatService));
 
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
@@ -132,15 +141,22 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<ITenantUsageService, TenantUsageService>();
             services.AddScoped<ISubscriptionFeatureGate, SubscriptionFeatureGate>();
 
-            services.AddScoped<IChatRepository, TestChatRepository>();
+            services.AddScoped<IChatRepository, ChatRepository>();
             services.AddScoped<IPromptBuilder, PromptBuilder>();
             services.AddScoped<IEmbeddingService, TestEmbeddingService>();
             services.AddScoped<IVectorStore, TestVectorStore>();
-            services.AddScoped<IRerankService, TestRerankService>();
-            services.AddScoped<IChatAuthorizationService, TestChatAuthorizationService>();
+            services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
-
-            services.AddScoped<IChatService, TestChatService>();
+            services.AddScoped<FinFlow.Application.Chat.Services.ChatService>(sp =>
+                ActivatorUtilities.CreateInstance<FinFlow.Application.Chat.Services.ChatService>(
+                    sp,
+                    CreateDeterministicChatHttpClient(),
+                    Options.Create(new GroqChatOptions
+                    {
+                        BaseUrl = "https://chat.finflow.test/api/v1",
+                        ChatModel = "test-chat-model"
+                    })));
+            services.AddScoped<IChatService>(sp => sp.GetRequiredService<FinFlow.Application.Chat.Services.ChatService>());
 
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddAuthentication(options =>
@@ -240,18 +256,98 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
     public HttpClient CreateAuthenticatedClient(Guid accountId, string email, RoleType role, Guid? tenantId = null, Guid? membershipId = null)
     {
         var client = CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(TestAuthHandler.SchemeName);
-        client.DefaultRequestHeaders.Add(TestAuthHandler.AccountIdHeader, accountId.ToString());
-        client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
-        client.DefaultRequestHeaders.Add(TestAuthHandler.RoleHeader, role.ToString());
-
-        if (tenantId.HasValue)
-            client.DefaultRequestHeaders.Add(TestAuthHandler.TenantIdHeader, tenantId.Value.ToString());
-
-        if (membershipId.HasValue)
-            client.DefaultRequestHeaders.Add(TestAuthHandler.MembershipIdHeader, membershipId.Value.ToString());
-
+        ConfigureAuthenticatedClient(client, accountId, email, role, tenantId, membershipId);
         return client;
+    }
+
+    public HttpClient CreateAuthenticatedClient(TestMembership membership)
+    {
+        var client = CreateClient();
+        ConfigureAuthenticatedClient(client, membership.AccountId, membership.Email, membership.Role, membership.TenantId, membership.MembershipId);
+        return client;
+    }
+
+    public Task<TestMembership> CreateMembershipAsync(RoleType role, Guid? tenantId = null, Guid? departmentId = null)
+    {
+        return CreateMembershipCoreAsync(role, tenantId ?? Guid.NewGuid(), departmentId, isActive: true);
+    }
+
+    public async Task<Guid> CreateChatSessionAsync(TestMembership membership)
+    {
+        var session = ChatSession.Create(membership.TenantId, membership.MembershipId, $"Seeded chat {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
+        await SeedTenantScopedAsync(membership.TenantId, db => db.ChatSessions.Add(session));
+        return session.Id;
+    }
+
+    public async Task IndexReviewedExpenseAsync(TestMembership owner, string merchant, Guid? departmentId = null)
+    {
+        var chunk = DocumentChunk.Create(
+            owner.TenantId,
+            owner.MembershipId,
+            Guid.NewGuid(),
+            departmentId ?? owner.DepartmentId,
+            $"Merchant: {merchant}. Expense total: 1450.00.",
+            $"hash-{merchant.ToLowerInvariant()}",
+            0,
+            [0.1f, 0.2f, 0.3f],
+            DocumentChunkType.Expense);
+
+        await SeedTenantScopedAsync(owner.TenantId, db => db.DocumentChunks.Add(chunk));
+    }
+
+    public async Task<ChatExecutionResult> ExecuteChatAsync(
+        HttpClient client,
+        TestMembership membership,
+        string query,
+        Guid? sessionId = null,
+        Guid? departmentId = null)
+    {
+        ConfigureAuthenticatedClient(client, membership.AccountId, membership.Email, membership.Role, membership.TenantId, membership.MembershipId);
+
+        const string mutation = @"
+            mutation Chat($input: ChatInput!) {
+                chat(input: $input) {
+                    answer
+                    sessionId
+                    messageId
+                    documentCount
+                    tokenUsage
+                }
+            }";
+
+        var variables = new
+        {
+            input = new
+            {
+                sessionId,
+                query,
+                departmentId
+            }
+        };
+
+        using var json = await PostGraphQlAllowingErrorsAsync(client, mutation, variables);
+
+        var errors = json.RootElement.TryGetProperty("errors", out var errorsElement)
+            ? errorsElement.EnumerateArray()
+                .Select(static error => error.GetProperty("message").GetString() ?? string.Empty)
+                .ToArray()
+            : [];
+
+        ChatExecutionData? data = null;
+        if (json.RootElement.TryGetProperty("data", out var dataElement)
+            && dataElement.ValueKind != JsonValueKind.Null
+            && dataElement.TryGetProperty("chat", out var chatElement)
+            && chatElement.ValueKind != JsonValueKind.Null)
+        {
+            data = new ChatExecutionData(
+                chatElement.GetProperty("answer").GetString() ?? string.Empty,
+                chatElement.GetProperty("sessionId").GetGuid(),
+                chatElement.GetProperty("messageId").GetGuid(),
+                chatElement.GetProperty("documentCount").GetInt32(),
+                chatElement.GetProperty("tokenUsage").GetInt32());
+        }
+
+        return new ChatExecutionResult(data, errors);
     }
 
     public static async Task<JsonDocument> PostGraphQlAsync(HttpClient client, string query, object? variables = null)
@@ -272,6 +368,103 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         using var response = await client.PostAsJsonAsync("/graphql", new { query, variables });
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
+
+    private static void ConfigureAuthenticatedClient(
+        HttpClient client,
+        Guid accountId,
+        string email,
+        RoleType role,
+        Guid? tenantId = null,
+        Guid? membershipId = null)
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(TestAuthHandler.SchemeName);
+
+        ReplaceDefaultHeader(client, TestAuthHandler.AccountIdHeader, accountId.ToString());
+        ReplaceDefaultHeader(client, TestAuthHandler.EmailHeader, email);
+        ReplaceDefaultHeader(client, TestAuthHandler.RoleHeader, role.ToString());
+
+        ReplaceDefaultHeader(client, TestAuthHandler.TenantIdHeader, tenantId?.ToString());
+        ReplaceDefaultHeader(client, TestAuthHandler.MembershipIdHeader, membershipId?.ToString());
+    }
+
+    private static void ReplaceDefaultHeader(HttpClient client, string name, string? value)
+    {
+        client.DefaultRequestHeaders.Remove(name);
+
+        if (!string.IsNullOrWhiteSpace(value))
+            client.DefaultRequestHeaders.Add(name, value);
+    }
+
+    private async Task<TestMembership> CreateMembershipCoreAsync(RoleType role, Guid tenantId, Guid? departmentId, bool isActive)
+    {
+        var email = $"chat-{Guid.NewGuid():N}@finflow.test";
+        var account = Account.Create(email, "hashed-password").Value;
+        var membership = TenantMembership.Create(account.Id, tenantId, role, isOwner: false).Value;
+        membership.SetDepartment(departmentId);
+
+        if (!isActive)
+        {
+            var deactivateResult = membership.Deactivate(Guid.NewGuid(), "Integration test deactivated membership");
+            if (deactivateResult.IsFailure)
+                throw new InvalidOperationException(deactivateResult.Error.Description);
+        }
+
+        await SeedTenantScopedAsync(tenantId, db =>
+        {
+            db.Add(account);
+            db.Add(membership);
+        });
+
+        return new TestMembership(account.Id, membership.Id, tenantId, membership.DepartmentId, membership.Role, account.Email);
+    }
+
+    private async Task SeedTenantScopedAsync(Guid tenantId, Action<ApplicationDbContext> seed)
+    {
+        using var scope = Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var currentTenant = scope.ServiceProvider.GetRequiredService<ICurrentTenant>();
+
+        await dbContext.Database.EnsureCreatedAsync();
+
+        currentTenant.Id = tenantId;
+        currentTenant.MembershipId = Guid.NewGuid();
+        currentTenant.IsSuperAdmin = true;
+
+        seed(dbContext);
+        await dbContext.SaveChangesAsync();
+
+        currentTenant.Id = null;
+        currentTenant.MembershipId = null;
+        currentTenant.IsSuperAdmin = false;
+        dbContext.ChangeTracker.Clear();
+    }
+
+    private static HttpClient CreateDeterministicChatHttpClient()
+    {
+        return new HttpClient(new DeterministicChatHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://chat.finflow.test/api/v1")
+        };
+    }
+
+    public sealed record TestMembership(
+        Guid AccountId,
+        Guid MembershipId,
+        Guid TenantId,
+        Guid? DepartmentId,
+        RoleType Role,
+        string Email);
+
+    public sealed record ChatExecutionResult(
+        ChatExecutionData? Data,
+        IReadOnlyList<string> Errors);
+
+    public sealed record ChatExecutionData(
+        string Answer,
+        Guid SessionId,
+        Guid MessageId,
+        int DocumentCount,
+        int TokenUsage);
 
     private sealed class NoOpLoginRateLimiter : ILoginRateLimiter
     {
@@ -672,27 +865,6 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         public GraphQlAssertionException(string message) : base(message) { }
     }
 
-    private sealed class TestChatRepository : IChatRepository
-    {
-        private readonly List<ChatSession> _sessions = new();
-        private readonly List<ChatMessage> _messages = new();
-
-        public Task<ChatSession?> GetSessionByIdAndMembershipAsync(Guid sessionId, Guid membershipId, CancellationToken ct = default)
-            => Task.FromResult(_sessions.FirstOrDefault(s => s.Id == sessionId));
-
-        public Task<IReadOnlyList<ChatMessage>> GetMessagesBySessionAsync(Guid sessionId, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<ChatMessage>>(_messages.Where(m => m.SessionId == sessionId).ToList());
-
-        public Task<IReadOnlyList<ChatSessionSummary>> GetSessionsAsync(Guid membershipId, int limit, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<ChatSessionSummary>>(
-                _sessions.Where(s => s.MembershipId == membershipId).Take(limit).Select(s =>
-                    new ChatSessionSummary(s.Id, s.Title, _messages.Count(m => m.SessionId == s.Id), _messages.Where(m => m.SessionId == s.Id).Max(m => m.CreatedAt))).ToList());
-
-        public Task AddSessionAsync(ChatSession session, CancellationToken ct = default) { _sessions.Add(session); return Task.CompletedTask; }
-        public Task UpdateSessionAsync(ChatSession session, CancellationToken ct = default) => Task.CompletedTask;
-        public Task AddMessageAsync(ChatMessage message, CancellationToken ct = default) { _messages.Add(message); return Task.CompletedTask; }
-    }
-
     private sealed class TestEmbeddingService : IEmbeddingService
     {
         public Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
@@ -704,8 +876,20 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
     private sealed class TestVectorStore : IVectorStore
     {
+        private readonly ApplicationDbContext _dbContext;
+
+        public TestVectorStore(ApplicationDbContext dbContext)
+        {
+            _dbContext = dbContext;
+        }
+
         public Task UpsertChunksAsync(IEnumerable<DocumentChunk> chunks, CancellationToken ct = default)
-            => Task.CompletedTask;
+        {
+            foreach (var chunk in chunks)
+                _dbContext.DocumentChunks.Add(chunk);
+
+            return _dbContext.SaveChangesAsync(ct);
+        }
 
         public Task<IReadOnlyList<DocumentChunk>> SearchAsync(
             float[] queryEmbedding,
@@ -715,7 +899,16 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
             int topK = 20,
             CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<DocumentChunk>>(new List<DocumentChunk>());
+            => Task.FromResult<IReadOnlyList<DocumentChunk>>(
+                _dbContext.DocumentChunks
+                    .AsNoTracking()
+                    .Where(chunk => chunk.IdTenant == tenantId)
+                    .Where(chunk => !departmentId.HasValue || chunk.DepartmentId == departmentId.Value)
+                    .Where(chunk => !ownerId.HasValue || chunk.OwnerMembershipId == ownerId.Value)
+                    .Where(chunk => allowedTypes == null || allowedTypes.Count == 0 || allowedTypes.Contains(chunk.Type))
+                    .OrderBy(chunk => chunk.CreatedAt)
+                    .Take(topK)
+                    .ToList());
 
         public Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default)
             => Task.CompletedTask;
@@ -724,105 +917,44 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
     private sealed class TestRerankService : IRerankService
     {
         public Task<IReadOnlyList<(DocumentChunk Chunk, float Score)>> RerankAsync(string query, IEnumerable<DocumentChunk> chunks, int topN = 5, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<(DocumentChunk, float)>>(new List<(DocumentChunk, float)>());
+            => Task.FromResult<IReadOnlyList<(DocumentChunk, float)>>(
+                chunks.Take(topN).Select(static (chunk, index) => (chunk, 1f - (index * 0.01f))).ToList());
     }
 
-    private sealed class TestChatAuthorizationService : IChatAuthorizationService
+    private sealed class DeterministicChatHttpMessageHandler : HttpMessageHandler
     {
-        public Task<ChatAccessScope> GetChatAccessScopeAsync(Guid membershipId, CancellationToken ct = default)
-            => Task.FromResult(new ChatAccessScope(
-                Guid.NewGuid(), "Test Tenant", RoleType.TenantAdmin, null,
-                new HashSet<Guid>(), membershipId, true,
-                new HashSet<DocumentChunkType>((DocumentChunkType[])Enum.GetValues(typeof(DocumentChunkType))),
-                BudgetAccessLevel.FullBudget, ApprovalAccessLevel.AllApprovals));
-    }
-
-    private sealed class TestChatService : IChatService
-    {
-        private readonly IChatRepository _chatRepository;
-        private readonly IChatAuthorizationService _chatAuthorizationService;
-        private readonly ISubscriptionFeatureGate _subscriptionFeatureGate;
-        private readonly ITenantUsageService _tenantUsageService;
-        private readonly IEmbeddingService _embeddingService;
-        private readonly IVectorStore _vectorStore;
-        private readonly IRerankService _rerankService;
-        private readonly IPromptBuilder _promptBuilder;
-        private readonly ICurrentTenant _currentTenant;
-        private readonly ILogger<ChatService> _logger;
-
-        public TestChatService(
-            IChatRepository chatRepository,
-            IChatAuthorizationService chatAuthorizationService,
-            ISubscriptionFeatureGate subscriptionFeatureGate,
-            ITenantUsageService tenantUsageService,
-            IEmbeddingService embeddingService,
-            IVectorStore vectorStore,
-            IRerankService rerankService,
-            IPromptBuilder promptBuilder,
-            ICurrentTenant currentTenant,
-            ILogger<ChatService> logger)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            _chatRepository = chatRepository;
-            _chatAuthorizationService = chatAuthorizationService;
-            _subscriptionFeatureGate = subscriptionFeatureGate;
-            _tenantUsageService = tenantUsageService;
-            _embeddingService = embeddingService;
-            _vectorStore = vectorStore;
-            _rerankService = rerankService;
-            _promptBuilder = promptBuilder;
-            _currentTenant = currentTenant;
-            _logger = logger;
-        }
+            var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var lastMessage = payload.RootElement
+                .GetProperty("messages")
+                .EnumerateArray()
+                .Last()
+                .GetProperty("content")
+                .GetString() ?? string.Empty;
 
-        public async Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
-        {
-            if (string.IsNullOrWhiteSpace(request.Query))
-                throw new InvalidOperationException("Query cannot be empty.");
+            var responseText = lastMessage.Contains("Context from documents:", StringComparison.Ordinal)
+                ? "Authorized expense context found."
+                : "There is not enough authorized context to answer that question.";
 
-            var subscriptionCheck = await _subscriptionFeatureGate.EnsureChatbotAllowedAsync(request.TenantId, 1, ct);
-            if (subscriptionCheck.IsFailure)
-                throw new InvalidOperationException(subscriptionCheck.Error.Description);
-
-            var sessionId = request.SessionId ?? Guid.NewGuid();
-            Guid actualSessionId;
-
-            if (request.SessionId.HasValue)
+            var responseBody = JsonSerializer.Serialize(new
             {
-                var session = await _chatRepository.GetSessionByIdAndMembershipAsync(sessionId, request.MembershipId, ct)
-                    ?? throw new InvalidOperationException("Chat session not found or access denied.");
-                actualSessionId = session.Id;
-            }
-            else
+                choices = new[]
+                {
+                    new
+                    {
+                        message = new
+                        {
+                            content = responseText
+                        }
+                    }
+                }
+            });
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                var newSession = ChatSession.Create(request.TenantId, request.MembershipId, $"Chat {DateTime.UtcNow:yyyy-MM-dd HH:mm}");
-                await _chatRepository.AddSessionAsync(newSession, ct);
-                actualSessionId = newSession.Id;
-            }
-
-            var userMessage = ChatMessage.Create(actualSessionId, request.MembershipId, ChatMessageRole.User, request.Query);
-            var assistantMessage = ChatMessage.Create(actualSessionId, request.MembershipId, ChatMessageRole.Assistant, "Hello! I'm FinFlow Assistant. How can I help you today?");
-
-            await _chatRepository.AddMessageAsync(userMessage, ct);
-            await _chatRepository.AddMessageAsync(assistantMessage, ct);
-
-            return new ChatResponse(
-                assistantMessage.Content,
-                actualSessionId,
-                assistantMessage.Id,
-                0,
-                EstimateTokenCount(assistantMessage.Content));
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            };
         }
-
-        public async Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(Guid sessionId, Guid membershipId, CancellationToken ct = default)
-        {
-            var session = await _chatRepository.GetSessionByIdAndMembershipAsync(sessionId, membershipId, ct)
-                ?? throw new InvalidOperationException("Chat session not found or access denied.");
-            return await _chatRepository.GetMessagesBySessionAsync(sessionId, ct);
-        }
-
-        public Task<IReadOnlyList<ChatSessionSummary>> GetSessionsAsync(Guid membershipId, int limit = 20, CancellationToken ct = default)
-            => _chatRepository.GetSessionsAsync(membershipId, limit, ct);
-
-        private static int EstimateTokenCount(string text) => (int)Math.Ceiling(text.Length / 4.0);
     }
 }

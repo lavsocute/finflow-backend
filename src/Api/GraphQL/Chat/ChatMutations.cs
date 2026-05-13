@@ -39,7 +39,20 @@ public class ChatMutations
             input.Query,
             input.DepartmentId);
 
-        var result = await chatService.ChatAsync(request, cancellationToken);
+        ChatResponse result;
+        try
+        {
+            result = await chatService.ChatAsync(request, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsForbiddenChatScopeError(ex))
+        {
+            logger.LogWarning(
+                ex,
+                "ChatAsync denied for membership {MembershipId} in tenant {TenantId}.",
+                membershipId.Value,
+                tenantId);
+            throw new GraphQLException(new HotChocolate.Error(ex.Message, "Chat.Forbidden"));
+        }
 
         return new ChatResponseType(
             result.Answer,
@@ -63,6 +76,9 @@ public class ChatMutations
 
         return null;
     }
+
+    private static bool IsForbiddenChatScopeError(InvalidOperationException exception) =>
+        exception.Message.StartsWith("Chat access denied:", StringComparison.Ordinal);
 }
 
 public sealed record ChatInput(
