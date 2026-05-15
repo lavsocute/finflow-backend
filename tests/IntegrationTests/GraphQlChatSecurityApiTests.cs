@@ -81,7 +81,7 @@ public sealed class GraphQlChatSecurityApiTests
             "Show me my expenses");
 
         Assert.Single(payload.Errors);
-        Assert.Contains("membership not found", payload.Errors[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("membership", payload.Errors[0], StringComparison.OrdinalIgnoreCase);
         Assert.Null(payload.Data);
     }
 

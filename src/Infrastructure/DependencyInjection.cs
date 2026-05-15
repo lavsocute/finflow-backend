@@ -80,9 +80,12 @@ public static class DependencyInjection
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
         services.AddScoped<ITenantUsageSnapshotRepository, TenantUsageSnapshotRepository>();
+        services.AddScoped<IMemberUsageSnapshotRepository, MemberUsageSnapshotRepository>();
         services.AddScoped<ITenantUsageService, TenantUsageService>();
+        services.AddScoped<IMemberUsageService, MemberUsageService>();
         services.AddSingleton<PlanEntitlementCatalog>();
         services.AddScoped<ISubscriptionFeatureGate, SubscriptionFeatureGate>();
+        services.AddScoped<ISubscriptionQuotaGate, SubscriptionQuotaGate>();
         services.AddScoped<IInvitationRepository, InvitationRepository>();
         services.AddScoped<IDocumentStorageProvider, Documents.PostgresDocumentStorageProvider>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
@@ -157,6 +160,8 @@ public static class DependencyInjection
         });
 
         services.AddScoped<Domain.Interfaces.ICurrentTenant, Security.CurrentTenant>();
+        services.AddScoped<Domain.Interfaces.ICurrentTenantWriter>(sp =>
+            (Security.CurrentTenant)sp.GetRequiredService<Domain.Interfaces.ICurrentTenant>());
         services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<GroqOcrProvider>());
         services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<OpenRouterOcrProvider>());
         services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
@@ -186,6 +191,10 @@ public static class DependencyInjection
         services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
         services.AddScoped<IVectorStore, PgVectorStore>();
         services.AddScoped<IChatService>(sp => sp.GetRequiredService<Application.Chat.Services.ChatService>());
+
+        // Background job: periodically updates DB-stored subscription status to match
+        // lazy-computed effective status. Keeps queries/dashboards fast.
+        services.AddHostedService<Subscriptions.SubscriptionStatusUpdateJob>();
 
         return services;
     }

@@ -5,7 +5,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class TenantMembership : Entity, IMultiTenant
+public sealed class TenantMembership : Entity, IMultiTenant, ISoftDeletable
 {
     private TenantMembership(Guid id, Guid accountId, Guid idTenant, RoleType role, bool isOwner)
     {
@@ -66,9 +66,13 @@ public sealed class TenantMembership : Entity, IMultiTenant
         return Result.Success();
     }
 
-    public void SetDepartment(Guid? departmentId)
+    public Result SetDepartment(Guid? departmentId)
     {
+        if (departmentId == null && Role == RoleType.Staff)
+            return Result.Failure(TenantMembershipErrors.DepartmentRequired);
+
         DepartmentId = departmentId;
+        return Result.Success();
     }
 
     public Result Deactivate(Guid deactivatedBy, string? reason)
@@ -97,8 +101,12 @@ public sealed class TenantMembership : Entity, IMultiTenant
         return Result.Success();
     }
 
-    public void SetIsOwner(bool isOwner)
+    public Result SetIsOwner(bool isOwner)
     {
+        if (isOwner && Role != RoleType.TenantAdmin)
+            return Result.Failure(TenantMembershipErrors.OwnerMustBeTenantAdmin);
+
         IsOwner = isOwner;
+        return Result.Success();
     }
 }

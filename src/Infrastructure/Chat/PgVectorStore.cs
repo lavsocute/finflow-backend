@@ -17,12 +17,19 @@ public class PgVectorStore : IVectorStore
 
     public async Task UpsertChunksAsync(IEnumerable<DocumentChunk> chunks, CancellationToken ct = default)
     {
-        foreach (var chunk in chunks)
-        {
-            var exists = await _dbContext.DocumentChunks
-                .AnyAsync(c => c.Id == chunk.Id, ct);
+        var chunkList = chunks.ToList();
+        if (chunkList.Count == 0) return;
 
-            if (!exists)
+        var idsToCheck = chunkList.Select(c => c.Id).ToList();
+        var existingIdsList = await _dbContext.DocumentChunks
+            .Where(c => idsToCheck.Contains(c.Id))
+            .Select(c => c.Id)
+            .ToListAsync(ct);
+        var existingIds = existingIdsList.ToHashSet();
+
+        foreach (var chunk in chunkList)
+        {
+            if (!existingIds.Contains(chunk.Id))
             {
                 _dbContext.DocumentChunks.Add(chunk);
             }
@@ -79,6 +86,30 @@ public class PgVectorStore : IVectorStore
 
         _dbContext.DocumentChunks.RemoveRange(chunks);
         await _dbContext.SaveChangesAsync(ct);
+    }
+
+    public async Task ReplaceDocumentChunksAsync(Guid documentId, IEnumerable<DocumentChunk> newChunks, CancellationToken ct = default)
+    {
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
+
+            var existing = await _dbContext.DocumentChunks
+                .Where(c => c.DocumentId == documentId)
+                .ToListAsync(ct);
+
+            _dbContext.DocumentChunks.RemoveRange(existing);
+
+            var chunkList = newChunks.ToList();
+            if (chunkList.Count > 0)
+            {
+                _dbContext.DocumentChunks.AddRange(chunkList);
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        });
     }
 
     private static void ValidateSearchRequest(

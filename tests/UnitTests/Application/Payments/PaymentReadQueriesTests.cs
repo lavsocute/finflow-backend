@@ -441,6 +441,9 @@ public sealed class PaymentReadQueriesTests
         public Task<TenantMembershipSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(memberships.TryGetValue(id, out var value) ? value : null);
 
+        public Task<IReadOnlyList<TenantMembershipSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<TenantMembershipSummary>>(ids.Where(memberships.ContainsKey).Select(id => memberships[id]).ToList());
+
         public Task<TenantMembershipSummary?> GetActiveByAccountAndTenantAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TenantMembershipSummary>> GetActiveByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TenantMembershipSummary>> GetByAccountIdAsync(Guid accountId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -470,6 +473,9 @@ public sealed class PaymentReadQueriesTests
     {
         public Task<DepartmentSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(departments.TryGetValue(id, out var value) ? value : null);
+
+        public Task<IReadOnlyList<DepartmentSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<DepartmentSummary>>(ids.Where(departments.ContainsKey).Select(id => departments[id]).ToList());
 
         public Task<DepartmentSummary?> GetDefaultByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<DepartmentSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -25,17 +25,20 @@ public sealed class ChatService : IChatService
     private const string ForbiddenScopeMessage = "Chat access denied: the requested chat scope is outside your scope and allowed department or ownership boundary.";
     private const string MissingDepartmentBoundaryMessage = "Chat access denied: your membership is missing a required department boundary for this chat scope.";
     private const string OutOfScopeChunkMessage = "Chat retrieval returned out-of-scope document chunks.";
+    private const int MaxQueryLength = 4000;
+    private const int MaxHistoryMessages = 20;
+    private const int RateLimitSeconds = 2;
 
     private readonly IChatRepository _chatRepository;
     private readonly IChatAuthorizationService _chatAuthorizationService;
-    private readonly ISubscriptionFeatureGate _subscriptionFeatureGate;
-    private readonly ITenantUsageService _tenantUsageService;
+    private readonly ISubscriptionQuotaGate _subscriptionQuotaGate;
     private readonly IEmbeddingService _embeddingService;
     private readonly IVectorStore _vectorStore;
     private readonly IRerankService _rerankService;
     private readonly IPromptBuilder _promptBuilder;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICacheService _cacheService;
     private readonly HttpClient _httpClient;
     private readonly GroqChatOptions _options;
     private readonly ILogger<ChatService> _logger;
@@ -49,28 +52,28 @@ public sealed class ChatService : IChatService
     public ChatService(
         IChatRepository chatRepository,
         IChatAuthorizationService chatAuthorizationService,
-        ISubscriptionFeatureGate subscriptionFeatureGate,
-        ITenantUsageService tenantUsageService,
+        ISubscriptionQuotaGate subscriptionQuotaGate,
         IEmbeddingService embeddingService,
         IVectorStore vectorStore,
         IRerankService rerankService,
         IPromptBuilder promptBuilder,
         ICurrentTenant currentTenant,
         IUnitOfWork unitOfWork,
+        ICacheService cacheService,
         HttpClient httpClient,
         IOptions<GroqChatOptions> options,
         ILogger<ChatService> logger)
     {
         _chatRepository = chatRepository;
         _chatAuthorizationService = chatAuthorizationService;
-        _subscriptionFeatureGate = subscriptionFeatureGate;
-        _tenantUsageService = tenantUsageService;
+        _subscriptionQuotaGate = subscriptionQuotaGate;
         _embeddingService = embeddingService;
         _vectorStore = vectorStore;
         _rerankService = rerankService;
         _promptBuilder = promptBuilder;
         _currentTenant = currentTenant;
         _unitOfWork = unitOfWork;
+        _cacheService = cacheService;
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
@@ -82,9 +85,23 @@ public sealed class ChatService : IChatService
         if (string.IsNullOrWhiteSpace(request.Query))
             throw new InvalidOperationException("Query cannot be empty.");
 
-        var subscriptionCheck = await _subscriptionFeatureGate.EnsureChatbotAllowedAsync(request.TenantId, 1, ct);
-        if (subscriptionCheck.IsFailure)
-            throw new InvalidOperationException(subscriptionCheck.Error.Description);
+        if (request.Query.Length > MaxQueryLength)
+            throw new InvalidOperationException($"Query exceeds maximum length of {MaxQueryLength} characters.");
+
+        // Distributed rate limiting via cache (works across replicas).
+        var rateLimitKey = $"chat:ratelimit:{request.MembershipId}";
+        var existing = await _cacheService.GetAsync<ChatRateLimitEntry>(rateLimitKey, ct);
+        if (existing != null)
+            throw new InvalidOperationException("Rate limit exceeded. Please wait a moment before sending another message.");
+        await _cacheService.SetAsync(rateLimitKey, new ChatRateLimitEntry(), TimeSpan.FromSeconds(RateLimitSeconds), ct);
+
+        var quotaDecisionResult = await _subscriptionQuotaGate.EnsureChatbotAllowedAsync(
+            request.TenantId,
+            request.MembershipId,
+            2,
+            ct);
+        if (quotaDecisionResult.IsFailure)
+            throw new InvalidOperationException(quotaDecisionResult.Error.Description);
 
         var accessScope = await _chatAuthorizationService.GetChatAccessScopeAsync(request.MembershipId, ct);
         EnsureTenantAccess(request, accessScope);
@@ -98,6 +115,11 @@ public sealed class ChatService : IChatService
         {
             activeSession = await _chatRepository.GetSessionByIdAndMembershipAsync(request.SessionId.Value, request.MembershipId, ct)
                 ?? throw new InvalidOperationException("Chat access denied: session was not found for the current membership.");
+
+            // Ensure session belongs to the same tenant as the request to prevent cross-tenant access.
+            if (activeSession.IdTenant != request.TenantId)
+                throw new InvalidOperationException("Chat access denied: session belongs to a different tenant.");
+
             actualSessionId = activeSession.Id;
         }
         else
@@ -136,6 +158,7 @@ public sealed class ChatService : IChatService
             topChunks);
 
         string assistantResponse;
+        int? totalTokens = null;
         if (topChunks.Count == 0)
         {
             _logger.LogWarning(
@@ -147,8 +170,9 @@ public sealed class ChatService : IChatService
         else
         {
             var history = await _chatRepository.GetMessagesBySessionAsync(actualSessionId, ct);
-            var prompt = _promptBuilder.BuildFullPrompt(request.Query, topChunks, accessScope, history);
-            assistantResponse = await CallOpenRouterAsync(prompt, ct);
+            var limitedHistory = history.TakeLast(MaxHistoryMessages).ToList();
+            var prompt = _promptBuilder.BuildFullPrompt(request.Query, topChunks, accessScope, limitedHistory);
+            (assistantResponse, totalTokens) = await CallOpenRouterAsync(prompt, ct);
         }
 
         if (!request.SessionId.HasValue)
@@ -161,18 +185,15 @@ public sealed class ChatService : IChatService
         await _chatRepository.AddMessageAsync(assistantMessage, ct);
 
         activeSession.UpdateTitle(TruncateForTitle(request.Query));
+        await _subscriptionQuotaGate.RecordChatbotUsageAsync(quotaDecisionResult.Value, ct);
         await _unitOfWork.SaveChangesAsync(ct);
-
-        var periodStart = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
-        var periodEnd = periodStart.AddMonths(1).AddDays(-1);
-        await _tenantUsageService.RecordChatbotUsageAsync(request.TenantId, 2, periodStart, periodEnd, ct);
 
         return new ChatResponse(
             assistantResponse,
             actualSessionId,
             assistantMessage.Id,
             topChunks.Count,
-            EstimateTokenCount(assistantResponse));
+            totalTokens ?? 0);
     }
 
     private void EnsureChunksWithinScope(
@@ -330,7 +351,7 @@ public sealed class ChatService : IChatService
         return await _chatRepository.GetSessionsAsync(membershipId, limit, ct);
     }
 
-    private async Task<string> CallOpenRouterAsync(Prompt prompt, CancellationToken ct)
+    private async Task<(string Content, int? TotalTokens)> CallOpenRouterAsync(Prompt prompt, CancellationToken ct)
     {
         var messages = new List<object>();
 
@@ -353,36 +374,36 @@ public sealed class ChatService : IChatService
             messages
         };
 
-        var content = new StringContent(JsonSerializer.Serialize(requestBody, SerializerOptions), Encoding.UTF8, "application/json");
+        var jsonContent = JsonSerializer.Serialize(requestBody, SerializerOptions);
+
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
         try
         {
             var response = await _httpClient.PostAsync(_chatCompletionsUri, content, ct);
             var responseText = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogInformation("OpenRouter response status: {Status}, body: {Body}", response.StatusCode, responseText);
+            _logger.LogInformation("Groq response status: {Status}, responseLength: {ResponseLength}", response.StatusCode, responseText.Length);
 
             if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException($"OpenRouter returned {response.StatusCode}: {responseText}");
+                throw new InvalidOperationException($"Groq returned {response.StatusCode}: {responseText}");
 
             var json = JsonSerializer.Deserialize<OpenRouterChatResponse>(responseText, SerializerOptions);
 
             if (json?.Choices == null || json.Choices.Count == 0)
-                throw new InvalidOperationException("No response from OpenRouter");
+                throw new InvalidOperationException("No response from Groq");
 
-            return json.Choices[0].Message.Content;
+            // Use provider-reported token count (accurate) instead of length-based heuristic.
+            return (json.Choices[0].Message.Content, json.Usage?.TotalTokens);
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
-            _logger.LogError(ex, "Failed to get response from OpenRouter");
+            _logger.LogError(ex, "Failed to get response from Groq");
             throw;
         }
     }
 
     private static string TruncateForTitle(string query) =>
         query.Length <= 50 ? query : query[..47] + "...";
-
-    private static int EstimateTokenCount(string text) =>
-        (int)Math.Ceiling(text.Length / 4.0);
 
     private static Uri BuildChatCompletionsUri(string baseUrl)
     {
@@ -394,7 +415,8 @@ public sealed class ChatService : IChatService
     }
 
     private record OpenRouterChatResponse(
-        List<OpenRouterChoice> Choices
+        List<OpenRouterChoice> Choices,
+        OpenRouterUsage? Usage
     );
 
     private record OpenRouterChoice(
@@ -404,4 +426,15 @@ public sealed class ChatService : IChatService
     private record OpenRouterMessage(
         string Content
     );
+
+    private record OpenRouterUsage(
+        int? PromptTokens,
+        int? CompletionTokens,
+        int? TotalTokens
+    );
+
+    private sealed class ChatRateLimitEntry
+    {
+        public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+    }
 }

@@ -3,7 +3,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Chat;
 
-public class ChatSession : Entity, IMultiTenant
+public class ChatSession : Entity, IMultiTenant, ISoftDeletable
 {
     public Guid IdTenant { get; private set; }
     public Guid MembershipId { get; private set; }

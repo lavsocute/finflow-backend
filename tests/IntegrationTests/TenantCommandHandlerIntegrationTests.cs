@@ -25,8 +25,7 @@ public sealed class TenantCommandHandlerIntegrationTests
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = currentTenant.Id;
-        scope.CurrentTenant.MembershipId = currentMembership.Id;
+        scope.SetTenant(currentTenant.Id, currentMembership.Id);
 
         var handler = scope.CreateSharedTenantHandler();
 
@@ -62,8 +61,7 @@ public sealed class TenantCommandHandlerIntegrationTests
         var currentMembership = scope.SeedMembership(account.Id, currentTenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = currentTenant.Id;
-        scope.CurrentTenant.MembershipId = currentMembership.Id;
+        scope.SetTenant(currentTenant.Id, currentMembership.Id);
 
         var handler = scope.CreateIsolatedTenantHandler();
 

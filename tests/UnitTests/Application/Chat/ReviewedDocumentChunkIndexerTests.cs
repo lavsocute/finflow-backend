@@ -47,8 +47,8 @@ public sealed class ReviewedDocumentChunkIndexerTests
         var result = await sut.ReindexAsync(document, CancellationToken.None);
 
         Assert.Equal(2, result);
-        vectorStore.Verify(x => x.DeleteByDocumentIdAsync(document.Id, It.IsAny<CancellationToken>()), Times.Once);
-        vectorStore.Verify(x => x.UpsertChunksAsync(
+        vectorStore.Verify(x => x.ReplaceDocumentChunksAsync(
+            document.Id,
             It.Is<IEnumerable<DocumentChunk>>(chunks =>
                 chunks.Count() == 2 &&
                 chunks.Any(chunk => chunk.Type == DocumentChunkType.Expense) &&
@@ -193,6 +193,15 @@ public sealed class ReviewedDocumentChunkIndexerTests
         {
             DeleteCalls++;
             _storedChunks.RemoveAll(chunk => chunk.DocumentId == documentId);
+            return Task.CompletedTask;
+        }
+
+        public Task ReplaceDocumentChunksAsync(Guid documentId, IEnumerable<DocumentChunk> newChunks, CancellationToken ct = default)
+        {
+            DeleteCalls++;
+            _storedChunks.RemoveAll(chunk => chunk.DocumentId == documentId);
+            UpsertCalls++;
+            _storedChunks.AddRange(newChunks);
             return Task.CompletedTask;
         }
     }

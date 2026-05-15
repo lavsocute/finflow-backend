@@ -9,4 +9,10 @@ public interface IPdfPageRenderer
         byte[] pdfBytes,
         int maxPages,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Counts pages without rendering them. Use this for quota validation
+    /// before performing the expensive render step.
+    /// </summary>
+    Task<Result<int>> GetPageCountAsync(byte[] pdfBytes, CancellationToken cancellationToken);
 }

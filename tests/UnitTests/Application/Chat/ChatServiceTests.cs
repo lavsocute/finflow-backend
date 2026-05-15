@@ -1,6 +1,7 @@
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Chat.Services;
 using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Subscriptions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Chat;
 using FinFlow.Domain.Documents;
@@ -19,14 +20,14 @@ public class ChatServiceTests
 {
     private readonly Mock<IChatRepository> _chatRepositoryMock;
     private readonly Mock<IChatAuthorizationService> _chatAuthServiceMock;
-    private readonly Mock<ISubscriptionFeatureGate> _subscriptionFeatureGateMock;
-    private readonly Mock<ITenantUsageService> _tenantUsageServiceMock;
+    private readonly Mock<ISubscriptionQuotaGate> _subscriptionQuotaGateMock;
     private readonly Mock<IEmbeddingService> _embeddingServiceMock;
     private readonly Mock<IVectorStore> _vectorStoreMock;
     private readonly Mock<IRerankService> _rerankServiceMock;
     private readonly Mock<IPromptBuilder> _promptBuilderMock;
     private readonly Mock<ICurrentTenant> _currentTenantMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ICacheService> _cacheServiceMock;
     private readonly Mock<ILogger<ChatService>> _loggerMock;
     private readonly HttpClient _httpClient;
     private readonly IOptions<GroqChatOptions> _options;
@@ -35,14 +36,14 @@ public class ChatServiceTests
     {
         _chatRepositoryMock = new Mock<IChatRepository>();
         _chatAuthServiceMock = new Mock<IChatAuthorizationService>();
-        _subscriptionFeatureGateMock = new Mock<ISubscriptionFeatureGate>();
-        _tenantUsageServiceMock = new Mock<ITenantUsageService>();
+        _subscriptionQuotaGateMock = new Mock<ISubscriptionQuotaGate>();
         _embeddingServiceMock = new Mock<IEmbeddingService>();
         _vectorStoreMock = new Mock<IVectorStore>();
         _rerankServiceMock = new Mock<IRerankService>();
         _promptBuilderMock = new Mock<IPromptBuilder>();
         _currentTenantMock = new Mock<ICurrentTenant>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _cacheServiceMock = new Mock<ICacheService>();
         _loggerMock = new Mock<ILogger<ChatService>>();
 
         _options = Options.Create(new GroqChatOptions
@@ -77,14 +78,14 @@ public class ChatServiceTests
     private ChatService CreateService() => new ChatService(
         _chatRepositoryMock.Object,
         _chatAuthServiceMock.Object,
-        _subscriptionFeatureGateMock.Object,
-        _tenantUsageServiceMock.Object,
+        _subscriptionQuotaGateMock.Object,
         _embeddingServiceMock.Object,
         _vectorStoreMock.Object,
         _rerankServiceMock.Object,
         _promptBuilderMock.Object,
         _currentTenantMock.Object,
         _unitOfWorkMock.Object,
+        _cacheServiceMock.Object,
         _httpClient,
         _options,
         _loggerMock.Object);
@@ -94,11 +95,14 @@ public class ChatServiceTests
         Guid membershipId,
         ChatAccessScope accessScope,
         IReadOnlyList<DocumentChunk>? searchChunks = null,
-        IReadOnlyList<(DocumentChunk Chunk, float Score)>? rerankedResults = null)
+        IReadOnlyList<(DocumentChunk Chunk, float Score)>? rerankedResults = null,
+        SubscriptionQuotaDecision? quotaDecision = null)
     {
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        quotaDecision ??= CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2);
+
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(quotaDecision));
 
         _embeddingServiceMock
             .Setup(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -178,6 +182,24 @@ public class ChatServiceTests
             .ToDictionary(property => property.Name, property => property.GetValue(value));
     }
 
+    private static SubscriptionQuotaDecision CreateQuotaDecision(
+        Guid tenantId,
+        Guid membershipId,
+        SubscriptionFeature feature,
+        int approvedUnitCount) =>
+        new(
+            tenantId,
+            membershipId,
+            new DateOnly(2026, 5, 1),
+            new DateOnly(2026, 5, 31),
+            feature,
+            approvedUnitCount,
+            new PlanEntitlements(true, true, true, 10L * 1024 * 1024 * 1024, 1_000, 100, 10_000, 500),
+            0,
+            0,
+            0,
+            0);
+
     [Fact]
     public async Task ChatAsync_ThrowsWhenQueryEmpty()
     {
@@ -200,9 +222,9 @@ public class ChatServiceTests
         var tenantId = Guid.NewGuid();
         var membershipId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(new Error("SUBSCRIPTION", "Chat not allowed")));
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<SubscriptionQuotaDecision>(new Error("SUBSCRIPTION", "Chat not allowed")));
 
         var request = new ChatRequest(
             MembershipId: membershipId,
@@ -225,9 +247,9 @@ public class ChatServiceTests
         var membershipId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2)));
 
         _embeddingServiceMock
             .Setup(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -319,9 +341,9 @@ public class ChatServiceTests
         var membershipId = Guid.NewGuid();
         var scopedDepartmentId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2)));
 
         _embeddingServiceMock
             .Setup(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -529,9 +551,9 @@ public class ChatServiceTests
         var tenantId = Guid.NewGuid();
         var membershipId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2)));
 
         _chatAuthServiceMock
             .Setup(x => x.GetChatAccessScopeAsync(membershipId, It.IsAny<CancellationToken>()))
@@ -643,9 +665,9 @@ public class ChatServiceTests
         var requestedDepartmentId = Guid.NewGuid();
         var scopedDepartmentId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2)));
 
         _embeddingServiceMock
             .Setup(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -686,9 +708,9 @@ public class ChatServiceTests
         var requestedDepartmentId = Guid.NewGuid();
         var scopedDepartmentId = Guid.NewGuid();
 
-        _subscriptionFeatureGateMock
-            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, 1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2)));
 
         _chatAuthServiceMock
             .Setup(x => x.GetChatAccessScopeAsync(membershipId, It.IsAny<CancellationToken>()))
@@ -874,14 +896,14 @@ var expectedSessions = new List<ChatSessionSummary>
         var service = new ChatService(
             _chatRepositoryMock.Object,
             _chatAuthServiceMock.Object,
-            _subscriptionFeatureGateMock.Object,
-            _tenantUsageServiceMock.Object,
+            _subscriptionQuotaGateMock.Object,
             _embeddingServiceMock.Object,
             _vectorStoreMock.Object,
             _rerankServiceMock.Object,
             _promptBuilderMock.Object,
             _currentTenantMock.Object,
             _unitOfWorkMock.Object,
+            _cacheServiceMock.Object,
             client,
             Options.Create(new GroqChatOptions
             {
@@ -924,6 +946,64 @@ var expectedSessions = new List<ChatSessionSummary>
         _chatRepositoryMock.Verify(
             x => x.UpdateSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_ThrowsWhenMemberQuotaCheckFails()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<SubscriptionQuotaDecision>(
+                new Error("Subscription.ChatbotMemberQuotaExceeded", "The current member has reached the monthly chatbot quota.")));
+
+        var request = new ChatRequest(membershipId, tenantId, null, "Hello", null);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ChatAsync(request, CancellationToken.None));
+
+        Assert.Contains("monthly chatbot quota", ex.Message, StringComparison.OrdinalIgnoreCase);
+        _subscriptionQuotaGateMock.Verify(
+            x => x.RecordChatbotUsageAsync(It.IsAny<SubscriptionQuotaDecision>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_RecordsApprovedUsageThroughQuotaDecision_AfterSuccessfulWork()
+    {
+        var service = CreateService();
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.Staff,
+            null,
+            [],
+            membershipId,
+            false,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.LimitOnly,
+            ApprovalAccessLevel.OwnOnly);
+        var decision = CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 2);
+
+        SetupHappyPath(tenantId, membershipId, accessScope, quotaDecision: decision);
+
+        await service.ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Summarize my recent expenses", null),
+            CancellationToken.None);
+
+        _subscriptionQuotaGateMock.Verify(
+            x => x.RecordChatbotUsageAsync(
+                It.Is<SubscriptionQuotaDecision>(d =>
+                    d.TenantId == tenantId &&
+                    d.MembershipId == membershipId &&
+                    d.Feature == SubscriptionFeature.Chatbot &&
+                    d.ApprovedUnitCount == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler

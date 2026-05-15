@@ -22,7 +22,10 @@ public class RequestTimeoutMiddleware
         using var cts = new CancellationTokenSource(_defaultTimeout);
 
         var originalToken = context.RequestAborted;
-        var compositeToken = CancellationTokenSource.CreateLinkedTokenSource(originalToken, cts.Token).Token;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(originalToken, cts.Token);
+
+        // Replace RequestAborted so downstream handlers respect the timeout budget.
+        context.RequestAborted = linkedCts.Token;
 
         using (_logger.BeginScope(new Dictionary<string, object>
         {

@@ -23,4 +23,5 @@ public static class AccountErrors
     public static readonly Error Unauthorized = new("Account.Unauthorized", "User is not authenticated or token is invalid");
     public static readonly Error TooManyRequests = new("Account.TooManyRequests", "Too many login attempts. Please try again later.");
     public static readonly Error WorkspaceSelectionRequired = new("Account.WorkspaceSelectionRequired", "Multiple workspaces found. Workspace selection is required.");
+    public static readonly Error PasswordSameAsCurrent = new("Account.PasswordSameAsCurrent", "New password must be different from the current password");
 }

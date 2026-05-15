@@ -38,8 +38,10 @@ public sealed class RedisOtpOperationLockService : IOtpOperationLockService
             var redis = GetRedis();
             if (redis == null)
             {
-                _logger.LogWarning("Redis unavailable for OTP lock, proceeding without lock");
-                return null;
+                // Redis unavailable: fail-open to avoid blocking all auth operations.
+                // Operations proceed without distributed lock protection.
+                _logger.LogWarning("Redis unavailable for OTP lock on key {Key}, proceeding without lock (fail-open)", key);
+                return OtpLock.NoOp;
             }
 
             var result = (int)await redis.ScriptEvaluateAsync(
@@ -49,7 +51,8 @@ public sealed class RedisOtpOperationLockService : IOtpOperationLockService
 
             if (result == 0)
             {
-                _logger.LogDebug("Failed to acquire OTP lock for key {Key}", key);
+                // Lock contended: another operation holds the lock. Return null to signal caller to reject.
+                _logger.LogDebug("Failed to acquire OTP lock for key {Key} (contended)", key);
                 return null;
             }
 
@@ -78,8 +81,9 @@ public sealed class RedisOtpOperationLockService : IOtpOperationLockService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error acquiring OTP lock for key {Key}", key);
-            return null;
+            // Redis error during lock acquisition: fail-open.
+            _logger.LogError(ex, "Error acquiring OTP lock for key {Key}, proceeding without lock (fail-open)", key);
+            return OtpLock.NoOp;
         }
     }
 

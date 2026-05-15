@@ -42,10 +42,25 @@ public sealed class GroqOcrProvider : IOcrProvider
                 MaxRetryAttempts = 3,
                 Delay = TimeSpan.FromSeconds(1),
                 BackoffType = DelayBackoffType.Exponential,
-                ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
-                    .Handle<HttpRequestException>()
-                    .Handle<TaskCanceledException>()
-                    .HandleResult(r => !r.IsSuccessStatusCode && (int)r.StatusCode >= 500)
+                ShouldHandle = args =>
+                {
+                    // Don't retry if caller already cancelled — avoid extra upstream billing.
+                    if (args.Context.CancellationToken.IsCancellationRequested)
+                        return ValueTask.FromResult(false);
+
+                    if (args.Outcome.Exception is HttpRequestException)
+                        return ValueTask.FromResult(true);
+
+                    if (args.Outcome.Exception is TaskCanceledException tce
+                        && tce.InnerException is TimeoutException)
+                        return ValueTask.FromResult(true);
+
+                    if (args.Outcome.Result is { IsSuccessStatusCode: false } response
+                        && (int)response.StatusCode >= 500)
+                        return ValueTask.FromResult(true);
+
+                    return ValueTask.FromResult(false);
+                }
             })
             .Build();
     }
@@ -132,12 +147,7 @@ public sealed class GroqOcrProvider : IOcrProvider
         if (!string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
             return Result.Success(1);
 
-        var allowedPages = Math.Min(_options.MaxPagesPerDocument, _options.MaxImagesPerRequest);
-        var renderResult = await _pdfPageRenderer.RenderAsync(fileContents, allowedPages, cancellationToken);
-        if (renderResult.IsFailure)
-            return Result.Failure<int>(renderResult.Error);
-
-        return Result.Success(renderResult.Value.Pages.Count);
+        return await _pdfPageRenderer.GetPageCountAsync(fileContents, cancellationToken);
     }
 
     private GroqChatCompletionRequest BuildRequest(IReadOnlyList<OcrPageImage> images)

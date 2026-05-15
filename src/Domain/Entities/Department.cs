@@ -4,7 +4,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Department : Entity, IMultiTenant
+public sealed class Department : Entity, IMultiTenant, ISoftDeletable
 {
     private Department(Guid id, string name, Guid idTenant, Guid? parentId)
     {
@@ -30,6 +30,8 @@ public sealed class Department : Entity, IMultiTenant
             return Result.Failure<Department>(DepartmentErrors.NameRequired);
         if (name.Length > 100)
             return Result.Failure<Department>(DepartmentErrors.NameTooLong);
+        if (idTenant == Guid.Empty)
+            return Result.Failure<Department>(DepartmentErrors.TenantRequired);
 
         var department = new Department(Guid.NewGuid(), name, idTenant, parentId);
         department.RaiseDomainEvent(new DepartmentCreatedDomainEvent(department.Id, department.Name, department.IdTenant));

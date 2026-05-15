@@ -12,6 +12,12 @@ public sealed class OtpLock : IAsyncDisposable
 
     private OtpLock(Func<Task> releaseFunc) => _releaseFunc = releaseFunc;
 
+    /// <summary>
+    /// A no-op lock used when Redis is unavailable (fail-open).
+    /// Callers treat this as a successful lock acquisition.
+    /// </summary>
+    public static OtpLock NoOp { get; } = new(() => Task.CompletedTask);
+
     public static OtpLock Create(Func<Task> releaseFunc) => new(releaseFunc);
 
     public async ValueTask DisposeAsync()

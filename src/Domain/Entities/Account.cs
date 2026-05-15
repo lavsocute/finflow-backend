@@ -1,9 +1,10 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Events;
+using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Account : Entity
+public sealed class Account : Entity, ISoftDeletable
 {
     private Account(Guid id, string email, string passwordHash)
     {

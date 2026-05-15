@@ -132,6 +132,7 @@ public static class LlmVisionOcrParser
         return property.ValueKind switch
         {
             JsonValueKind.Number when property.TryGetDecimal(out var value) => value,
+            JsonValueKind.String when decimal.TryParse(property.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
             _ => throw new InvalidOperationException($"{propertyName} must be a decimal.")
         };
     }

@@ -14,4 +14,9 @@ public interface IVectorStore
         int topK = 20,
         CancellationToken ct = default);
     Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically replaces all chunks for a document (delete + insert in one transaction).
+    /// </summary>
+    Task ReplaceDocumentChunksAsync(Guid documentId, IEnumerable<DocumentChunk> newChunks, CancellationToken ct = default);
 }

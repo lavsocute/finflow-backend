@@ -18,6 +18,14 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
             .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.DepartmentId, m.Role, m.IsOwner, m.IsActive, m.CreatedAt, m.DeactivatedAt, m.DeactivatedBy, m.DeactivatedReason))
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<TenantMembershipSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<TenantMembership>()
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(m => ids.Contains(m.Id))
+            .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.DepartmentId, m.Role, m.IsOwner, m.IsActive, m.CreatedAt, m.DeactivatedAt, m.DeactivatedBy, m.DeactivatedReason))
+            .ToListAsync(cancellationToken);
+
     public async Task<TenantMembershipSummary?> GetActiveByAccountAndTenantAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()

@@ -60,6 +60,13 @@ public static class LlmVisionImagePreparer
         || string.Equals(contentType, "image/jpg", StringComparison.OrdinalIgnoreCase)
         || string.Equals(contentType, "image/webp", StringComparison.OrdinalIgnoreCase);
 
-    private static int GetDecodedByteLength(string base64Content) =>
-        Convert.FromBase64String(base64Content).Length;
+    private static int GetDecodedByteLength(string base64Content)
+    {
+        // Calculate decoded length from base64 string length without allocating.
+        var length = base64Content.Length;
+        var padding = 0;
+        if (length > 0 && base64Content[length - 1] == '=') padding++;
+        if (length > 1 && base64Content[length - 2] == '=') padding++;
+        return (length * 3) / 4 - padding;
+    }
 }

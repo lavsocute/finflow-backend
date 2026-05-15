@@ -11,4 +11,6 @@ public static class ExpenseErrors
     public static readonly Error DepartmentRequired = new("Expense.DepartmentRequired", "Department ID is required");
     public static readonly Error CategoryRequired = new("Expense.CategoryRequired", "Category ID is required");
     public static readonly Error InvalidAmount = new("Expense.InvalidAmount", "Amount must be greater than zero");
+    public static readonly Error InvalidMonth = new("Expense.InvalidMonth", "Month must be between 1 and 12");
+    public static readonly Error InvalidYear = new("Expense.InvalidYear", "Year must be between 2000 and 2100");
 }

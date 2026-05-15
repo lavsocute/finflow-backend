@@ -21,6 +21,11 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
 
     private const int MinPasswordVerificationTimeMs = 100;
 
+    // Canary hash for timing-safe rejection of unknown emails.
+    // Pre-computed bcrypt hash of a random string — ensures unknown-email path
+    // takes the same time as known-email path (bcrypt verify ~250ms).
+    private const string CanaryPasswordHash = "$2a$11$K7Hy.5HQlBg3/MhLdnMCUONqHFBYnT9G8JNpA3YCz0eU3/Hy5kPi";
+
     public LoginCommandHandler(
         IAccountRepository accountRepository,
         IRefreshTokenRepository refreshTokenRepository,
@@ -47,8 +52,10 @@ public sealed class LoginCommandHandler : MediatR.IRequestHandler<LoginCommand, 
         var account = await _accountRepository.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
         if (account == null)
         {
+            // Perform dummy bcrypt verify to match timing of valid-email path.
+            // This prevents attackers from distinguishing "email not found" via response time.
+            _passwordHasher.VerifyPassword(request.Password, CanaryPasswordHash);
             await _rateLimiter.RecordFailureAsync(request.ClientIp, request.Email);
-            await Task.Delay(MinPasswordVerificationTimeMs, cancellationToken);
             return Result.Failure<AccountSessionResponse>(AccountErrors.InvalidCurrentPassword);
         }
 

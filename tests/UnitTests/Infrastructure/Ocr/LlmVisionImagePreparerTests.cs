@@ -123,6 +123,9 @@ public sealed class LlmVisionImagePreparerTests
         public Task<Result<PdfRenderResult>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(Track(maxPages));
 
+        public Task<Result<int>> GetPageCountAsync(byte[] pdfBytes, CancellationToken cancellationToken) =>
+            Task.FromResult(_result.IsSuccess ? Result.Success(_result.Value.Pages.Count) : Result.Failure<int>(_result.Error));
+
         private Result<PdfRenderResult> Track(int maxPages)
         {
             LastMaxPages = maxPages;

@@ -132,26 +132,14 @@ public sealed class AcceptInviteCommandHandler : MediatR.IRequestHandler<AcceptI
         if (refreshTokenResult.IsFailure)
             return Result.Failure<AuthResponse>(refreshTokenResult.Error);
 
-        var originalTenantId = _currentTenant.Id;
-        var originalMembershipId = _currentTenant.MembershipId;
-        var originalIsSuperAdmin = _currentTenant.IsSuperAdmin;
-
-        try
+        // Use AsyncLocal-backed scope to act as the new membership for the SaveChanges
+        // tenant-isolation check. Auto-unwinds on dispose, even if SaveChanges throws.
+        using (_currentTenant.BeginScope(invitation.IdTenant, membership.Id))
         {
-            _currentTenant.Id = invitation.IdTenant;
-            _currentTenant.MembershipId = membership.Id;
-            _currentTenant.IsSuperAdmin = false;
-
             _membershipRepository.Add(membership);
             _invitationRepository.Update(invitation);
             _refreshTokenRepository.Add(refreshTokenResult.Value);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        finally
-        {
-            _currentTenant.Id = originalTenantId;
-            _currentTenant.MembershipId = originalMembershipId;
-            _currentTenant.IsSuperAdmin = originalIsSuperAdmin;
         }
 
         var accessToken = _tokenService.GenerateAccessToken(

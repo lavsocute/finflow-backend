@@ -247,20 +247,21 @@ internal sealed class AuthFlowTestFixture
 
         public async Task SaveSeedAsync()
         {
-            CurrentTenant.Id = Guid.NewGuid();
-            CurrentTenant.IsSuperAdmin = true;
+            CurrentTenant.SetFromRequest(Guid.NewGuid(), null, isSuperAdmin: true);
             await DbContext.SaveChangesAsync();
-            CurrentTenant.Id = null;
-            CurrentTenant.MembershipId = null;
-            CurrentTenant.IsSuperAdmin = false;
+            CurrentTenant.SetFromRequest(null, null, isSuperAdmin: false);
             DbContext.ChangeTracker.Clear();
         }
 
         public void ActAsSuperAdmin()
         {
-            CurrentTenant.Id = null;
-            CurrentTenant.MembershipId = null;
-            CurrentTenant.IsSuperAdmin = true;
+            CurrentTenant.SetFromRequest(null, null, isSuperAdmin: true);
+        }
+
+        /// <summary>Sets the tenant context for this test scope. Use SetFromRequest semantics.</summary>
+        public void SetTenant(Guid? tenantId, Guid? membershipId = null, bool isSuperAdmin = false)
+        {
+            CurrentTenant.SetFromRequest(tenantId, membershipId, isSuperAdmin);
         }
 
         public LoginCommandHandler CreateLoginHandler() => ActivatorUtilities.CreateInstance<LoginCommandHandler>(ServiceProvider);

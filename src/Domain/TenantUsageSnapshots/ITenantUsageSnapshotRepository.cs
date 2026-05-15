@@ -10,6 +10,10 @@ public interface ITenantUsageSnapshotRepository
         DateOnly periodEnd,
         CancellationToken cancellationToken = default);
 
+    Task<TenantUsageSnapshot> GetOrCreateAsync(
+        TenantUsageSnapshot snapshot,
+        CancellationToken cancellationToken = default);
+
     void Add(TenantUsageSnapshot snapshot);
     void Update(TenantUsageSnapshot snapshot);
 }

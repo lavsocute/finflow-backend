@@ -50,6 +50,8 @@ public sealed class ChangePasswordCommandHandler : MediatR.IRequestHandler<Chang
 
         if (!_passwordHasher.VerifyPassword(request.CurrentPassword, accountInfo.PasswordHash))
             return Result.Failure(AccountErrors.InvalidCurrentPassword);
+        if (_passwordHasher.VerifyPassword(request.NewPassword, accountInfo.PasswordHash))
+            return Result.Failure(AccountErrors.PasswordSameAsCurrent);
         if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
             return Result.Failure(AccountErrors.PasswordTooShort);
         if (!PasswordRules.IsStrong(request.NewPassword))

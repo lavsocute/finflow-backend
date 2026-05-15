@@ -95,6 +95,9 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
         public Task<TenantMembershipSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<TenantMembershipSummary?>(_byId);
 
+        public Task<IReadOnlyList<TenantMembershipSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TenantMembershipSummary>>(_byId is not null && ids.Contains(_byId.Id) ? [_byId] : []);
+
         public Task<TenantMembershipSummary?> GetActiveByAccountAndTenantAsync(Guid accountId, Guid idTenant, CancellationToken cancellationToken = default)
             => Task.FromResult<TenantMembershipSummary?>(_byId is not null && _byId.AccountId == accountId && _byId.IdTenant == idTenant && _byId.IsActive
                 ? _byId
@@ -132,6 +135,9 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
 
         public Task<TenantSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult<TenantSummary?>(_tenant);
+
+        public Task<IReadOnlyList<TenantSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<TenantSummary>>(_tenant is not null && ids.Contains(_tenant.Id) ? [_tenant] : []);
 
         public Task<TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default)
             => Task.FromResult<TenantSummary?>(_tenant is not null && _tenant.TenantCode == tenantCode ? _tenant : null);

@@ -17,6 +17,7 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
     private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IOtpOperationLockService _otpLockService;
+    private readonly ILoginRateLimiter _rateLimiter;
 
     public ResetPasswordByOtpCommandHandler(
         IPasswordResetChallengeRepository challengeRepository,
@@ -25,7 +26,8 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         IRefreshTokenRepository refreshTokenRepository,
         IPasswordHasher passwordHasher,
         IUnitOfWork unitOfWork,
-        IOtpOperationLockService otpLockService)
+        IOtpOperationLockService otpLockService,
+        ILoginRateLimiter rateLimiter)
     {
         _challengeRepository = challengeRepository;
         _secretService = secretService;
@@ -34,6 +36,7 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
         _otpLockService = otpLockService;
+        _rateLimiter = rateLimiter;
     }
 
     public async Task<Result> Handle(ResetPasswordByOtpCommand command, CancellationToken cancellationToken)
@@ -44,9 +47,16 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         if (!PasswordRules.IsStrong(request.NewPassword))
             return Result.Failure(AccountErrors.PasswordTooWeak);
 
+        // Rate limit password reset attempts by email
+        if (await _rateLimiter.IsBlockedAsync(null, request.Email))
+            return Result.Failure(AccountErrors.TooManyRequests);
+
         var accountInfo = await _accountRepository.GetLoginInfoByEmailAsync(request.Email, cancellationToken);
         if (accountInfo is null || !accountInfo.IsActive)
+        {
+            await _rateLimiter.RecordFailureAsync(null, request.Email);
             return Result.Failure(PasswordResetChallengeErrors.InvalidOtp);
+        }
 
         await using var lockHandle = await _otpLockService.AcquireLockAsync(
             $"reset-otp:{accountInfo.Id}",
@@ -67,6 +77,8 @@ public sealed class ResetPasswordByOtpCommandHandler : MediatR.IRequestHandler<R
         var otpHash = _secretService.HashOtp(request.Otp);
         if (!string.Equals(challenge.OtpHash, otpHash, StringComparison.Ordinal))
         {
+            await _rateLimiter.RecordFailureAsync(null, request.Email);
+
             var failedAttemptResult = challenge.RegisterFailedOtpAttempt(DateTime.UtcNow);
             if (failedAttemptResult.IsFailure)
                 return failedAttemptResult;

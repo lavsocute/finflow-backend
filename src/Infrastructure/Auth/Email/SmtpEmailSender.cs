@@ -1,10 +1,15 @@
-using System.Net;
-using System.Net.Mail;
 using FinFlow.Application.Common.Abstractions;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 using Microsoft.Extensions.Options;
 
 namespace FinFlow.Infrastructure.Auth.Email;
 
+/// <summary>
+/// Sends transactional emails via MailKit (modern, actively-maintained SMTP client).
+/// Replaces the deprecated System.Net.Mail.SmtpClient which Microsoft no longer recommends.
+/// </summary>
 internal sealed class SmtpEmailSender : IEmailSender
 {
     private readonly SmtpEmailSenderOptions _smtpOptions;
@@ -60,23 +65,27 @@ internal sealed class SmtpEmailSender : IEmailSender
     {
         ValidateConfiguration();
 
-        using var message = new MailMessage
-        {
-            From = new MailAddress(_deliveryOptions.SenderAddress, _deliveryOptions.SenderName),
-            Subject = subject,
-            Body = body,
-            IsBodyHtml = false
-        };
-        message.To.Add(toEmail);
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress(_deliveryOptions.SenderName, _deliveryOptions.SenderAddress));
+        message.To.Add(MailboxAddress.Parse(toEmail));
+        message.Subject = subject;
+        message.Body = new TextPart("plain") { Text = body };
 
-        using var client = new SmtpClient(_smtpOptions.Host, _smtpOptions.Port)
-        {
-            EnableSsl = _smtpOptions.UseTls,
-            Credentials = new NetworkCredential(_smtpOptions.Username, _smtpOptions.Password)
-        };
+        using var client = new SmtpClient();
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await client.SendMailAsync(message, cancellationToken);
+        var socketOptions = _smtpOptions.UseTls
+            ? SecureSocketOptions.StartTlsWhenAvailable
+            : SecureSocketOptions.None;
+
+        await client.ConnectAsync(_smtpOptions.Host, _smtpOptions.Port, socketOptions, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(_smtpOptions.Username))
+        {
+            await client.AuthenticateAsync(_smtpOptions.Username, _smtpOptions.Password, cancellationToken);
+        }
+
+        await client.SendAsync(message, cancellationToken);
+        await client.DisconnectAsync(quit: true, cancellationToken);
     }
 
     private void ValidateConfiguration()
@@ -85,10 +94,6 @@ internal sealed class SmtpEmailSender : IEmailSender
             throw new InvalidOperationException("EmailSmtp:Host is required.");
         if (_smtpOptions.Port <= 0)
             throw new InvalidOperationException("EmailSmtp:Port must be a positive number.");
-        if (string.IsNullOrWhiteSpace(_smtpOptions.Username))
-            throw new InvalidOperationException("EmailSmtp:Username is required.");
-        if (string.IsNullOrWhiteSpace(_smtpOptions.Password))
-            throw new InvalidOperationException("EmailSmtp:Password is required.");
         if (string.IsNullOrWhiteSpace(_deliveryOptions.SenderAddress))
             throw new InvalidOperationException("EmailDelivery:SenderAddress is required.");
         if (string.IsNullOrWhiteSpace(_deliveryOptions.SenderName))

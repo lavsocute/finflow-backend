@@ -17,6 +17,13 @@ internal sealed class TenantRepository : ITenantRepository
             .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<TenantSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Tenant>()
+            .AsNoTracking()
+            .Where(t => ids.Contains(t.Id))
+            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
+            .ToListAsync(cancellationToken);
+
     public async Task<TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
