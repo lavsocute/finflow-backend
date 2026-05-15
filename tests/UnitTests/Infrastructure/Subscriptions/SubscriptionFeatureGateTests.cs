@@ -12,55 +12,6 @@ public sealed class SubscriptionFeatureGateTests
     private static readonly Guid TenantId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     [Fact]
-    public async Task EnsureOcrAllowedAsync_ReturnsQuotaExceeded_WhenUsageReachedMonthlyLimit()
-    {
-        var gate = CreateGate(
-            PlanTier.Pro,
-            ocrPagesUsed: 1_000);
-
-        var result = await gate.EnsureOcrAllowedAsync(TenantId, 1, CancellationToken.None);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal("Subscription.OcrQuotaExceeded", result.Error.Code);
-    }
-
-    [Fact]
-    public async Task EnsureOcrAllowedAsync_ReturnsOcrNotAvailable_WhenPlanDoesNotIncludeOcr()
-    {
-        var gate = CreateGate(PlanTier.Free);
-
-        var result = await gate.EnsureOcrAllowedAsync(TenantId, 1, CancellationToken.None);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal("Documents.OcrNotAvailableForCurrentPlan", result.Error.Code);
-    }
-
-    [Fact]
-    public async Task EnsureChatbotAllowedAsync_ReturnsSuccess_WhenUsageBelowLimit()
-    {
-        var gate = CreateGate(
-            PlanTier.Pro,
-            chatbotMessagesUsed: 42);
-
-        var result = await gate.EnsureChatbotAllowedAsync(TenantId, 1, CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-    }
-
-    [Fact]
-    public async Task EnsureChatbotAllowedAsync_ReturnsQuotaExceeded_WhenUsageReachedMonthlyLimit()
-    {
-        var gate = CreateGate(
-            PlanTier.Pro,
-            chatbotMessagesUsed: 10_000);
-
-        var result = await gate.EnsureChatbotAllowedAsync(TenantId, 1, CancellationToken.None);
-
-        Assert.True(result.IsFailure);
-        Assert.Equal("Subscription.ChatbotQuotaExceeded", result.Error.Code);
-    }
-
-    [Fact]
     public async Task GetEntitlementsAsync_ReturnsFreeEntitlements_WhenSubscriptionMissing()
     {
         var gate = new SubscriptionFeatureGate(
@@ -73,12 +24,14 @@ public sealed class SubscriptionFeatureGateTests
         Assert.True(entitlements.DocumentsManualEntryEnabled);
         Assert.False(entitlements.DocumentsOcrEnabled);
         Assert.False(entitlements.ChatbotEnabled);
-        Assert.Equal(0, entitlements.MonthlyOcrPages);
-        Assert.Equal(0, entitlements.MonthlyChatbotMessages);
+        Assert.Equal(0, entitlements.WorkspaceMonthlyOcrPages);
+        Assert.Equal(0, entitlements.MemberMonthlyOcrPages);
+        Assert.Equal(0, entitlements.WorkspaceMonthlyChatbotMessages);
+        Assert.Equal(0, entitlements.MemberMonthlyChatbotMessages);
     }
 
     [Fact]
-    public async Task GetEntitlementsAsync_ReturnsFreeEntitlements_WhenSubscriptionIsNotActive()
+    public async Task GetEntitlementsAsync_ReturnsFreeEntitlements_WhenSubscriptionIsCanceled()
     {
         var gate = CreateGate(PlanTier.Enterprise, status: SubscriptionStatus.Canceled);
 
@@ -87,21 +40,76 @@ public sealed class SubscriptionFeatureGateTests
         Assert.True(entitlements.DocumentsManualEntryEnabled);
         Assert.False(entitlements.DocumentsOcrEnabled);
         Assert.False(entitlements.ChatbotEnabled);
-        Assert.Equal(0, entitlements.MonthlyOcrPages);
-        Assert.Equal(0, entitlements.MonthlyChatbotMessages);
+    }
+
+    [Fact]
+    public async Task GetEntitlementsAsync_ReturnsFreeEntitlements_WhenSubscriptionIsExpired()
+    {
+        // Subscription where now is past PeriodEnd + GracePeriodDays — effective status = Expired
+        var gate = CreateGate(
+            PlanTier.Pro,
+            periodStart: DateTime.SpecifyKind(new DateTime(2025, 1, 1), DateTimeKind.Utc),
+            periodEnd: DateTime.SpecifyKind(new DateTime(2025, 1, 31), DateTimeKind.Utc));
+
+        var entitlements = await gate.GetEntitlementsAsync(TenantId, CancellationToken.None);
+
+        // Pro entitlements should NOT apply because subscription period is way past + grace
+        Assert.False(entitlements.DocumentsOcrEnabled);
+        Assert.False(entitlements.ChatbotEnabled);
+    }
+
+    [Fact]
+    public async Task GetEntitlementsAsync_ReturnsProEntitlements_WhenSubscriptionIsActive()
+    {
+        // Period that includes "now" — effective status = Active
+        var gate = CreateGate(
+            PlanTier.Pro,
+            periodStart: DateTime.UtcNow.AddDays(-1),
+            periodEnd: DateTime.UtcNow.AddDays(29));
+
+        var entitlements = await gate.GetEntitlementsAsync(TenantId, CancellationToken.None);
+
+        Assert.True(entitlements.DocumentsOcrEnabled);
+        Assert.True(entitlements.ChatbotEnabled);
+        Assert.Equal(1_000, entitlements.WorkspaceMonthlyOcrPages);
+        Assert.Equal(100, entitlements.MemberMonthlyOcrPages);
+    }
+
+    [Fact]
+    public async Task EnsureFeatureEnabledAsync_ReturnsSuccess_WhenFeatureAvailable()
+    {
+        var gate = CreateGate(
+            PlanTier.Pro,
+            periodStart: DateTime.UtcNow.AddDays(-1),
+            periodEnd: DateTime.UtcNow.AddDays(29));
+
+        var result = await gate.EnsureFeatureEnabledAsync(TenantId, SubscriptionFeature.DocumentsOcr, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task EnsureFeatureEnabledAsync_ReturnsFailure_WhenPlanDoesNotIncludeOcr()
+    {
+        var gate = CreateGate(PlanTier.Free);
+
+        var result = await gate.EnsureFeatureEnabledAsync(TenantId, SubscriptionFeature.DocumentsOcr, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Documents.OcrNotAvailableForCurrentPlan", result.Error.Code);
     }
 
     private static SubscriptionFeatureGate CreateGate(
         PlanTier planTier,
         SubscriptionStatus status = SubscriptionStatus.Active,
-        int ocrPagesUsed = 0,
-        int chatbotMessagesUsed = 0)
+        DateTime? periodStart = null,
+        DateTime? periodEnd = null)
     {
         var subscriptionResult = TenantSubscription.Create(
             TenantId,
             planTier,
-            DateTime.SpecifyKind(new DateTime(2026, 4, 1), DateTimeKind.Utc),
-            DateTime.SpecifyKind(new DateTime(2026, 4, 30), DateTimeKind.Utc));
+            periodStart ?? DateTime.SpecifyKind(new DateTime(2026, 4, 1), DateTimeKind.Utc),
+            periodEnd ?? DateTime.SpecifyKind(new DateTime(2026, 4, 30), DateTimeKind.Utc));
 
         Assert.True(subscriptionResult.IsSuccess, subscriptionResult.Error.Description);
 
@@ -111,30 +119,9 @@ public sealed class SubscriptionFeatureGateTests
             SetSubscriptionStatus(subscription, status);
         }
 
-        var usageResult = TenantUsageSnapshot.Create(
-            TenantId,
-            new DateOnly(2026, 4, 1),
-            new DateOnly(2026, 4, 30));
-
-        Assert.True(usageResult.IsSuccess, usageResult.Error.Description);
-
-        var usage = usageResult.Value;
-
-        if (ocrPagesUsed > 0)
-        {
-            var recordOcrUsageResult = usage.RecordOcrUsage(ocrPagesUsed);
-            Assert.True(recordOcrUsageResult.IsSuccess, recordOcrUsageResult.Error.Description);
-        }
-
-        if (chatbotMessagesUsed > 0)
-        {
-            var recordChatbotUsageResult = usage.RecordChatbotUsage(chatbotMessagesUsed);
-            Assert.True(recordChatbotUsageResult.IsSuccess, recordChatbotUsageResult.Error.Description);
-        }
-
         return new SubscriptionFeatureGate(
             new StubTenantSubscriptionRepository(subscription),
-            new StubTenantUsageService(usage),
+            new StubTenantUsageService(),
             new PlanEntitlementCatalog());
     }
 
@@ -164,22 +151,12 @@ public sealed class SubscriptionFeatureGateTests
 
     private sealed class StubTenantUsageService : ITenantUsageService
     {
-        private readonly TenantUsageSnapshot? _usage;
-
-        public StubTenantUsageService(TenantUsageSnapshot? usage = null)
-        {
-            _usage = usage;
-        }
-
         public Task<TenantUsageSnapshot> GetCurrentUsageAsync(
             Guid tenantId,
             DateOnly periodStart,
             DateOnly periodEnd,
             CancellationToken cancellationToken = default)
         {
-            if (_usage is not null)
-                return Task.FromResult(_usage);
-
             var createResult = TenantUsageSnapshot.Create(tenantId, periodStart, periodEnd);
             if (createResult.IsFailure)
                 throw new InvalidOperationException(createResult.Error.Description);
@@ -187,28 +164,13 @@ public sealed class SubscriptionFeatureGateTests
             return Task.FromResult(createResult.Value);
         }
 
-        public Task RecordOcrUsageAsync(
-            Guid tenantId,
-            int pageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task RecordOcrUsageAsync(Guid tenantId, int pageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task RecordChatbotUsageAsync(
-            Guid tenantId,
-            int messageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task RecordChatbotUsageAsync(Guid tenantId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task SetStorageUsedBytesAsync(
-            Guid tenantId,
-            long storageUsedBytes,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task SetStorageUsedBytesAsync(Guid tenantId, long storageUsedBytes, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 }

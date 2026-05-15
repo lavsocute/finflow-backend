@@ -42,11 +42,32 @@ public sealed class TenantUsageServiceTests
         Assert.Single(repository.Items);
     }
 
+    [Fact]
+    public async Task RecordOcrUsageAsync_UsesCanonicalSnapshot_WhenConcurrentCreateWinsFirstWrite()
+    {
+        var repository = new InMemoryTenantUsageSnapshotRepository
+        {
+            SimulateConcurrentInsertOnCreate = true
+        };
+        var service = new TenantUsageService(repository);
+        var tenantId = Guid.NewGuid();
+        var periodStart = new DateOnly(2026, 4, 1);
+        var periodEnd = new DateOnly(2026, 4, 30);
+
+        await service.RecordOcrUsageAsync(tenantId, 3, periodStart, periodEnd, CancellationToken.None);
+
+        Assert.Equal(1, repository.GetOrCreateCalls);
+        Assert.Single(repository.Items);
+        Assert.Equal(3, repository.Items.Single().OcrPagesUsed);
+    }
+
     private sealed class InMemoryTenantUsageSnapshotRepository : ITenantUsageSnapshotRepository
     {
         private readonly List<TenantUsageSnapshot> _items = [];
 
         public IReadOnlyCollection<TenantUsageSnapshot> Items => _items;
+        public bool SimulateConcurrentInsertOnCreate { get; init; }
+        public int GetOrCreateCalls { get; private set; }
 
         public Task<TenantUsageSnapshot?> GetByTenantAndPeriodAsync(
             Guid tenantId,
@@ -59,6 +80,34 @@ public sealed class TenantUsageServiceTests
                 x.PeriodStart == periodStart &&
                 x.PeriodEnd == periodEnd);
 
+            return Task.FromResult(snapshot);
+        }
+
+        public Task<TenantUsageSnapshot> GetOrCreateAsync(
+            TenantUsageSnapshot snapshot,
+            CancellationToken cancellationToken = default)
+        {
+            GetOrCreateCalls++;
+
+            var existingSnapshot = _items.FirstOrDefault(x =>
+                x.IdTenant == snapshot.IdTenant &&
+                x.PeriodStart == snapshot.PeriodStart &&
+                x.PeriodEnd == snapshot.PeriodEnd);
+
+            if (existingSnapshot is not null)
+                return Task.FromResult(existingSnapshot);
+
+            if (SimulateConcurrentInsertOnCreate)
+            {
+                var externalSnapshot = TenantUsageSnapshot.Create(
+                    snapshot.IdTenant,
+                    snapshot.PeriodStart,
+                    snapshot.PeriodEnd).Value;
+                _items.Add(externalSnapshot);
+                return Task.FromResult(externalSnapshot);
+            }
+
+            _items.Add(snapshot);
             return Task.FromResult(snapshot);
         }
 

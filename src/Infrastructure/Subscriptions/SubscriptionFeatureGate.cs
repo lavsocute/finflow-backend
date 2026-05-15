@@ -53,58 +53,14 @@ public sealed class SubscriptionFeatureGate : ISubscriptionFeatureGate
         };
     }
 
-    public async Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
+    private static PlanTier GetEffectivePlanTier(TenantSubscription? subscription)
     {
-        if (pageCount <= 0)
-            return Result.Failure(new Error("Subscription.OcrPageCountInvalid", "OCR page count must be greater than zero."));
+        if (subscription is null) return PlanTier.Free;
 
-        var featureResult = await EnsureFeatureEnabledAsync(tenantId, SubscriptionFeature.DocumentsOcr, cancellationToken);
-        if (featureResult.IsFailure)
-            return featureResult;
-
-        var subscription = await _tenantSubscriptionRepository.GetByTenantIdAsync(tenantId, cancellationToken);
-        if (subscription is null || subscription.Status != SubscriptionStatus.Active)
-            return Result.Failure(UploadedDocumentDraftErrors.OcrNotAvailableForCurrentPlan);
-
-        var entitlements = _planEntitlementCatalog.GetFor(subscription.PlanTier);
-        var usage = await _tenantUsageService.GetCurrentUsageAsync(
-            tenantId,
-            DateOnly.FromDateTime(subscription.PeriodStart),
-            DateOnly.FromDateTime(subscription.PeriodEnd),
-            cancellationToken);
-
-        return usage.OcrPagesUsed + pageCount > entitlements.MonthlyOcrPages
-            ? Result.Failure(new Error("Subscription.OcrQuotaExceeded", "The current plan has reached its monthly OCR quota."))
-            : Result.Success();
-    }
-
-    public async Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
-    {
-        if (messageCount <= 0)
-            return Result.Failure(new Error("Subscription.ChatbotMessageCountInvalid", "Chatbot message count must be greater than zero."));
-
-        var featureResult = await EnsureFeatureEnabledAsync(tenantId, SubscriptionFeature.Chatbot, cancellationToken);
-        if (featureResult.IsFailure)
-            return featureResult;
-
-        var subscription = await _tenantSubscriptionRepository.GetByTenantIdAsync(tenantId, cancellationToken);
-        if (subscription is null || subscription.Status != SubscriptionStatus.Active)
-            return Result.Failure(new Error("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan."));
-
-        var entitlements = _planEntitlementCatalog.GetFor(subscription.PlanTier);
-        var usage = await _tenantUsageService.GetCurrentUsageAsync(
-            tenantId,
-            DateOnly.FromDateTime(subscription.PeriodStart),
-            DateOnly.FromDateTime(subscription.PeriodEnd),
-            cancellationToken);
-
-        return usage.ChatbotMessagesUsed + messageCount > entitlements.MonthlyChatbotMessages
-            ? Result.Failure(new Error("Subscription.ChatbotQuotaExceeded", "The current plan has reached its monthly chatbot quota."))
-            : Result.Success();
-    }
-
-    private static PlanTier GetEffectivePlanTier(TenantSubscription? subscription) =>
-        subscription is not null && subscription.Status == SubscriptionStatus.Active
+        // Use lazy effective status — degrades to Free when not Active.
+        var effectiveStatus = subscription.ComputeEffectiveStatus(DateTime.UtcNow);
+        return effectiveStatus == SubscriptionStatus.Active
             ? subscription.PlanTier
             : PlanTier.Free;
+    }
 }

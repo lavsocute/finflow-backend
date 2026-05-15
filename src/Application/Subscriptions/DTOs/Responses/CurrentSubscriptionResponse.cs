@@ -6,17 +6,26 @@ public sealed record CurrentSubscriptionResponse(
     DateTime CurrentPeriodStart,
     DateTime CurrentPeriodEnd,
     CurrentSubscriptionEntitlementsResponse Entitlements,
-    CurrentSubscriptionUsageResponse Usage);
+    CurrentSubscriptionUsageResponse Usage,
+    CurrentSubscriptionMemberUsageResponse CurrentMemberUsage);
 
 public sealed record CurrentSubscriptionEntitlementsResponse(
     bool DocumentsManualEntryEnabled,
     bool DocumentsOcrEnabled,
     bool ChatbotEnabled,
     long StorageLimitBytes,
-    int MonthlyOcrPages,
-    int MonthlyChatbotMessages);
+    int WorkspaceMonthlyOcrPages,
+    int MemberMonthlyOcrPages,
+    int WorkspaceMonthlyChatbotMessages,
+    int MemberMonthlyChatbotMessages);
 
 public sealed record CurrentSubscriptionUsageResponse(
     int OcrPagesUsed,
     int ChatbotMessagesUsed,
     long StorageUsedBytes);
+
+public sealed record CurrentSubscriptionMemberUsageResponse(
+    int OcrPagesUsed,
+    int ChatbotMessagesUsed,
+    int RemainingOcrPages,
+    int RemainingChatbotMessages);

@@ -14,33 +14,44 @@ public sealed class GraphQlSubscriptionsApiTests
         var tenantOne = Tenant.Create("Finance Ops One", "finance-ops-one").Value;
         var tenantTwo = Tenant.Create("Finance Ops Two", "finance-ops-two").Value;
 
-        var tenantOneSubscription = CreateSubscription(tenantOne.Id, PlanTier.Pro, new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc));
-        var tenantTwoSubscription = CreateSubscription(tenantTwo.Id, PlanTier.Enterprise, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc));
-
-        var tenantOneUsage = CreateUsageSnapshot(tenantOne.Id, new DateOnly(2026, 4, 1), new DateOnly(2026, 5, 1), ocrPagesUsed: 7, chatbotMessagesUsed: 11, storageUsedBytes: 1_234);
-        var tenantTwoUsage = CreateUsageSnapshot(tenantTwo.Id, new DateOnly(2026, 3, 1), new DateOnly(2026, 4, 1), ocrPagesUsed: 41, chatbotMessagesUsed: 73, storageUsedBytes: 9_876);
-
         await factory.SeedAsync(db =>
         {
             db.AddRange(
                 tenantOne,
-                tenantTwo,
+                tenantTwo);
+        });
+
+        var tenantOneMembership = await factory.CreateMembershipAsync(RoleType.Staff, tenantOne.Id);
+        var tenantTwoMembership = await factory.CreateMembershipAsync(RoleType.Staff, tenantTwo.Id);
+
+        // Use dynamic periods so subscriptions are Active during test execution.
+        var nowDate = DateTime.UtcNow.Date;
+        var periodStartUtc = DateTime.SpecifyKind(nowDate.AddDays(-1), DateTimeKind.Utc);
+        var periodEndUtc = periodStartUtc.AddMonths(1);
+        var periodStartDate = DateOnly.FromDateTime(periodStartUtc);
+        var periodEndDate = DateOnly.FromDateTime(periodEndUtc);
+
+        var tenantOneSubscription = CreateSubscription(tenantOne.Id, PlanTier.Pro, periodStartUtc, periodEndUtc);
+        var tenantTwoSubscription = CreateSubscription(tenantTwo.Id, PlanTier.Enterprise, periodStartUtc, periodEndUtc);
+
+        var tenantOneUsage = CreateUsageSnapshot(tenantOne.Id, periodStartDate, periodEndDate, ocrPagesUsed: 7, chatbotMessagesUsed: 11, storageUsedBytes: 1_234);
+        var tenantTwoUsage = CreateUsageSnapshot(tenantTwo.Id, periodStartDate, periodEndDate, ocrPagesUsed: 41, chatbotMessagesUsed: 73, storageUsedBytes: 9_876);
+        var tenantOneMemberUsage = CreateMemberUsageSnapshot(tenantOne.Id, tenantOneMembership.MembershipId, periodStartDate, periodEndDate, ocrPagesUsed: 12, chatbotMessagesUsed: 34);
+        var tenantTwoMemberUsage = CreateMemberUsageSnapshot(tenantTwo.Id, tenantTwoMembership.MembershipId, periodStartDate, periodEndDate, ocrPagesUsed: 120, chatbotMessagesUsed: 345);
+
+        await factory.SeedAsync(db =>
+        {
+            db.AddRange(
                 tenantOneSubscription,
                 tenantTwoSubscription,
                 tenantOneUsage,
-                tenantTwoUsage);
+                tenantTwoUsage,
+                tenantOneMemberUsage,
+                tenantTwoMemberUsage);
         });
 
-        using var tenantOneClient = factory.CreateAuthenticatedClient(
-            Guid.NewGuid(),
-            "tenant.one@finflow.test",
-            RoleType.Staff,
-            tenantOne.Id);
-        using var tenantTwoClient = factory.CreateAuthenticatedClient(
-            Guid.NewGuid(),
-            "tenant.two@finflow.test",
-            RoleType.Staff,
-            tenantTwo.Id);
+        using var tenantOneClient = factory.CreateAuthenticatedClient(tenantOneMembership);
+        using var tenantTwoClient = factory.CreateAuthenticatedClient(tenantTwoMembership);
 
         const string query = """
             query {
@@ -54,13 +65,21 @@ public sealed class GraphQlSubscriptionsApiTests
                   documentsOcrEnabled
                   chatbotEnabled
                   storageLimitBytes
-                  monthlyOcrPages
-                  monthlyChatbotMessages
+                  workspaceMonthlyOcrPages
+                  memberMonthlyOcrPages
+                  workspaceMonthlyChatbotMessages
+                  memberMonthlyChatbotMessages
                 }
                 usage {
                   ocrPagesUsed
                   chatbotMessagesUsed
                   storageUsedBytes
+                }
+                currentMemberUsage {
+                  ocrPagesUsed
+                  chatbotMessagesUsed
+                  remainingOcrPages
+                  remainingChatbotMessages
                 }
               }
             }
@@ -78,11 +97,17 @@ public sealed class GraphQlSubscriptionsApiTests
             7,
             11,
             1_234,
+            12,
+            34,
+            88,
+            466,
             true,
             true,
             10L * 1024 * 1024 * 1024,
             1_000,
-            10_000);
+            100,
+            10_000,
+            500);
 
         AssertSubscription(
             tenantTwoPayload.RootElement.GetProperty("data").GetProperty("currentSubscription"),
@@ -93,11 +118,17 @@ public sealed class GraphQlSubscriptionsApiTests
             41,
             73,
             9_876,
+            120,
+            345,
+            880,
+            4_655,
             true,
             true,
             100L * 1024 * 1024 * 1024,
             10_000,
-            100_000);
+            1_000,
+            100_000,
+            5_000);
     }
 
     private static TenantSubscription CreateSubscription(Guid tenantId, PlanTier planTier, DateTime periodStart, DateTime periodEnd)
@@ -125,6 +156,23 @@ public sealed class GraphQlSubscriptionsApiTests
         return result.Value;
     }
 
+    private static MemberUsageSnapshot CreateMemberUsageSnapshot(
+        Guid tenantId,
+        Guid membershipId,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        int ocrPagesUsed,
+        int chatbotMessagesUsed)
+    {
+        var result = MemberUsageSnapshot.Create(tenantId, membershipId, periodStart, periodEnd);
+        Assert.True(result.IsSuccess, result.Error.Description);
+
+        Assert.True(result.Value.RecordOcrUsage(ocrPagesUsed).IsSuccess);
+        Assert.True(result.Value.RecordChatbotUsage(chatbotMessagesUsed).IsSuccess);
+
+        return result.Value;
+    }
+
     private static void AssertSubscription(
         JsonElement subscription,
         string planTier,
@@ -134,11 +182,17 @@ public sealed class GraphQlSubscriptionsApiTests
         int ocrPagesUsed,
         int chatbotMessagesUsed,
         long storageUsedBytes,
+        int memberOcrPagesUsed,
+        int memberChatbotMessagesUsed,
+        int remainingMemberOcrPages,
+        int remainingMemberChatbotMessages,
         bool documentsManualEntryEnabled,
         bool documentsOcrEnabled,
         long storageLimitBytes,
-        int monthlyOcrPages,
-        int monthlyChatbotMessages)
+        int workspaceMonthlyOcrPages,
+        int memberMonthlyOcrPages,
+        int workspaceMonthlyChatbotMessages,
+        int memberMonthlyChatbotMessages)
     {
         Assert.Equal(planTier, subscription.GetProperty("planTier").GetString());
         Assert.Equal(status, subscription.GetProperty("status").GetString());
@@ -150,12 +204,20 @@ public sealed class GraphQlSubscriptionsApiTests
         Assert.Equal(documentsOcrEnabled, entitlements.GetProperty("documentsOcrEnabled").GetBoolean());
         Assert.True(entitlements.GetProperty("chatbotEnabled").GetBoolean());
         Assert.Equal(storageLimitBytes, entitlements.GetProperty("storageLimitBytes").GetInt64());
-        Assert.Equal(monthlyOcrPages, entitlements.GetProperty("monthlyOcrPages").GetInt32());
-        Assert.Equal(monthlyChatbotMessages, entitlements.GetProperty("monthlyChatbotMessages").GetInt32());
+        Assert.Equal(workspaceMonthlyOcrPages, entitlements.GetProperty("workspaceMonthlyOcrPages").GetInt32());
+        Assert.Equal(memberMonthlyOcrPages, entitlements.GetProperty("memberMonthlyOcrPages").GetInt32());
+        Assert.Equal(workspaceMonthlyChatbotMessages, entitlements.GetProperty("workspaceMonthlyChatbotMessages").GetInt32());
+        Assert.Equal(memberMonthlyChatbotMessages, entitlements.GetProperty("memberMonthlyChatbotMessages").GetInt32());
 
         var usage = subscription.GetProperty("usage");
         Assert.Equal(ocrPagesUsed, usage.GetProperty("ocrPagesUsed").GetInt32());
         Assert.Equal(chatbotMessagesUsed, usage.GetProperty("chatbotMessagesUsed").GetInt32());
         Assert.Equal(storageUsedBytes, usage.GetProperty("storageUsedBytes").GetInt64());
+
+        var currentMemberUsage = subscription.GetProperty("currentMemberUsage");
+        Assert.Equal(memberOcrPagesUsed, currentMemberUsage.GetProperty("ocrPagesUsed").GetInt32());
+        Assert.Equal(memberChatbotMessagesUsed, currentMemberUsage.GetProperty("chatbotMessagesUsed").GetInt32());
+        Assert.Equal(remainingMemberOcrPages, currentMemberUsage.GetProperty("remainingOcrPages").GetInt32());
+        Assert.Equal(remainingMemberChatbotMessages, currentMemberUsage.GetProperty("remainingChatbotMessages").GetInt32());
     }
 }
