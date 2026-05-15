@@ -21,6 +21,8 @@ public sealed class Payment : Entity, IMultiTenant
         Guid? confirmedByMembershipId,
         DateTime? confirmedAt,
         string? executionReference,
+        Guid? rejectedByMembershipId,
+        DateTime? rejectedAt,
         PaymentRejectType? rejectionType,
         string? rejectionReason,
         string? notes,
@@ -42,6 +44,8 @@ public sealed class Payment : Entity, IMultiTenant
         ConfirmedByMembershipId = confirmedByMembershipId;
         ConfirmedAt = confirmedAt;
         ExecutionReference = executionReference;
+        RejectedByMembershipId = rejectedByMembershipId;
+        RejectedAt = rejectedAt;
         RejectionType = rejectionType;
         RejectionReason = rejectionReason;
         Notes = notes;
@@ -65,6 +69,8 @@ public sealed class Payment : Entity, IMultiTenant
     public Guid? ConfirmedByMembershipId { get; private set; }
     public DateTime? ConfirmedAt { get; private set; }
     public string? ExecutionReference { get; private set; }
+    public Guid? RejectedByMembershipId { get; private set; }
+    public DateTime? RejectedAt { get; private set; }
     public PaymentRejectType? RejectionType { get; private set; }
     public string? RejectionReason { get; private set; }
     public string? Notes { get; private set; }
@@ -90,11 +96,13 @@ public sealed class Payment : Entity, IMultiTenant
             return Result.Failure<Payment>(PaymentErrors.DepartmentRequired);
         if (amount <= 0)
             return Result.Failure<Payment>(PaymentErrors.InvalidAmount);
+        if (exchangeRate <= 0)
+            return Result.Failure<Payment>(PaymentErrors.InvalidExchangeRate);
         if (recordedByMembershipId == Guid.Empty)
             return Result.Failure<Payment>(PaymentErrors.RecordedByRequired);
 
         var now = DateTime.UtcNow;
-        var amountInVnd = amount * exchangeRate;
+        var amountInVnd = decimal.Round(amount * exchangeRate, 0, MidpointRounding.AwayFromZero);
 
         return Result.Success(new Payment(
             Guid.NewGuid(),
@@ -109,6 +117,8 @@ public sealed class Payment : Entity, IMultiTenant
             now,
             method,
             PaymentStatus.Pending,
+            null,
+            null,
             null,
             null,
             null,
@@ -149,8 +159,8 @@ public sealed class Payment : Entity, IMultiTenant
             return Result.Failure(PaymentErrors.RejectionReasonRequired);
 
         Status = PaymentStatus.Rejected;
-        ConfirmedByMembershipId = rejectedByMembershipId;
-        ConfirmedAt = DateTime.UtcNow;
+        RejectedByMembershipId = rejectedByMembershipId;
+        RejectedAt = DateTime.UtcNow;
         RejectionType = rejectionType;
         RejectionReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         UpdatedAt = DateTime.UtcNow;

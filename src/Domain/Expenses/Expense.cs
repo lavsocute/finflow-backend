@@ -61,8 +61,9 @@ public sealed class Expense : Entity, IMultiTenant
     public Guid CreatedByMembershipId { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
+    public string? RejectionReason { get; private set; }
 
-    public static Expense Create(
+    public static Result<Expense> Create(
         Guid idTenant,
         Guid idDepartment,
         Guid documentId,
@@ -77,15 +78,28 @@ public sealed class Expense : Entity, IMultiTenant
         DateTime expenseDate,
         Guid createdByMembershipId)
     {
+        if (idTenant == Guid.Empty)
+            return Result.Failure<Expense>(ExpenseErrors.TenantRequired);
+        if (idDepartment == Guid.Empty)
+            return Result.Failure<Expense>(ExpenseErrors.DepartmentRequired);
+        if (idCategory == Guid.Empty)
+            return Result.Failure<Expense>(ExpenseErrors.CategoryRequired);
+        if (amount <= 0)
+            return Result.Failure<Expense>(ExpenseErrors.InvalidAmount);
+        if (month is < 1 or > 12)
+            return Result.Failure<Expense>(ExpenseErrors.InvalidMonth);
+        if (year < 2000 || year > 2100)
+            return Result.Failure<Expense>(ExpenseErrors.InvalidYear);
+
         var now = DateTime.UtcNow;
-        return new Expense(
+        return Result.Success(new Expense(
             Guid.NewGuid(),
             idTenant,
             idDepartment,
             documentId,
             paymentId,
             idCategory,
-            vendorName.Trim(),
+            string.IsNullOrWhiteSpace(vendorName) ? "Unknown" : vendorName.Trim(),
             amount,
             currencyCode,
             amountInVnd,
@@ -95,7 +109,7 @@ public sealed class Expense : Entity, IMultiTenant
             ExpenseStatus.Confirmed,
             createdByMembershipId,
             now,
-            now);
+            now));
     }
 
     public Result Reject(string reason)
@@ -107,6 +121,7 @@ public sealed class Expense : Entity, IMultiTenant
             return Result.Failure(ExpenseErrors.RejectionReasonRequired);
 
         Status = ExpenseStatus.Rejected;
+        RejectionReason = reason.Trim();
         UpdatedAt = DateTime.UtcNow;
 
         return Result.Success();

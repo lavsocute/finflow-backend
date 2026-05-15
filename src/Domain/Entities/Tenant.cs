@@ -1,10 +1,11 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Events;
+using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Tenant : Entity
+public sealed class Tenant : Entity, ISoftDeletable
 {
     private Tenant(
         Guid id,
@@ -80,9 +81,11 @@ public sealed class Tenant : Entity
 
     public Result ChangeName(string name)
     {
-        if (string.IsNullOrWhiteSpace(name) || name.Length > 150)
+        if (string.IsNullOrWhiteSpace(name))
             return Result.Failure(TenantErrors.NameRequired);
-        Name = name;
+        if (name.Length > 150)
+            return Result.Failure(TenantErrors.NameTooLong);
+        Name = name.Trim();
         return Result.Success();
     }
 

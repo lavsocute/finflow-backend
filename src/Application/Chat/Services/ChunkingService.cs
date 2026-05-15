@@ -25,8 +25,8 @@ public sealed class ChunkingService : IChunkingService
         int overlap = 50,
         CancellationToken ct = default)
     {
-        var chunks = new List<DocumentChunk>();
-
+        // Phase 1: Split text into chunk contents (no async work).
+        var chunkContents = new List<string>();
         var sentences = SplitIntoSentences(text);
         var currentChunk = new StringBuilder();
 
@@ -35,49 +35,60 @@ public sealed class ChunkingService : IChunkingService
             var sentence = sentences[i];
             if (currentChunk.Length + sentence.Length > chunkSize && currentChunk.Length > 0)
             {
-                var content = currentChunk.ToString().Trim();
-                var embedding = await _embeddingService.EmbedAsync(content, ct);
+                chunkContents.Add(currentChunk.ToString().Trim());
 
-                chunks.Add(DocumentChunk.Create(
-                    tenantId,
-                    ownerMembershipId,
-                    documentId,
-                    departmentId,
-                    content,
-                    ComputeHash(content),
-                    chunks.Count,
-                    embedding,
-                    type));
-
-                var overlapText = currentChunk.ToString().Substring(Math.Max(0, currentChunk.Length - overlap));
+                var overlapStart = Math.Max(0, currentChunk.Length - overlap);
+                var overlapText = currentChunk.ToString()[overlapStart..];
                 currentChunk.Clear();
-                if (overlapText.Length > 0)
-                {
-                    currentChunk.Append(overlapText);
-                }
+                currentChunk.Append(overlapText);
             }
 
             currentChunk.Append(sentence);
             if (currentChunk.Length < chunkSize)
             {
-                currentChunk.Append(" ");
+                currentChunk.Append(' ');
             }
         }
 
         if (currentChunk.Length > 0)
         {
-            var content = currentChunk.ToString().Trim();
-            var embedding = await _embeddingService.EmbedAsync(content, ct);
+            chunkContents.Add(currentChunk.ToString().Trim());
+        }
 
+        if (chunkContents.Count == 0)
+            return [];
+
+        // Phase 2: Generate embeddings in parallel (bounded concurrency).
+        const int maxConcurrency = 5;
+        var semaphore = new SemaphoreSlim(maxConcurrency);
+        var embeddingTasks = chunkContents.Select(async content =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                return await _embeddingService.EmbedAsync(content, ct);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }).ToList();
+
+        var embeddings = await Task.WhenAll(embeddingTasks);
+
+        // Phase 3: Build DocumentChunk entities.
+        var chunks = new List<DocumentChunk>(chunkContents.Count);
+        for (int i = 0; i < chunkContents.Count; i++)
+        {
             chunks.Add(DocumentChunk.Create(
                 tenantId,
                 ownerMembershipId,
                 documentId,
                 departmentId,
-                content,
-                ComputeHash(content),
-                chunks.Count,
-                embedding,
+                chunkContents[i],
+                ComputeHash(chunkContents[i]),
+                i,
+                embeddings[i],
                 type));
         }
 

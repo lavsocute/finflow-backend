@@ -96,27 +96,15 @@ public sealed class CreateSharedTenantCommandHandler : MediatR.IRequestHandler<C
         if (refreshTokenResult.IsFailure)
             return Result.Failure<AuthResponse>(refreshTokenResult.Error);
 
-        var originalTenantId = _currentTenant.Id;
-        var originalMembershipId = _currentTenant.MembershipId;
-        var originalIsSuperAdmin = _currentTenant.IsSuperAdmin;
-
-        try
+        // Use AsyncLocal-backed scope to act as the new tenant during SaveChanges.
+        // The tenant being created is in `provisionedTenantIds` so SaveChanges allows it.
+        using (_currentTenant.BeginScope(tenant.Id, membership.Id))
         {
-            _currentTenant.Id = tenant.Id;
-            _currentTenant.MembershipId = membership.Id;
-            _currentTenant.IsSuperAdmin = false;
-
             _tenantRepository.Add(tenant);
             _departmentRepository.Add(department);
             _membershipRepository.Add(membership);
             _refreshTokenRepository.Add(refreshTokenResult.Value);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        finally
-        {
-            _currentTenant.Id = originalTenantId;
-            _currentTenant.MembershipId = originalMembershipId;
-            _currentTenant.IsSuperAdmin = originalIsSuperAdmin;
         }
 
         var accessToken = _tokenService.GenerateAccessToken(

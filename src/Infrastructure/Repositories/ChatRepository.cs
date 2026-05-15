@@ -48,29 +48,20 @@ public class ChatRepository : IChatRepository
 
     public async Task<IReadOnlyList<ChatSessionSummary>> GetSessionsAsync(Guid membershipId, int limit, CancellationToken ct = default)
     {
-        var sessions = await _dbContext.ChatSessions
+        var result = await _dbContext.ChatSessions
             .Where(s => s.MembershipId == membershipId)
             .OrderByDescending(s => s.UpdatedAt)
             .Take(limit)
+            .Select(s => new ChatSessionSummary(
+                s.Id,
+                s.Title,
+                _dbContext.ChatMessages.Count(m => m.SessionId == s.Id),
+                _dbContext.ChatMessages
+                    .Where(m => m.SessionId == s.Id)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Select(m => (DateTime?)m.CreatedAt)
+                    .FirstOrDefault()))
             .ToListAsync(ct);
-
-        var result = new List<ChatSessionSummary>();
-        foreach (var session in sessions)
-        {
-            var messageCount = await _dbContext.ChatMessages
-                .CountAsync(m => m.SessionId == session.Id, ct);
-
-            var lastMessage = await _dbContext.ChatMessages
-                .Where(m => m.SessionId == session.Id)
-                .OrderByDescending(m => m.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            result.Add(new ChatSessionSummary(
-                session.Id,
-                session.Title,
-                messageCount,
-                lastMessage?.CreatedAt));
-        }
 
         return result;
     }

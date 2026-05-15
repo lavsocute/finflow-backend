@@ -123,6 +123,9 @@ public sealed class GroqOcrProviderTests
 
         public Task<Result<PdfRenderResult>> RenderAsync(byte[] pdfBytes, int maxPages, CancellationToken cancellationToken) =>
             Task.FromResult(_result);
+
+        public Task<Result<int>> GetPageCountAsync(byte[] pdfBytes, CancellationToken cancellationToken) =>
+            Task.FromResult(_result.IsSuccess ? Result.Success(_result.Value.Pages.Count) : Result.Failure<int>(_result.Error));
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler

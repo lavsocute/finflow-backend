@@ -34,5 +34,14 @@ public class DocumentChunkModelConfigurationTests
         public Guid? MembershipId { get; set; }
         public bool IsSuperAdmin { get; set; }
         public bool IsAvailable => Id.HasValue;
+
+        public IDisposable BeginScope(Guid? tenantId, Guid? membershipId = null, bool isSuperAdmin = false)
+            => NoOpDisposable.Instance;
+    }
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public static readonly NoOpDisposable Instance = new();
+        public void Dispose() { }
     }
 }

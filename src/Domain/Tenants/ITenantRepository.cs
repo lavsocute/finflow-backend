@@ -8,6 +8,7 @@ public interface ITenantRepository
 {
     // Read Methods (DTO)
     Task<TenantSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TenantSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
     Task<TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default);
     Task<bool> ExistsByCodeAsync(string tenantCode, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TenantSummary>> GetAllActiveAsync(CancellationToken cancellationToken = default);

@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<UploadedDocumentDraft> UploadedDocumentDrafts => Set<UploadedDocumentDraft>();
     public DbSet<TenantSubscription> TenantSubscriptions => Set<TenantSubscription>();
     public DbSet<TenantUsageSnapshot> TenantUsageSnapshots => Set<TenantUsageSnapshot>();
+    public DbSet<MemberUsageSnapshot> MemberUsageSnapshots => Set<MemberUsageSnapshot>();
     public DbSet<Budget> Budgets => Set<Budget>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -113,9 +114,12 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
 
             if (entry.State == EntityState.Deleted && entry.Entity is Entity)
             {
-                entry.State = EntityState.Modified;
-                if (entry.Metadata.FindProperty("IsActive") != null)
+                // Only soft-delete entities marked with ISoftDeletable.
+                // Other entities (e.g., DocumentChunk, RefreshToken, EmailChallenge,
+                // ChatMessage, AuditLog, Payment, Expense, Budget) are hard-deleted.
+                if (entry.Entity is ISoftDeletable && entry.Metadata.FindProperty("IsActive") != null)
                 {
+                    entry.State = EntityState.Modified;
                     entry.Property("IsActive").CurrentValue = false;
                 }
             }
@@ -157,6 +161,9 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         builder.Entity<TenantUsageSnapshot>().HasQueryFilter(e =>
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
+        builder.Entity<MemberUsageSnapshot>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
         builder.Entity<Budget>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
 
@@ -173,7 +180,17 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
 
         builder.Entity<ChatSession>().HasQueryFilter(e =>
-            _currentTenant.IsSuperAdmin || e.IdTenant == _currentTenant.Id);
+            e.IsActive && (_currentTenant.IsSuperAdmin || e.IdTenant == _currentTenant.Id));
+
+        builder.Entity<Vendor>().HasQueryFilter(e =>
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
+
+        builder.Entity<DocumentChunk>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+
+        // Note: ChatMessage does not have IdTenant directly.
+        // Tenant isolation is enforced via ChatSession's query filter.
+        // Always query messages through their session relationship.
     }
 
     private void ConfigureDocumentChunkModel(ModelBuilder builder)

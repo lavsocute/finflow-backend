@@ -100,6 +100,12 @@ public sealed class RefreshToken : Entity
     public string? ReplacedByToken { get; private set; }
     public string? ReasonRevoked { get; private set; }
 
+    /// <summary>
+    /// Concurrency token mapped to PostgreSQL xmin system column.
+    /// Prevents race conditions during token rotation.
+    /// </summary>
+    public uint Version { get; private set; }
+
     public bool IsExpired => DateTime.UtcNow > ExpiresAt;
     public bool IsActive => !IsRevoked && !IsExpired;
 }

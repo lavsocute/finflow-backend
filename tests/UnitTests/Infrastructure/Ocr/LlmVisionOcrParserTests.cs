@@ -53,7 +53,7 @@ public sealed class LlmVisionOcrParserTests
     }
 
     [Fact]
-    public void Parse_ReturnsInvalidJson_WhenNumericTypeIsWrong()
+    public void Parse_AcceptsNumericStrings_FromLlmResponses()
     {
         const string json =
             """
@@ -62,8 +62,8 @@ public sealed class LlmVisionOcrParserTests
 
         var result = LlmVisionOcrParser.Parse(json, "groq");
 
-        Assert.True(result.IsFailure);
-        Assert.Equal(DocumentOcrErrors.OcrInvalidJson, result.Error);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1200.00m, result.Value.Subtotal);
     }
 
     [Fact]

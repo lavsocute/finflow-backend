@@ -12,39 +12,20 @@ public class TenantMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, ICurrentTenant currentTenant)
+    public async Task InvokeAsync(HttpContext context, ICurrentTenantWriter currentTenantWriter)
     {
         var user = context.User;
 
-        // 1. Check if User is Super Admin (Role claim)
         var roleClaim = user.FindFirst("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")?.Value;
-        if (roleClaim == "SuperAdmin")
-        {
-            currentTenant.IsSuperAdmin = true;
-        }
+        var isSuperAdmin = roleClaim == "SuperAdmin";
 
-        // 2. Check for specific Tenant ID (IdTenant claim)
         var tenantIdClaim = user.FindFirst("IdTenant")?.Value;
         var membershipIdClaim = user.FindFirst("MembershipId")?.Value;
 
-        if (Guid.TryParse(tenantIdClaim, out var tenantId))
-        {
-            currentTenant.Id = tenantId;
-        }
-        else
-        {
-            // Không có IdTenant
-            if (!currentTenant.IsSuperAdmin)
-            {
-                // User thường mà không có Tenant -> Không có quyền truy cập dữ liệu tenant nào
-                currentTenant.Id = null;
-            }
-            // Nếu là Super Admin và không có IdTenant -> IsSuperAdmin = true, Id = null -> Xem tất cả
-        }
+        Guid? tenantId = Guid.TryParse(tenantIdClaim, out var t) ? t : null;
+        Guid? membershipId = Guid.TryParse(membershipIdClaim, out var m) ? m : null;
 
-        currentTenant.MembershipId = Guid.TryParse(membershipIdClaim, out var membershipId)
-            ? membershipId
-            : null;
+        currentTenantWriter.SetFromRequest(tenantId, membershipId, isSuperAdmin);
 
         await _next(context);
     }

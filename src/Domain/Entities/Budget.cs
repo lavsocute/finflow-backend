@@ -38,6 +38,12 @@ public sealed class Budget : Entity, IMultiTenant
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
 
+    /// <summary>
+    /// Concurrency token mapped to PostgreSQL xmin system column.
+    /// Prevents lost updates when multiple payments confirm concurrently.
+    /// </summary>
+    public uint Version { get; private set; }
+
     public decimal AvailableAmount => AllocatedAmount - SpentAmount;
     public bool IsOverBudget => SpentAmount > AllocatedAmount;
     public bool IsNearLimit => AllocatedAmount > 0 && SpentAmount >= (AllocatedAmount * 0.9m);

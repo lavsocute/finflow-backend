@@ -73,6 +73,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(IUnitOfWork));
             services.RemoveAll(typeof(ILoginRateLimiter));
             services.RemoveAll(typeof(ICurrentTenant));
+            services.RemoveAll(typeof(ICurrentTenantWriter));
             services.RemoveAll(typeof(IEmailSender));
             services.RemoveAll(typeof(IOcrExtractionService));
             services.RemoveAll(typeof(IOcrProvider));
@@ -98,6 +99,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
+            services.AddScoped<ICurrentTenantWriter>(sp => (TestHttpCurrentTenant)sp.GetRequiredService<ICurrentTenant>());
             services.AddScoped<IMembershipAuthorizationService, MembershipAuthorizationService>();
             services.AddSingleton<ILoginRateLimiter, NoOpLoginRateLimiter>();
             services.AddSingleton<IEmailSender>(EmailSender);
@@ -177,14 +179,11 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         await dbContext.Database.EnsureCreatedAsync();
         seed(dbContext);
 
-        currentTenant.Id = Guid.NewGuid();
-        currentTenant.MembershipId = Guid.NewGuid();
-        currentTenant.IsSuperAdmin = true;
-        await dbContext.SaveChangesAsync();
+        using (currentTenant.BeginScope(Guid.NewGuid(), Guid.NewGuid(), isSuperAdmin: true))
+        {
+            await dbContext.SaveChangesAsync();
+        }
 
-        currentTenant.Id = null;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = false;
         dbContext.ChangeTracker.Clear();
     }
 
@@ -203,16 +202,12 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
 
-        currentTenant.Id = tenantId;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = true;
+        using (currentTenant.BeginScope(tenantId, null, isSuperAdmin: true))
+        {
+            dbContext.Add(result.Value);
+            await dbContext.SaveChangesAsync();
+        }
 
-        dbContext.Add(result.Value);
-        await dbContext.SaveChangesAsync();
-
-        currentTenant.Id = null;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = false;
         dbContext.ChangeTracker.Clear();
     }
 
@@ -239,17 +234,13 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         if (recordUsageResult.IsFailure)
             throw new InvalidOperationException(recordUsageResult.Error.Description);
 
-        currentTenant.Id = tenantId;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = true;
+        using (currentTenant.BeginScope(tenantId, null, isSuperAdmin: true))
+        {
+            dbContext.Add(subscriptionResult.Value);
+            dbContext.Add(usageResult.Value);
+            await dbContext.SaveChangesAsync();
+        }
 
-        dbContext.Add(subscriptionResult.Value);
-        dbContext.Add(usageResult.Value);
-        await dbContext.SaveChangesAsync();
-
-        currentTenant.Id = null;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = false;
         dbContext.ChangeTracker.Clear();
     }
 
@@ -426,16 +417,12 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
         await dbContext.Database.EnsureCreatedAsync();
 
-        currentTenant.Id = tenantId;
-        currentTenant.MembershipId = Guid.NewGuid();
-        currentTenant.IsSuperAdmin = true;
+        using (currentTenant.BeginScope(tenantId, Guid.NewGuid(), isSuperAdmin: true))
+        {
+            seed(dbContext);
+            await dbContext.SaveChangesAsync();
+        }
 
-        seed(dbContext);
-        await dbContext.SaveChangesAsync();
-
-        currentTenant.Id = null;
-        currentTenant.MembershipId = null;
-        currentTenant.IsSuperAdmin = false;
         dbContext.ChangeTracker.Clear();
     }
 
@@ -733,12 +720,10 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         public bool VerifyPassword(string password, string hash) => BCrypt.Net.BCrypt.Verify(password, hash);
     }
 
-    private sealed class TestHttpCurrentTenant : ICurrentTenant
+    private sealed class TestHttpCurrentTenant : ICurrentTenant, ICurrentTenantWriter
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private Guid? _id;
-        private Guid? _membershipId;
-        private bool? _isSuperAdmin;
+        private readonly AsyncLocal<Stack<(Guid? Id, Guid? MembershipId, bool IsSuperAdmin)>> _scopeStack = new();
 
         public TestHttpCurrentTenant(IHttpContextAccessor httpContextAccessor)
         {
@@ -749,26 +734,22 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         {
             get
             {
-                if (_id.HasValue)
-                    return _id;
-
+                var stack = _scopeStack.Value;
+                if (stack != null && stack.Count > 0) return stack.Peek().Id;
                 var claim = _httpContextAccessor.HttpContext?.User.FindFirst("IdTenant")?.Value;
                 return Guid.TryParse(claim, out var id) ? id : null;
             }
-            set => _id = value;
         }
 
         public Guid? MembershipId
         {
             get
             {
-                if (_membershipId.HasValue)
-                    return _membershipId;
-
+                var stack = _scopeStack.Value;
+                if (stack != null && stack.Count > 0) return stack.Peek().MembershipId;
                 var claim = _httpContextAccessor.HttpContext?.User.FindFirst("MembershipId")?.Value;
                 return Guid.TryParse(claim, out var id) ? id : null;
             }
-            set => _membershipId = value;
         }
 
         public bool IsAvailable => Id.HasValue;
@@ -777,15 +758,44 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         {
             get
             {
-                if (_isSuperAdmin.HasValue)
-                    return _isSuperAdmin.Value;
-
+                var stack = _scopeStack.Value;
+                if (stack != null && stack.Count > 0) return stack.Peek().IsSuperAdmin;
                 var role = _httpContextAccessor.HttpContext?.User
                     .FindFirst("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")?.Value;
-
                 return string.Equals(role, RoleType.SuperAdmin.ToString(), StringComparison.Ordinal);
             }
-            set => _isSuperAdmin = value;
+        }
+
+        public IDisposable BeginScope(Guid? tenantId, Guid? membershipId = null, bool isSuperAdmin = false)
+        {
+            var stack = _scopeStack.Value ??= new Stack<(Guid?, Guid?, bool)>();
+            stack.Push((tenantId, membershipId, isSuperAdmin));
+            return new ScopeDisposable(this);
+        }
+
+        public void SetFromRequest(Guid? tenantId, Guid? membershipId, bool isSuperAdmin)
+        {
+            // Test impl reads from HTTP claims by default; this is a no-op for compatibility
+            // with the production middleware that calls SetFromRequest at request entry.
+            // Tests can use BeginScope() to override.
+        }
+
+        private void Pop()
+        {
+            var stack = _scopeStack.Value;
+            if (stack != null && stack.Count > 0)
+            {
+                stack.Pop();
+                if (stack.Count == 0) _scopeStack.Value = null;
+            }
+        }
+
+        private sealed class ScopeDisposable : IDisposable
+        {
+            private readonly TestHttpCurrentTenant _owner;
+            private bool _disposed;
+            public ScopeDisposable(TestHttpCurrentTenant owner) => _owner = owner;
+            public void Dispose() { if (_disposed) return; _disposed = true; _owner.Pop(); }
         }
     }
 
@@ -912,6 +922,15 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
         public Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default)
             => Task.CompletedTask;
+
+        public async Task ReplaceDocumentChunksAsync(Guid documentId, IEnumerable<DocumentChunk> newChunks, CancellationToken ct = default)
+        {
+            var existing = _dbContext.DocumentChunks.Where(c => c.DocumentId == documentId).ToList();
+            _dbContext.DocumentChunks.RemoveRange(existing);
+            foreach (var chunk in newChunks)
+                _dbContext.DocumentChunks.Add(chunk);
+            await _dbContext.SaveChangesAsync(ct);
+        }
     }
 
     private sealed class TestRerankService : IRerankService

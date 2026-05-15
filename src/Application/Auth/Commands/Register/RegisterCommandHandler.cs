@@ -101,18 +101,23 @@ public sealed class RegisterCommandHandler : MediatR.IRequestHandler<RegisterCom
         if (verificationLinkResult.IsFailure)
             return Result.Failure<RegistrationPendingResponse>(verificationLinkResult.Error);
 
+        // Persist account and challenge BEFORE sending email.
+        // If email fails, user can request resend. If we send first and DB fails,
+        // user receives a token that doesn't exist — unrecoverable.
+        _accountRepository.Add(account);
+        _emailChallengeRepository.Add(challengeResult.Value);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
         try
         {
             await _emailSender.SendVerificationEmailAsync(account.Email, verificationLinkResult.Value, rawOtp, cancellationToken);
         }
         catch
         {
-            return Result.Failure<RegistrationPendingResponse>(EmailChallengeErrors.EmailDeliveryFailed);
+            // Account is persisted. User can request resend via ResendEmailVerification.
+            // Don't fail the registration — the account exists and is valid.
         }
 
-        _accountRepository.Add(account);
-        _emailChallengeRepository.Add(challengeResult.Value);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _rateLimiter.ResetAccountAsync(request.Email);
 
         return Result.Success(new RegistrationPendingResponse(
@@ -128,7 +133,10 @@ public sealed class RegisterCommandHandler : MediatR.IRequestHandler<RegisterCom
         if (string.IsNullOrWhiteSpace(baseUrl))
             return Result.Failure<string>(EmailChallengeErrors.VerificationLinkBaseUrlRequired);
 
+        // Use URL fragment (#) instead of query string (?). Fragments are NOT sent to the server,
+        // so they don't appear in access logs, proxies, or referrer headers. Frontend extracts the
+        // token via JavaScript (window.location.hash) and POSTs it to the verification endpoint.
         var encodedToken = WebUtility.UrlEncode(rawToken);
-        return Result.Success($"{baseUrl.TrimEnd('/')}?{VerificationLinkQueryKey}={encodedToken}");
+        return Result.Success($"{baseUrl.TrimEnd('/')}#{VerificationLinkQueryKey}={encodedToken}");
     }
 }

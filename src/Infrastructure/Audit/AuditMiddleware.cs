@@ -35,10 +35,13 @@ public class AuditMiddleware
         context.Request.EnableBuffering();
         string? bodyContent = null;
 
-        // Đọc body một cách an toàn
+        // Cap body read to 64KB to avoid memory pressure from large uploads (e.g., 10MB OCR files).
+        const int MaxAuditBodyBytes = 65_536;
         using (var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true))
         {
-            bodyContent = await reader.ReadToEndAsync(context.RequestAborted);
+            var buffer = new char[MaxAuditBodyBytes];
+            var charsRead = await reader.ReadBlockAsync(buffer, 0, MaxAuditBodyBytes);
+            bodyContent = new string(buffer, 0, charsRead);
             context.Request.Body.Position = 0;
         }
 
@@ -84,24 +87,25 @@ public class AuditMiddleware
 
     private static AuditLog? CreateAuditLog(HttpContext context, string body)
     {
-        string? queryToParse = body;
+        string queryToParse;
 
-        // Cố gắng parse JSON để lấy chính xác trường "query", tránh match nhầm vào variables
+        // Parse JSON to extract the "query" field. If body is not valid JSON, refuse to audit
+        // (avoids regex false positives where the literal "mutation { ..." appears in a string variable).
         try
         {
             using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("query", out var queryElement))
-            {
-                var query = queryElement.GetString();
-                if (!string.IsNullOrEmpty(query))
-                {
-                    queryToParse = query;
-                }
-            }
+            if (!doc.RootElement.TryGetProperty("query", out var queryElement))
+                return null;
+
+            var query = queryElement.GetString();
+            if (string.IsNullOrEmpty(query))
+                return null;
+
+            queryToParse = query;
         }
-        catch
+        catch (JsonException)
         {
-            // Fallback: dùng toàn bộ body nếu không phải JSON chuẩn
+            return null;
         }
 
         var match = _mutationRegex.Match(queryToParse);

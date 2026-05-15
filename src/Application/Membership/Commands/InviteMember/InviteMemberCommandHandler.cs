@@ -104,24 +104,12 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
             return Result.Failure<InvitationResponse>(invitationResult.Error);
 
         var invitation = invitationResult.Value;
-        var originalTenantId = _currentTenant.Id;
-        var originalMembershipId = _currentTenant.MembershipId;
-        var originalIsSuperAdmin = _currentTenant.IsSuperAdmin;
 
-        try
+        // Use AsyncLocal-backed scope to act as the inviter membership during SaveChanges.
+        using (_currentTenant.BeginScope(inviterMembership.IdTenant, inviterMembership.Id))
         {
-            _currentTenant.Id = inviterMembership.IdTenant;
-            _currentTenant.MembershipId = inviterMembership.Id;
-            _currentTenant.IsSuperAdmin = false;
-
             _invitationRepository.Add(invitation);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-        finally
-        {
-            _currentTenant.Id = originalTenantId;
-            _currentTenant.MembershipId = originalMembershipId;
-            _currentTenant.IsSuperAdmin = originalIsSuperAdmin;
         }
 
         return Result.Success(new InvitationResponse(

@@ -201,8 +201,7 @@ public sealed class AuthFlowIntegrationTests
         scope.SeedRefreshToken(currentRefreshToken, account.Id, membershipA.Id);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = tenantA.Id;
-        scope.CurrentTenant.MembershipId = membershipA.Id;
+        scope.SetTenant(tenantA.Id, membershipA.Id);
 
         var result = await scope.Mediator.Send(
             new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membershipB.Id, currentRefreshToken)));
@@ -277,8 +276,7 @@ public sealed class AuthFlowIntegrationTests
         scope.SeedRefreshToken(refreshTokenForMembershipA, account.Id, membershipA.Id);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = tenantB.Id;
-        scope.CurrentTenant.MembershipId = membershipB.Id;
+        scope.SetTenant(tenantB.Id, membershipB.Id);
 
         var result = await scope.Mediator.Send(
             new SwitchWorkspaceCommand(new SwitchWorkspaceRequest(account.Id, membershipA.Id, refreshTokenForMembershipA)));
@@ -301,11 +299,11 @@ public sealed class AuthFlowIntegrationTests
 
         var repository = new DepartmentRepository(scope.DbContext);
 
-        scope.CurrentTenant.Id = tenantA.Id;
+        scope.SetTenant(tenantA.Id);
         var visibleForTenantA = await repository.GetByIdAsync(deptA.Id);
         var hiddenForTenantA = await repository.GetByIdAsync(deptB.Id);
 
-        scope.CurrentTenant.Id = tenantB.Id;
+        scope.SetTenant(tenantB.Id);
         var visibleForTenantB = await repository.GetByIdAsync(deptB.Id);
         var hiddenForTenantB = await repository.GetByIdAsync(deptA.Id);
 

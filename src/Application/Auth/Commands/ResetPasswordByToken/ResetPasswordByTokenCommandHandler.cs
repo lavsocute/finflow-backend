@@ -17,6 +17,7 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
     private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IOtpOperationLockService _otpLockService;
+    private readonly ILoginRateLimiter _rateLimiter;
 
     public ResetPasswordByTokenCommandHandler(
         IPasswordResetChallengeRepository challengeRepository,
@@ -25,7 +26,8 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         IRefreshTokenRepository refreshTokenRepository,
         IPasswordHasher passwordHasher,
         IUnitOfWork unitOfWork,
-        IOtpOperationLockService otpLockService)
+        IOtpOperationLockService otpLockService,
+        ILoginRateLimiter rateLimiter)
     {
         _challengeRepository = challengeRepository;
         _secretService = secretService;
@@ -34,6 +36,7 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
         _otpLockService = otpLockService;
+        _rateLimiter = rateLimiter;
     }
 
     public async Task<Result> Handle(ResetPasswordByTokenCommand command, CancellationToken cancellationToken)
@@ -47,7 +50,11 @@ public sealed class ResetPasswordByTokenCommandHandler : MediatR.IRequestHandler
         var tokenHash = _secretService.HashToken(request.Token);
         var challenge = await _challengeRepository.GetByTokenHashForUpdateAsync(tokenHash, cancellationToken);
         if (challenge is null)
+        {
+            // Rate limit invalid token attempts using token hash as identifier
+            await _rateLimiter.RecordFailureAsync(null, $"reset-token:{tokenHash[..8]}");
             return Result.Failure(PasswordResetChallengeErrors.InvalidToken);
+        }
 
         await using var lockHandle = await _otpLockService.AcquireLockAsync(
             $"reset-token:{challenge.Id}",

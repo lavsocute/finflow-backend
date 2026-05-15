@@ -128,7 +128,8 @@ public sealed class ResendEmailVerificationCommandHandler : MediatR.IRequestHand
         if (string.IsNullOrWhiteSpace(baseUrl))
             return Result.Failure<string>(EmailChallengeErrors.VerificationLinkBaseUrlRequired);
 
+        // Use URL fragment (#) — not sent to server access logs. See RegisterCommandHandler.
         var encodedToken = WebUtility.UrlEncode(rawToken);
-        return Result.Success($"{baseUrl.TrimEnd('/')}?{VerificationLinkQueryKey}={encodedToken}");
+        return Result.Success($"{baseUrl.TrimEnd('/')}#{VerificationLinkQueryKey}={encodedToken}");
     }
 }

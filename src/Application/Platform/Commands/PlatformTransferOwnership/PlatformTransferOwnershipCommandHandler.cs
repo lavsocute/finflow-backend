@@ -24,7 +24,9 @@ public sealed class PlatformTransferOwnershipCommandHandler : ICommandHandler<Pl
             return Result.Failure(TenantMembershipErrors.TenantRequired);
 
         newOwner.ChangeRole(Domain.Enums.RoleType.TenantAdmin);
-        newOwner.SetIsOwner(true);
+        var ownerResult = newOwner.SetIsOwner(true);
+        if (ownerResult.IsFailure)
+            return ownerResult;
 
         return Result.Success();
     }

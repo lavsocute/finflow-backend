@@ -59,4 +59,25 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
             return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
         }
     }
+
+    public Task<Result<int>> GetPageCountAsync(byte[] pdfBytes, CancellationToken cancellationToken)
+    {
+        if (pdfBytes.Length == 0)
+            return Task.FromResult(Result.Failure<int>(DocumentOcrErrors.OcrPdfRenderFailed));
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var pageCount = Conversion.GetPageCount(pdfBytes, null);
+            return Task.FromResult(Result.Success(pageCount));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return Task.FromResult(Result.Failure<int>(DocumentOcrErrors.OcrPdfRenderFailed));
+        }
+    }
 }

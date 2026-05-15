@@ -29,8 +29,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         scope.SeedRefreshToken(rawRefreshToken, account.Id, membershipA.Id);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = tenantA.Id;
-        scope.CurrentTenant.MembershipId = membershipA.Id;
+        scope.SetTenant(tenantA.Id, membershipA.Id);
 
         var handler = scope.CreateSwitchWorkspaceHandler();
 
@@ -103,8 +102,7 @@ public sealed class MembershipCommandHandlerIntegrationTests
         var inviterMembership = scope.SeedMembership(inviterAccount.Id, tenant.Id, RoleType.TenantAdmin);
 
         await scope.SaveSeedAsync();
-        scope.CurrentTenant.Id = tenant.Id;
-        scope.CurrentTenant.MembershipId = inviterMembership.Id;
+        scope.SetTenant(tenant.Id, inviterMembership.Id);
 
         var handler = scope.CreateInviteMemberHandler();
 

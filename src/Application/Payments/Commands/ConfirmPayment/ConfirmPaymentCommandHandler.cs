@@ -86,7 +86,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         if (category is null)
             return;
 
-        var expense = Expense.Create(
+        var expenseResult = Expense.Create(
             payment.IdTenant,
             payment.IdDepartment,
             payment.DocumentId,
@@ -99,9 +99,12 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
             documentDate.Month,
             documentDate.Year,
             documentDate,
-            _currentTenant.MembershipId.Value);
+            _currentTenant.MembershipId!.Value);
 
-        _expenseRepository.Add(expense);
+        if (expenseResult.IsFailure)
+            return;
+
+        _expenseRepository.Add(expenseResult.Value);
 
         var budgetSummary = await _budgetRepository.GetByDepartmentAndPeriodAsync(
             payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);

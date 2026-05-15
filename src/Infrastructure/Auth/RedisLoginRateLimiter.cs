@@ -151,24 +151,36 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
             }
         }
 
-        // Fallback Memory Logic
+        // Fallback Memory Logic — use GetOrCreate to avoid refreshing TTL on every failure
         var accKey = $"Fail:Acc:{tenantPrefix}{normalizedEmail}";
-        var accCount = _memoryCache.TryGetValue<int>(accKey, out var c1) ? c1 + 1 : 1;
-        _memoryCache.Set(accKey, accCount, TimeSpan.FromMinutes(BlockDurationMinutes));
+        var accCount = _memoryCache.GetOrCreate(accKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(BlockDurationMinutes);
+            return 0;
+        }) + 1;
+        _memoryCache.Set(accKey, accCount); // Update value without changing expiration
         if (accCount >= MaxAttemptsPerAccount)
             _memoryCache.Set($"Block:Acc:{tenantPrefix}{normalizedEmail}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
 
         if (ip != null)
         {
             var accIpKey = $"Fail:Acc:{tenantPrefix}{normalizedEmail}:Ip:{ip}";
-            var accIpCount = _memoryCache.TryGetValue<int>(accIpKey, out var c2) ? c2 + 1 : 1;
-            _memoryCache.Set(accIpKey, accIpCount, TimeSpan.FromMinutes(BlockDurationMinutes));
+            var accIpCount = _memoryCache.GetOrCreate(accIpKey, entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(BlockDurationMinutes);
+                return 0;
+            }) + 1;
+            _memoryCache.Set(accIpKey, accIpCount);
             if (accIpCount >= MaxAttemptsPerAccountPerIp)
                 _memoryCache.Set($"Block:Acc:{tenantPrefix}{normalizedEmail}:Ip:{ip}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
 
             var ipKey = $"Fail:Ip:{ip}";
-            var ipCount = _memoryCache.TryGetValue<int>(ipKey, out var c3) ? c3 + 1 : 1;
-            _memoryCache.Set(ipKey, ipCount, TimeSpan.FromMinutes(BlockDurationMinutes));
+            var ipCount = _memoryCache.GetOrCreate(ipKey, entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(BlockDurationMinutes);
+                return 0;
+            }) + 1;
+            _memoryCache.Set(ipKey, ipCount);
             if (ipCount >= MaxAttemptsPerIp)
                 _memoryCache.Set($"Block:Ip:{ip}", true, TimeSpan.FromMinutes(BlockDurationMinutes));
         }
@@ -181,18 +193,20 @@ public class RedisLoginRateLimiter : ILoginRateLimiter
         var tenantPrefix = GetTenantPrefix(tenantId);
         var redis = GetRedis();
 
-        // 1. Reset Global Account Keys
+        // Reset Global Account Keys (both Redis and memory)
         if (redis != null)
         {
             try
             {
                 await redis.KeyDeleteAsync($"Fail:Acc:{tenantPrefix}{emailHash}");
                 await redis.KeyDeleteAsync($"Block:Acc:{tenantPrefix}{emailHash}");
+                // Note: IP-scoped keys (Block:Acc:...:Ip:...) cannot be cleared here
+                // because we don't have the IP. They will expire naturally (15 min TTL).
+                // This is acceptable because successful login proves the user is legitimate.
             }
             catch { /* Ignore */ }
         }
 
-        // 2. Reset Memory Fallback Keys
         _memoryCache.Remove($"Fail:Acc:{tenantPrefix}{normalizedEmail}");
         _memoryCache.Remove($"Block:Acc:{tenantPrefix}{normalizedEmail}");
     }

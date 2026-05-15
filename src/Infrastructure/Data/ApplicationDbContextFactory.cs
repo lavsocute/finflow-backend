@@ -17,10 +17,9 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
             "Host=localhost;Port=5434;Database=finflow_db;Username=postgres;Password=postgres123",
             o => o.UseVector());
 
-        // Create a null currentTenant for design-time
+        // Create a null currentTenant for design-time (no tenant context needed for migrations).
         var currentTenant = new CurrentTenant();
-        currentTenant.Id = null;
-        currentTenant.MembershipId = null;
+        currentTenant.SetFromRequest(tenantId: null, membershipId: null, isSuperAdmin: false);
 
         return new ApplicationDbContext(optionsBuilder.Options, currentTenant);
     }

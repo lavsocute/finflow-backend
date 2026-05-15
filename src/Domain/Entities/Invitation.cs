@@ -7,7 +7,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Invitation : Entity, IMultiTenant
+public sealed class Invitation : Entity, IMultiTenant, ISoftDeletable
 {
     private Invitation(
         Guid id,

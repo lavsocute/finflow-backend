@@ -3,7 +3,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class Vendor : Entity, IMultiTenant
+public sealed class Vendor : Entity, IMultiTenant, ISoftDeletable
 {
     private Vendor(
         Guid id,
