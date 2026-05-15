@@ -136,7 +136,7 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = jwtSettings.Issuer,
         ValidateAudience = true,
         ValidAudience = jwtSettings.Audience,
-        ClockSkew = TimeSpan.Zero
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
@@ -178,7 +178,22 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<PlatformMutations>()
     .AddTypeExtension<VendorMutations>()
     .AddTypeExtension<ChatMutations>()
+    .AddTypeExtension<FinFlow.Api.GraphQL.Subscriptions.SubscriptionsMutations>()
+    // Register DataLoaders to prevent N+1 queries in nested GraphQL field resolvers.
+    .AddDataLoader<FinFlow.Api.GraphQL.DataLoaders.TenantBatchDataLoader>()
+    .AddDataLoader<FinFlow.Api.GraphQL.DataLoaders.TenantMembershipBatchDataLoader>()
+    .AddDataLoader<FinFlow.Api.GraphQL.DataLoaders.DepartmentBatchDataLoader>()
     .AddAuthorization()
+    // Cost analysis: prevent clients from issuing arbitrarily expensive queries.
+    .AddCostAnalyzer()
+    .ModifyCostOptions(options =>
+    {
+        options.MaxFieldCost = 1_000;
+        options.MaxTypeCost = 1_000;
+        options.EnforceCostLimits = true;
+    })
+    // Limit query depth to prevent malicious deep nesting.
+    .AddMaxExecutionDepthRule(15)
     .AddErrorFilter(error =>
     {
         if (isDevelopment && error.Exception != null)

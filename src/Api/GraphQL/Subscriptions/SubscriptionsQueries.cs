@@ -22,6 +22,10 @@ public sealed class SubscriptionsQueries
             context,
             "IdTenant",
             unauthorizedMessage: "The current user is not authorized to access this resource.");
+        _ = DocumentsMutations.GetRequiredGuidClaim(
+            context,
+            "MembershipId",
+            unauthorizedMessage: "The current user is not authorized to access this resource.");
 
         var result = await mediator.Send(new GetCurrentSubscriptionQuery(tenantId), cancellationToken);
         if (result.IsFailure)

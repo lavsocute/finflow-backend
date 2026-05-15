@@ -4,52 +4,61 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class TenantUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
+public sealed class MemberUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
 {
-    private TenantUsageSnapshot(
+    private MemberUsageSnapshot(
         Guid id,
         Guid idTenant,
+        Guid membershipId,
         DateOnly periodStart,
         DateOnly periodEnd)
     {
         Id = id;
         IdTenant = idTenant;
+        MembershipId = membershipId;
         PeriodStart = periodStart;
         PeriodEnd = periodEnd;
         IsActive = true;
     }
 
-    private TenantUsageSnapshot() { }
+    private MemberUsageSnapshot() { }
 
     public Guid IdTenant { get; private set; }
 
     [NotMapped]
     public Guid TenantId => IdTenant;
 
+    public Guid MembershipId { get; private set; }
     public DateOnly PeriodStart { get; private set; }
     public DateOnly PeriodEnd { get; private set; }
     public int OcrPagesUsed { get; private set; }
     public int ChatbotMessagesUsed { get; private set; }
-    public long StorageUsedBytes { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     /// <summary>
     /// Concurrency token mapped to PostgreSQL xmin system column.
-    /// Prevents lost updates when multiple requests modify usage concurrently.
     /// </summary>
     public uint Version { get; private set; }
 
-    public static Result<TenantUsageSnapshot> Create(Guid tenantId, DateOnly periodStart, DateOnly periodEnd)
+    public static Result<MemberUsageSnapshot> Create(
+        Guid tenantId,
+        Guid membershipId,
+        DateOnly periodStart,
+        DateOnly periodEnd)
     {
         if (tenantId == Guid.Empty)
-            return Result.Failure<TenantUsageSnapshot>(TenantUsageSnapshotErrors.TenantRequired);
+            return Result.Failure<MemberUsageSnapshot>(MemberUsageSnapshotErrors.TenantRequired);
+
+        if (membershipId == Guid.Empty)
+            return Result.Failure<MemberUsageSnapshot>(MemberUsageSnapshotErrors.MembershipRequired);
 
         if (periodEnd < periodStart)
-            return Result.Failure<TenantUsageSnapshot>(TenantUsageSnapshotErrors.InvalidPeriod);
+            return Result.Failure<MemberUsageSnapshot>(MemberUsageSnapshotErrors.InvalidPeriod);
 
-        return Result.Success(new TenantUsageSnapshot(
+        return Result.Success(new MemberUsageSnapshot(
             Guid.NewGuid(),
             tenantId,
+            membershipId,
             periodStart,
             periodEnd));
     }
@@ -57,7 +66,7 @@ public sealed class TenantUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
     public Result RecordOcrUsage(int pageCount)
     {
         if (pageCount <= 0)
-            return Result.Failure(TenantUsageSnapshotErrors.OcrUsageMustBePositive);
+            return Result.Failure(MemberUsageSnapshotErrors.OcrUsageMustBePositive);
 
         OcrPagesUsed += pageCount;
         return Result.Success();
@@ -66,18 +75,9 @@ public sealed class TenantUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
     public Result RecordChatbotUsage(int messageCount)
     {
         if (messageCount <= 0)
-            return Result.Failure(TenantUsageSnapshotErrors.ChatbotUsageMustBePositive);
+            return Result.Failure(MemberUsageSnapshotErrors.ChatbotUsageMustBePositive);
 
         ChatbotMessagesUsed += messageCount;
-        return Result.Success();
-    }
-
-    public Result SetStorageUsedBytes(long storageUsedBytes)
-    {
-        if (storageUsedBytes < 0)
-            return Result.Failure(TenantUsageSnapshotErrors.StorageUsageCannotBeNegative);
-
-        StorageUsedBytes = storageUsedBytes;
         return Result.Success();
     }
 }

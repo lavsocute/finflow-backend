@@ -19,7 +19,7 @@ public sealed class TenantUsageService : ITenantUsageService
         DateOnly periodEnd,
         CancellationToken cancellationToken = default)
     {
-        var (snapshot, _) = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        var snapshot = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
         return snapshot;
     }
 
@@ -30,7 +30,7 @@ public sealed class TenantUsageService : ITenantUsageService
         DateOnly periodEnd,
         CancellationToken cancellationToken = default)
     {
-        var (snapshot, isNew) = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        var snapshot = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
         var result = snapshot.RecordOcrUsage(pageCount);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
@@ -43,7 +43,7 @@ public sealed class TenantUsageService : ITenantUsageService
         DateOnly periodEnd,
         CancellationToken cancellationToken = default)
     {
-        var (snapshot, isNew) = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        var snapshot = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
         var result = snapshot.RecordChatbotUsage(messageCount);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
@@ -56,13 +56,13 @@ public sealed class TenantUsageService : ITenantUsageService
         DateOnly periodEnd,
         CancellationToken cancellationToken = default)
     {
-        var (snapshot, isNew) = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        var snapshot = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
         var result = snapshot.SetStorageUsedBytes(storageUsedBytes);
         if (result.IsFailure)
             throw new InvalidOperationException(result.Error.Description);
     }
 
-    private async Task<(TenantUsageSnapshot Snapshot, bool IsNew)> GetOrCreateSnapshotAsync(
+    private async Task<TenantUsageSnapshot> GetOrCreateSnapshotAsync(
         Guid tenantId,
         DateOnly periodStart,
         DateOnly periodEnd,
@@ -75,14 +75,12 @@ public sealed class TenantUsageService : ITenantUsageService
             cancellationToken);
 
         if (existingSnapshot is not null)
-            return (existingSnapshot, false);
+            return existingSnapshot;
 
         var createdSnapshotResult = TenantUsageSnapshot.Create(tenantId, periodStart, periodEnd);
         if (createdSnapshotResult.IsFailure)
             throw new InvalidOperationException(createdSnapshotResult.Error.Description);
 
-        var createdSnapshot = createdSnapshotResult.Value;
-        _tenantUsageSnapshotRepository.Add(createdSnapshot);
-        return (createdSnapshot, true);
+        return await _tenantUsageSnapshotRepository.GetOrCreateAsync(createdSnapshotResult.Value, cancellationToken);
     }
 }

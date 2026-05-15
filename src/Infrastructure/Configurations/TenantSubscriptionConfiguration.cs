@@ -22,6 +22,10 @@ internal sealed class TenantSubscriptionConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(x => x.PeriodStart).HasColumnName("period_start").HasColumnType("date").IsRequired();
         builder.Property(x => x.PeriodEnd).HasColumnName("period_end").HasColumnType("date").IsRequired();
+        builder.Property(x => x.BillingCycleMonths).HasColumnName("billing_cycle_months").HasDefaultValue(1).IsRequired();
+        builder.Property(x => x.GracePeriodDays).HasColumnName("grace_period_days").HasDefaultValue(3).IsRequired();
+        builder.Property(x => x.CanceledAt).HasColumnName("canceled_at");
+        builder.Property(x => x.PausedAt).HasColumnName("paused_at");
         builder.Property(x => x.Features)
             .HasColumnName("features")
             .HasConversion(
@@ -30,6 +34,12 @@ internal sealed class TenantSubscriptionConfiguration : IEntityTypeConfiguration
             .IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+        builder.Property(x => x.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasIndex(x => x.IdTenant).IsUnique();
 
