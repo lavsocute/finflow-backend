@@ -46,6 +46,12 @@ internal sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refre
             .HasColumnName("reason_revoked")
             .HasMaxLength(200);
 
+        builder.Property(x => x.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
+
         builder.HasIndex(x => x.Token).IsUnique();
         builder.HasIndex(x => x.AccountId);
         builder.HasIndex(x => x.MembershipId);
