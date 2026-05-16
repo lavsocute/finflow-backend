@@ -49,6 +49,12 @@ public sealed class BudgetConfiguration : IEntityTypeConfiguration<Budget>
             .HasColumnName("updated_at")
             .IsRequired();
 
+        builder.Property(b => b.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
+
         builder.HasIndex(b => new { b.IdDepartment, b.Month, b.Year })
             .IsUnique()
             .HasDatabaseName("ix_budgets_dept_month_year");
