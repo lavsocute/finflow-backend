@@ -14,7 +14,7 @@ namespace FinFlow.UnitTests.Application.Documents;
 public sealed class UploadDocumentForReviewCommandHandlerTests
 {
     [Fact]
-    public async Task Handle_ReturnsQuotaExceeded_WhenMonthlyOcrQuotaIsExhausted()
+    public async Task Handle_ReturnsQuotaExceeded_WhenMemberMonthlyOcrQuotaIsExhausted()
     {
         var ocrService = new StubOcrExtractionService(Result.Success(CreateValidOcrResult([
             new OcrExtractionLineItem("Cloud Compute Instance", 1m, 1200.00m, 1200.00m),
@@ -22,16 +22,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var tenantUsageService = new StubTenantUsageService();
-        var subscriptionFeatureGate = new QuotaExceededSubscriptionFeatureGate();
-        var subscriptionRepository = new StubTenantSubscriptionRepository();
+        var subscriptionQuotaGate = new MemberQuotaExceededSubscriptionQuotaGate();
         var handler = new UploadDocumentForReviewCommandHandler(
             repository,
             unitOfWork,
             ocrService,
-            subscriptionFeatureGate,
-            tenantUsageService,
-            subscriptionRepository,
+            subscriptionQuotaGate,
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -46,13 +42,13 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Equal("Subscription.OcrQuotaExceeded", result.Error.Code);
+        Assert.Equal("Subscription.OcrMemberQuotaExceeded", result.Error.Code);
         Assert.False(ocrService.WasCalled);
         Assert.Empty(repository.AddedDrafts);
         Assert.Equal(0, unitOfWork.SaveChangesCallCount);
-        Assert.Equal(0, tenantUsageService.RecordOcrUsageCallCount);
-        Assert.Equal(1, subscriptionFeatureGate.EnsureOcrAllowedCallCount);
-        Assert.Equal(1, subscriptionFeatureGate.LastRequestedPageCount);
+        Assert.Equal(1, subscriptionQuotaGate.EnsureOcrAllowedCallCount);
+        Assert.Equal(1, subscriptionQuotaGate.LastRequestedPageCount);
+        Assert.Equal(0, subscriptionQuotaGate.RecordOcrUsageCallCount);
     }
 
     [Fact]
@@ -80,7 +76,8 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             repository,
             unitOfWork,
             ocrService,
-            new DeniedSubscriptionFeatureGate())!;
+            new DeniedSubscriptionQuotaGate(),
+            new NoOpDocumentStorageProvider())!;
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -129,17 +126,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         var ocrService = new StubOcrExtractionService(ocrResult);
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var tenantUsageService = new StubTenantUsageService();
-        var subscriptionFeatureGate = new TrackingSubscriptionFeatureGate();
-        var subscriptionRepository = new StubTenantSubscriptionRepository(
-            CreateSubscription(tenantId, subscriptionFeatureGate.PeriodStartUtc, subscriptionFeatureGate.PeriodEndUtc));
+        var subscriptionQuotaGate = new TrackingSubscriptionQuotaGate(tenantId, membershipId);
         var handler = new UploadDocumentForReviewCommandHandler(
             repository,
             unitOfWork,
             ocrService,
-            subscriptionFeatureGate,
-            tenantUsageService,
-            subscriptionRepository,
+            subscriptionQuotaGate,
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -199,13 +191,16 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         Assert.Contains(persistedDraft.LineItems, item => item.ItemName == "Cloud Compute Instance" && item.Total == 850.00m);
         Assert.Contains(persistedDraft.LineItems, item => item.ItemName == "Support Plan" && item.Total == 590.00m);
         Assert.Equal(1, unitOfWork.SaveChangesCallCount);
-        Assert.Equal(1, subscriptionFeatureGate.EnsureOcrAllowedCallCount);
-        Assert.Equal(1, subscriptionFeatureGate.LastRequestedPageCount);
-        Assert.Equal(1, tenantUsageService.RecordOcrUsageCallCount);
-        Assert.Equal(tenantId, tenantUsageService.RecordedTenantId);
-        Assert.Equal(1, tenantUsageService.RecordedPageCount);
-        Assert.Equal(DateOnly.FromDateTime(subscriptionFeatureGate.PeriodStartUtc), tenantUsageService.RecordedPeriodStart);
-        Assert.Equal(DateOnly.FromDateTime(subscriptionFeatureGate.PeriodEndUtc), tenantUsageService.RecordedPeriodEnd);
+        Assert.Equal(1, subscriptionQuotaGate.EnsureOcrAllowedCallCount);
+        Assert.Equal(1, subscriptionQuotaGate.LastRequestedPageCount);
+        Assert.Equal(1, subscriptionQuotaGate.RecordOcrUsageCallCount);
+        Assert.NotNull(subscriptionQuotaGate.RecordedDecision);
+        Assert.Equal(tenantId, subscriptionQuotaGate.RecordedDecision!.TenantId);
+        Assert.Equal(membershipId, subscriptionQuotaGate.RecordedDecision.MembershipId);
+        Assert.Equal(SubscriptionFeature.DocumentsOcr, subscriptionQuotaGate.RecordedDecision.Feature);
+        Assert.Equal(1, subscriptionQuotaGate.RecordedDecision.ApprovedUnitCount);
+        Assert.Equal(subscriptionQuotaGate.PeriodStart, subscriptionQuotaGate.RecordedDecision.PeriodStart);
+        Assert.Equal(subscriptionQuotaGate.PeriodEnd, subscriptionQuotaGate.RecordedDecision.PeriodEnd);
     }
 
     [Fact]
@@ -236,9 +231,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             repository,
             unitOfWork,
             ocrService,
-            new AllowAllSubscriptionFeatureGate(),
-            new NoOpTenantUsageService(),
-            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new AllowAllSubscriptionQuotaGate(),
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -270,7 +263,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         var ocrService = new StubOcrExtractionService(Result.Failure<OcrExtractionResult>(ocrError));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -309,7 +302,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 [new OcrExtractionLineItem("Cloud Compute Instance", 1, 850.00m, 850.00m)], 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -348,7 +341,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 null!, 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -374,7 +367,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             Result.Success(CreateValidOcrResult([])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -402,7 +395,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -430,7 +423,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -458,7 +451,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -486,7 +479,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -521,9 +514,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             repository,
             unitOfWork,
             ocrService,
-            new AllowAllSubscriptionFeatureGate(),
-            new NoOpTenantUsageService(),
-            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new AllowAllSubscriptionQuotaGate(),
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -557,9 +548,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             repository,
             unitOfWork,
             ocrService,
-            new AllowAllSubscriptionFeatureGate(),
-            new NoOpTenantUsageService(),
-            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new AllowAllSubscriptionQuotaGate(),
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -596,9 +585,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             repository,
             unitOfWork,
             ocrService,
-            new AllowAllSubscriptionFeatureGate(),
-            new NoOpTenantUsageService(),
-            new StubTenantSubscriptionRepository(subscriptionResult.Value),
+            new AllowAllSubscriptionQuotaGate(),
             new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
@@ -639,7 +626,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 ], 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -667,7 +654,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -714,7 +701,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             Result.Success(CreateValidOcrResult([new OcrExtractionLineItem("Cloud Compute Instance", 1, 850.00m, 850.00m)])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService);
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -778,6 +765,10 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         public void Update(UploadedDocumentDraft draft) => throw new NotSupportedException();
         public Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default)
             => Task.FromResult<UploadedDocumentDraft?>(null);
+        public Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, bool includeInactive, CancellationToken cancellationToken = default)
+            => Task.FromResult<UploadedDocumentDraft?>(null);
+        public Task<UploadedDocumentDraft?> GetByTenantIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UploadedDocumentDraft?>(null);
         public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<IReadOnlyList<UploadedDocumentDraft>> GetOwnedActiveAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<UploadedDocumentDraft>>([]);
@@ -794,189 +785,122 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         }
     }
 
-    private sealed class DeniedSubscriptionFeatureGate : ISubscriptionFeatureGate
+    private sealed class DeniedSubscriptionQuotaGate : ISubscriptionQuotaGate
     {
-        public Task<PlanEntitlements> GetEntitlementsAsync(Guid tenantId, CancellationToken cancellationToken)
-            => Task.FromResult(new PlanEntitlements(true, false, false, 0, 0, 0));
+        public Task<Result<SubscriptionQuotaDecision>> EnsureChatbotAllowedAsync(Guid tenantId, Guid membershipId, int messageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Failure<SubscriptionQuotaDecision>(new Error("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan.")));
 
-        public Task<Result> EnsureFeatureEnabledAsync(Guid tenantId, SubscriptionFeature feature, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Failure(new Error("Documents.OcrNotAvailableForCurrentPlan", "OCR is not available for the current plan.")));
+        public Task<Result<SubscriptionQuotaDecision>> EnsureOcrAllowedAsync(Guid tenantId, Guid membershipId, int pageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Failure<SubscriptionQuotaDecision>(new Error("Documents.OcrNotAvailableForCurrentPlan", "OCR is not available for the current plan.")));
 
-        public Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Failure(new Error("Documents.OcrNotAvailableForCurrentPlan", "OCR is not available for the current plan.")));
+        public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Failure(new Error("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan.")));
+        public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
-    private sealed class TrackingSubscriptionFeatureGate : ISubscriptionFeatureGate
+    private sealed class TrackingSubscriptionQuotaGate : ISubscriptionQuotaGate
     {
-        public DateTime PeriodStartUtc { get; } = new(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc);
-        public DateTime PeriodEndUtc { get; } = new(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc);
-        public int EnsureOcrAllowedCallCount { get; private set; }
-        public int LastRequestedPageCount { get; private set; }
+        private readonly SubscriptionQuotaDecision _decision;
 
-        public Task<PlanEntitlements> GetEntitlementsAsync(Guid tenantId, CancellationToken cancellationToken)
-            => Task.FromResult(new PlanEntitlements(true, true, false, 0, 1000, 0));
-
-        public Task<Result> EnsureFeatureEnabledAsync(Guid tenantId, SubscriptionFeature feature, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-
-        public Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
+        public TrackingSubscriptionQuotaGate(Guid tenantId, Guid membershipId)
         {
-            EnsureOcrAllowedCallCount++;
-            LastRequestedPageCount = pageCount;
-            return Task.FromResult(Result.Success());
+            _decision = new SubscriptionQuotaDecision(
+                tenantId,
+                membershipId,
+                PeriodStart,
+                PeriodEnd,
+                SubscriptionFeature.DocumentsOcr,
+                1,
+                new PlanEntitlements(true, true, true, 10L * 1024 * 1024 * 1024, 1_000, 100, 10_000, 500),
+                0,
+                0,
+                0,
+                0);
         }
 
-        public Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-    }
-
-    private sealed class QuotaExceededSubscriptionFeatureGate : ISubscriptionFeatureGate
-    {
+        public DateOnly PeriodStart { get; } = new(2026, 4, 1);
+        public DateOnly PeriodEnd { get; } = new(2026, 4, 30);
         public int EnsureOcrAllowedCallCount { get; private set; }
         public int LastRequestedPageCount { get; private set; }
-
-        public Task<PlanEntitlements> GetEntitlementsAsync(Guid tenantId, CancellationToken cancellationToken)
-            => Task.FromResult(new PlanEntitlements(true, true, false, 0, 1000, 0));
-
-        public Task<Result> EnsureFeatureEnabledAsync(Guid tenantId, SubscriptionFeature feature, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-
-        public Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
-        {
-            EnsureOcrAllowedCallCount++;
-            LastRequestedPageCount = pageCount;
-            return Task.FromResult(Result.Failure(new Error("Subscription.OcrQuotaExceeded", "The current plan has reached its monthly OCR quota.")));
-        }
-
-        public Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-    }
-
-    private sealed class StubTenantUsageService : ITenantUsageService
-    {
         public int RecordOcrUsageCallCount { get; private set; }
-        public Guid? RecordedTenantId { get; private set; }
-        public int RecordedPageCount { get; private set; }
-        public DateOnly? RecordedPeriodStart { get; private set; }
-        public DateOnly? RecordedPeriodEnd { get; private set; }
+        public SubscriptionQuotaDecision? RecordedDecision { get; private set; }
 
-        public Task<TenantUsageSnapshot> GetCurrentUsageAsync(
-            Guid tenantId,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task<Result<SubscriptionQuotaDecision>> EnsureChatbotAllowedAsync(Guid tenantId, Guid membershipId, int messageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Failure<SubscriptionQuotaDecision>(new Error("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan.")));
+
+        public Task<Result<SubscriptionQuotaDecision>> EnsureOcrAllowedAsync(Guid tenantId, Guid membershipId, int pageCount, CancellationToken cancellationToken)
         {
-            var snapshotResult = TenantUsageSnapshot.Create(tenantId, periodStart, periodEnd);
-            if (snapshotResult.IsFailure)
-                throw new InvalidOperationException(snapshotResult.Error.Description);
-
-            return Task.FromResult(snapshotResult.Value);
+            EnsureOcrAllowedCallCount++;
+            LastRequestedPageCount = pageCount;
+            return Task.FromResult(Result.Success(_decision with { ApprovedUnitCount = pageCount }));
         }
 
-        public Task RecordOcrUsageAsync(
-            Guid tenantId,
-            int pageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
         {
             RecordOcrUsageCallCount++;
-            RecordedTenantId = tenantId;
-            RecordedPageCount = pageCount;
-            RecordedPeriodStart = periodStart;
-            RecordedPeriodEnd = periodEnd;
+            RecordedDecision = decision;
             return Task.CompletedTask;
         }
-
-        public Task RecordChatbotUsageAsync(
-            Guid tenantId,
-            int messageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task SetStorageUsedBytesAsync(
-            Guid tenantId,
-            long storageUsedBytes,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 
-    private sealed class StubTenantSubscriptionRepository : ITenantSubscriptionRepository
+    private sealed class MemberQuotaExceededSubscriptionQuotaGate : ISubscriptionQuotaGate
     {
-        private readonly TenantSubscription? _subscription;
+        public int EnsureOcrAllowedCallCount { get; private set; }
+        public int LastRequestedPageCount { get; private set; }
+        public int RecordOcrUsageCallCount { get; private set; }
 
-        public StubTenantSubscriptionRepository(TenantSubscription? subscription = null)
+        public Task<Result<SubscriptionQuotaDecision>> EnsureChatbotAllowedAsync(Guid tenantId, Guid membershipId, int messageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Failure<SubscriptionQuotaDecision>(new Error("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan.")));
+
+        public Task<Result<SubscriptionQuotaDecision>> EnsureOcrAllowedAsync(Guid tenantId, Guid membershipId, int pageCount, CancellationToken cancellationToken)
         {
-            _subscription = subscription;
+            EnsureOcrAllowedCallCount++;
+            LastRequestedPageCount = pageCount;
+            return Task.FromResult(Result.Failure<SubscriptionQuotaDecision>(new Error("Subscription.OcrMemberQuotaExceeded", "The current member has reached the monthly OCR quota.")));
         }
 
-        public Task<TenantSubscription?> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default)
-            => Task.FromResult(_subscription);
+        public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public void Add(TenantSubscription subscription) => throw new NotSupportedException();
-public void Update(TenantSubscription subscription) => throw new NotSupportedException();
-    }
-
-    private sealed class AllowAllSubscriptionFeatureGate : ISubscriptionFeatureGate
-    {
-        public Task<PlanEntitlements> GetEntitlementsAsync(Guid tenantId, CancellationToken cancellationToken)
-            => Task.FromResult(new PlanEntitlements(true, true, true, long.MaxValue, int.MaxValue, int.MaxValue));
-
-        public Task<Result> EnsureFeatureEnabledAsync(Guid tenantId, SubscriptionFeature feature, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-
-        public Task<Result> EnsureOcrAllowedAsync(Guid tenantId, int pageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-
-        public Task<Result> EnsureChatbotAllowedAsync(Guid tenantId, int messageCount, CancellationToken cancellationToken)
-            => Task.FromResult(Result.Success());
-    }
-
-    private sealed class NoOpTenantUsageService : ITenantUsageService
-    {
-        public Task<TenantUsageSnapshot> GetCurrentUsageAsync(
-            Guid tenantId,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
         {
-            var snapshotResult = TenantUsageSnapshot.Create(tenantId, periodStart, periodEnd);
-            if (snapshotResult.IsFailure)
-                throw new InvalidOperationException(snapshotResult.Error.Description);
-
-            return Task.FromResult(snapshotResult.Value);
+            RecordOcrUsageCallCount++;
+            return Task.CompletedTask;
         }
+    }
 
-        public Task RecordOcrUsageAsync(
-            Guid tenantId,
-            int pageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+    private sealed class AllowAllSubscriptionQuotaGate : ISubscriptionQuotaGate
+    {
+        public Task<Result<SubscriptionQuotaDecision>> EnsureChatbotAllowedAsync(Guid tenantId, Guid membershipId, int messageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success(CreateDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, messageCount)));
+
+        public Task<Result<SubscriptionQuotaDecision>> EnsureOcrAllowedAsync(Guid tenantId, Guid membershipId, int pageCount, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success(CreateDecision(tenantId, membershipId, SubscriptionFeature.DocumentsOcr, pageCount)));
+
+        public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task RecordChatbotUsageAsync(
-            Guid tenantId,
-            int messageCount,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
+        public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task SetStorageUsedBytesAsync(
-            Guid tenantId,
-            long storageUsedBytes,
-            DateOnly periodStart,
-            DateOnly periodEnd,
-            CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        private static SubscriptionQuotaDecision CreateDecision(Guid tenantId, Guid membershipId, SubscriptionFeature feature, int approvedUnitCount) =>
+            new(
+                tenantId,
+                membershipId,
+                new DateOnly(2026, 4, 1),
+                new DateOnly(2026, 4, 30),
+                feature,
+                approvedUnitCount,
+                new PlanEntitlements(true, true, true, long.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue),
+                0,
+                0,
+                0,
+                0);
     }
 
     private sealed class NoOpDocumentStorageProvider : IDocumentStorageProvider
@@ -992,12 +916,5 @@ public void Update(TenantSubscription subscription) => throw new NotSupportedExc
 
         public Task<string?> GetContentTypeAsync(Guid documentId, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
-    }
-
-    private static TenantSubscription CreateSubscription(Guid tenantId, DateTime periodStartUtc, DateTime periodEndUtc)
-    {
-        var result = TenantSubscription.Create(tenantId, PlanTier.Pro, periodStartUtc, periodEndUtc);
-        Assert.True(result.IsSuccess, result.Error.Description);
-        return result.Value;
     }
 }

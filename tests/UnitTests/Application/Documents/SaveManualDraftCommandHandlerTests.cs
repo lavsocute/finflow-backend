@@ -422,6 +422,10 @@ public sealed class SaveManualDraftCommandHandlerTests
         public void Update(UploadedDocumentDraft draft) { }
         public Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default)
             => Task.FromResult(_getByIdResult);
+        public Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, bool includeInactive, CancellationToken cancellationToken = default)
+            => Task.FromResult(_getByIdResult);
+        public Task<UploadedDocumentDraft?> GetByTenantIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_getByIdResult);
         public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_getByIdResult != null);
         public Task<IReadOnlyList<UploadedDocumentDraft>> GetOwnedActiveAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default)

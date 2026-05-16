@@ -15,11 +15,27 @@ internal sealed class UploadedDocumentDraftRepository : IUploadedDocumentDraftRe
     public void Update(UploadedDocumentDraft draft) => _dbContext.Set<UploadedDocumentDraft>().Update(draft);
 
     public async Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default) =>
+        await GetByIdAsync(id, tenantId, membershipId, includeInactive: false, cancellationToken);
+
+    public async Task<UploadedDocumentDraft?> GetByIdAsync(Guid id, Guid tenantId, Guid membershipId, bool includeInactive, CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.Set<UploadedDocumentDraft>()
+            .IgnoreQueryFilters()
+            .Include(x => x.LineItems)
+            .Where(x => x.Id == id && x.IdTenant == tenantId && x.MembershipId == membershipId);
+
+        if (!includeInactive)
+            query = query.Where(x => x.IsActive);
+
+        return await query.FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<UploadedDocumentDraft?> GetByTenantIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<UploadedDocumentDraft>()
             .IgnoreQueryFilters()
             .Include(x => x.LineItems)
             .FirstOrDefaultAsync(
-                x => x.Id == id && x.IdTenant == tenantId && x.MembershipId == membershipId && x.IsActive,
+                x => x.Id == id && x.IdTenant == tenantId && x.IsActive,
                 cancellationToken);
 
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default) =>

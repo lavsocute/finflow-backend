@@ -35,6 +35,18 @@ internal sealed class UploadedDocumentDraftConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ImageContentType).HasColumnName("image_content_type").HasMaxLength(100);
         builder.Property(x => x.ImageData).HasColumnName("image_data").HasColumnType("bytea");
 
+        // Discount fields (Spec: document-draft-lifecycle-and-discount)
+        builder.Property(x => x.DocumentDiscountPercent).HasColumnName("document_discount_percent").HasColumnType("numeric(5,2)");
+        builder.Property(x => x.DocumentDiscountAmount).HasColumnName("document_discount_amount").HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+        builder.Property(x => x.DeletedAt).HasColumnName("deleted_at");
+
+        // PostgreSQL xmin system column as optimistic concurrency token.
+        builder.Property(x => x.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
+
         builder.HasIndex(x => new { x.IdTenant, x.UploadedAt });
 
         builder.OwnsMany(x => x.LineItems, ownedBuilder =>
@@ -47,6 +59,8 @@ internal sealed class UploadedDocumentDraftConfiguration : IEntityTypeConfigurat
             ownedBuilder.Property(x => x.ItemName).HasColumnName("item_name").HasMaxLength(250).IsRequired();
             ownedBuilder.Property(x => x.Quantity).HasColumnName("quantity").HasColumnType("numeric(18,2)").IsRequired();
             ownedBuilder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(18,2)").IsRequired();
+            ownedBuilder.Property(x => x.DiscountPercent).HasColumnName("discount_percent").HasColumnType("numeric(5,2)");
+            ownedBuilder.Property(x => x.DiscountAmount).HasColumnName("discount_amount").HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
             ownedBuilder.Property(x => x.Total).HasColumnName("total").HasColumnType("numeric(18,2)").IsRequired();
         });
 

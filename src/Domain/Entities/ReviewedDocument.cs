@@ -1,11 +1,21 @@
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.Events;
 using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
-public sealed class ReviewedDocument : Entity, IMultiTenant
+public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
 {
+    private static readonly FinancialErrorFactory ErrorFactory = new(
+        DiscountAmountInvalid: ReviewedDocumentErrors.DiscountAmountInvalid,
+        DiscountPercentOutOfRange: ReviewedDocumentErrors.DiscountPercentOutOfRange,
+        LineItemTotalsMismatch: ReviewedDocumentErrors.LineItemTotalsMismatch,
+        DocumentDiscountExceedsSubtotal: ReviewedDocumentErrors.DocumentDiscountExceedsSubtotal,
+        DocumentDiscountMismatch: ReviewedDocumentErrors.DocumentDiscountMismatch,
+        TotalAmountInvalid: ReviewedDocumentErrors.TotalAmountInvalid,
+        FinancialBreakdownMismatch: ReviewedDocumentErrors.FinancialBreakdownMismatch);
+
     private readonly List<ReviewedDocumentLineItem> _lineItems = [];
 
     private ReviewedDocument(
@@ -21,6 +31,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         string category,
         string? vendorTaxId,
         decimal subtotal,
+        decimal? documentDiscountPercent,
+        decimal documentDiscountAmount,
         decimal vat,
         decimal totalAmount,
         string source,
@@ -41,6 +53,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         Category = category;
         VendorTaxId = vendorTaxId;
         Subtotal = subtotal;
+        DocumentDiscountPercent = documentDiscountPercent;
+        DocumentDiscountAmount = documentDiscountAmount;
         Vat = vat;
         TotalAmount = totalAmount;
         Source = source;
@@ -67,6 +81,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     public string Category { get; private set; } = null!;
     public string? VendorTaxId { get; private set; }
     public decimal Subtotal { get; private set; }
+    public decimal? DocumentDiscountPercent { get; private set; }
+    public decimal DocumentDiscountAmount { get; private set; }
     public decimal Vat { get; private set; }
     public decimal TotalAmount { get; private set; }
     public string Source { get; private set; } = null!;
@@ -77,6 +93,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
     public DateTime SubmittedAt { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
+    public uint Version { get; private set; }
     public bool IsActive { get; private set; } = true;
     public IReadOnlyCollection<ReviewedDocumentLineItem> LineItems => _lineItems.AsReadOnly();
 
@@ -93,6 +110,51 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         string category,
         string? vendorTaxId,
         decimal subtotal,
+        decimal vat,
+        decimal totalAmount,
+        string source,
+        string reviewedByStaff,
+        string confidenceLabel,
+        DateTime submittedAtUtc,
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+        => CreateSubmitted(
+            documentId,
+            idTenant,
+            idDepartment,
+            membershipId,
+            originalFileName,
+            contentType,
+            vendorName,
+            reference,
+            documentDate,
+            category,
+            vendorTaxId,
+            subtotal,
+            documentDiscountPercent: null,
+            documentDiscountAmount: 0m,
+            vat,
+            totalAmount,
+            source,
+            reviewedByStaff,
+            confidenceLabel,
+            submittedAtUtc,
+            lineItems);
+
+    public static Result<ReviewedDocument> CreateSubmitted(
+        Guid documentId,
+        Guid idTenant,
+        Guid idDepartment,
+        Guid membershipId,
+        string originalFileName,
+        string contentType,
+        string vendorName,
+        string reference,
+        DateOnly documentDate,
+        string category,
+        string? vendorTaxId,
+        decimal subtotal,
+        decimal? documentDiscountPercent,
+        decimal documentDiscountAmount,
         decimal vat,
         decimal totalAmount,
         string source,
@@ -121,8 +183,6 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.ReviewedByRequired);
         if (submittedAtUtc.Kind != DateTimeKind.Utc)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.SubmittedAtRequired);
-        if (totalAmount <= 0)
-            return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.TotalAmountInvalid);
         if (lineItems.Count == 0)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemRequired);
 
@@ -136,16 +196,43 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemUnitPriceInvalid);
             if (lineItem.Total <= 0)
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemTotalInvalid);
+            if (lineItem.DiscountAmount < 0)
+                return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DiscountAmountInvalid);
+            if (lineItem.DiscountPercent.HasValue &&
+                (lineItem.DiscountPercent.Value < 0 || lineItem.DiscountPercent.Value > 100))
+                return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DiscountPercentOutOfRange);
+
+            // Cross-check %/amount when both supplied
+            if (lineItem.DiscountPercent.HasValue)
+            {
+                var expectedAmount = FinancialInvariants.RoundMoney(
+                    lineItem.Quantity * lineItem.UnitPrice * lineItem.DiscountPercent.Value / 100m);
+                if (!FinancialInvariants.EqualsWithinTolerance(expectedAmount, lineItem.DiscountAmount))
+                    return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineDiscountMismatch);
+            }
+
+            // Total = Q*UP - DiscountAmount
+            var expectedTotal = FinancialInvariants.RoundMoney(
+                lineItem.Quantity * lineItem.UnitPrice - lineItem.DiscountAmount);
+            if (!FinancialInvariants.EqualsWithinTolerance(expectedTotal, FinancialInvariants.RoundMoney(lineItem.Total)))
+                return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemTotalInvalid);
         }
 
-        var roundedTotalAmount = decimal.Round(totalAmount, 2, MidpointRounding.AwayFromZero);
-        var roundedLineItemTotal = decimal.Round(lineItems.Sum(item => item.Total), 2, MidpointRounding.AwayFromZero);
-        if (roundedLineItemTotal != roundedTotalAmount)
+        var lineSum = lineItems.Sum(i => i.Total);
+        if (!FinancialInvariants.EqualsWithinTolerance(
+                FinancialInvariants.RoundMoney(lineSum),
+                FinancialInvariants.RoundMoney(totalAmount)))
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemTotalsMismatch);
 
-        var roundedBreakdownTotal = decimal.Round(subtotal + vat, 2, MidpointRounding.AwayFromZero);
-        if (roundedBreakdownTotal != roundedTotalAmount)
-            return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+        var breakdown = FinancialInvariants.ValidateBreakdownStrict(
+            subtotal,
+            documentDiscountPercent,
+            documentDiscountAmount,
+            vat,
+            totalAmount,
+            ErrorFactory);
+        if (breakdown.IsFailure)
+            return Result.Failure<ReviewedDocument>(breakdown.Error);
 
         return Result.Success(new ReviewedDocument(
             documentId,
@@ -160,6 +247,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
             category.Trim(),
             string.IsNullOrWhiteSpace(vendorTaxId) ? null : vendorTaxId.Trim(),
             subtotal,
+            documentDiscountPercent,
+            documentDiscountAmount,
             vat,
             totalAmount,
             string.IsNullOrWhiteSpace(source) ? "staff-upload" : source.Trim(),
@@ -194,6 +283,103 @@ public sealed class ReviewedDocument : Entity, IMultiTenant
         Status = ReviewedDocumentStatus.Rejected;
         RejectionReason = normalizedReason;
         UpdatedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Withdraw a submitted document back to Draft state for further editing.
+    /// Caller must validate that no Payment exists before invoking (defense-in-depth).
+    /// </summary>
+    public Result Withdraw()
+    {
+        if (Status != ReviewedDocumentStatus.ReadyForApproval)
+            return Result.Failure(ReviewedDocumentErrors.CannotWithdraw);
+
+        Status = ReviewedDocumentStatus.Draft;
+        RejectionReason = null;
+        UpdatedAt = DateTime.UtcNow;
+        RaiseDomainEvent(new ReviewedDocumentWithdrawnDomainEvent(Id, IdTenant, MembershipId));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Resubmit a withdrawn document; transitions Draft → ReadyForApproval.
+    /// </summary>
+    public Result Resubmit(DateTime submittedAtUtc)
+    {
+        if (Status != ReviewedDocumentStatus.Draft)
+            return Result.Failure(ReviewedDocumentErrors.CannotResubmit);
+
+        if (submittedAtUtc.Kind != DateTimeKind.Utc)
+            return Result.Failure(ReviewedDocumentErrors.SubmittedAtRequired);
+
+        Status = ReviewedDocumentStatus.ReadyForApproval;
+        SubmittedAt = submittedAtUtc;
+        UpdatedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Replace document fields while in Draft state (after a withdraw, before resubmit).
+    /// </summary>
+    public Result UpdateForResubmit(
+        string vendorName,
+        string reference,
+        DateOnly documentDate,
+        string category,
+        string? vendorTaxId,
+        decimal subtotal,
+        decimal? documentDiscountPercent,
+        decimal documentDiscountAmount,
+        decimal vat,
+        decimal totalAmount,
+        string confidenceLabel,
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+    {
+        if (Status != ReviewedDocumentStatus.Draft)
+            return Result.Failure(ReviewedDocumentErrors.CannotUpdateInCurrentState);
+
+        if (string.IsNullOrWhiteSpace(vendorName))
+            return Result.Failure(ReviewedDocumentErrors.VendorNameRequired);
+        if (string.IsNullOrWhiteSpace(reference))
+            return Result.Failure(ReviewedDocumentErrors.ReferenceRequired);
+        if (string.IsNullOrWhiteSpace(category))
+            return Result.Failure(ReviewedDocumentErrors.CategoryRequired);
+        if (lineItems.Count == 0)
+            return Result.Failure(ReviewedDocumentErrors.LineItemRequired);
+
+        var lineSum = lineItems.Sum(i => i.Total);
+        if (!FinancialInvariants.EqualsWithinTolerance(
+                FinancialInvariants.RoundMoney(lineSum),
+                FinancialInvariants.RoundMoney(totalAmount)))
+            return Result.Failure(ReviewedDocumentErrors.LineItemTotalsMismatch);
+
+        var breakdown = FinancialInvariants.ValidateBreakdownStrict(
+            subtotal,
+            documentDiscountPercent,
+            documentDiscountAmount,
+            vat,
+            totalAmount,
+            ErrorFactory);
+        if (breakdown.IsFailure)
+            return breakdown;
+
+        VendorName = vendorName.Trim();
+        Reference = reference.Trim();
+        DocumentDate = documentDate;
+        Category = category.Trim();
+        VendorTaxId = string.IsNullOrWhiteSpace(vendorTaxId) ? null : vendorTaxId.Trim();
+        Subtotal = subtotal;
+        DocumentDiscountPercent = documentDiscountPercent;
+        DocumentDiscountAmount = documentDiscountAmount;
+        Vat = vat;
+        TotalAmount = totalAmount;
+        ConfidenceLabel = string.IsNullOrWhiteSpace(confidenceLabel) ? "Staff corrected" : confidenceLabel.Trim();
+        UpdatedAt = DateTime.UtcNow;
+
+        _lineItems.Clear();
+        _lineItems.AddRange(lineItems);
+
         return Result.Success();
     }
 }

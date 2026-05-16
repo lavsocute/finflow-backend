@@ -49,13 +49,18 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             .Concat(receiptChunks)
             .ToList();
 
-        await _vectorStore.DeleteByDocumentIdAsync(document.Id, cancellationToken);
-
-        if (chunks.Count == 0)
-            return 0;
-
-        await _vectorStore.UpsertChunksAsync(chunks, cancellationToken);
+        // Atomic replace: delete old chunks + insert new ones in a single transaction.
+        await _vectorStore.ReplaceDocumentChunksAsync(document.Id, chunks, cancellationToken);
         return chunks.Count;
+    }
+
+    public async Task<int> RemoveAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        if (documentId == Guid.Empty)
+            throw new ArgumentException("Document id is required.", nameof(documentId));
+
+        await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+        return 0; // Actual count not available from delete; return 0 as sentinel.
     }
 
     internal static string BuildExpenseContent(ReviewedDocument document)

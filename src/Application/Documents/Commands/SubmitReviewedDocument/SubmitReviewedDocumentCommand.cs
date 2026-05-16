@@ -8,7 +8,9 @@ public sealed record SubmitReviewedDocumentLineItem(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total
+    decimal Total,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m
 );
 
 public sealed record SubmitReviewedDocumentCommand(
@@ -28,5 +30,7 @@ public sealed record SubmitReviewedDocumentCommand(
     string ReviewedByStaff,
     string ConfidenceLabel,
     DateTime SubmittedAt,
-    IReadOnlyList<SubmitReviewedDocumentLineItem> LineItems
+    IReadOnlyList<SubmitReviewedDocumentLineItem> LineItems,
+    decimal? DocumentDiscountPercent = null,
+    decimal DocumentDiscountAmount = 0m
 ) : ICommand<Result<ReviewedDocumentResponse>>;

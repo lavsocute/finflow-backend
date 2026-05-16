@@ -29,4 +29,17 @@ public static class ReviewedDocumentErrors
     public static readonly Error SelfApprovalNotAllowed = new("ReviewedDocument.SelfApprovalNotAllowed", "Submitter cannot approve their own reviewed document.");
     public static readonly Error RejectionReasonRequired = new("ReviewedDocument.RejectionReasonRequired", "Rejection reason is required.");
     public static readonly Error RejectionReasonTooLong = new("ReviewedDocument.RejectionReasonTooLong", "Rejection reason cannot exceed 500 characters.");
+
+    // Lifecycle (Spec: document-draft-lifecycle-and-discount)
+    public static readonly Error CannotWithdraw = new("ReviewedDocument.CannotWithdraw", "Document cannot be withdrawn in its current state.");
+    public static readonly Error CannotResubmit = new("ReviewedDocument.CannotResubmit", "Document cannot be resubmitted in its current state.");
+    public static readonly Error CannotUpdateInCurrentState = new("ReviewedDocument.CannotUpdateInCurrentState", "Document cannot be updated in its current state.");
+    public static readonly Error WithdrawnHasPayment = new("ReviewedDocument.WithdrawnHasPayment", "Cannot withdraw a document that already has a payment recorded.");
+
+    // Discount invariants
+    public static readonly Error LineDiscountMismatch = new("ReviewedDocument.LineDiscountMismatch", "Line discount percent and amount do not match (within 0.01 tolerance).");
+    public static readonly Error DocumentDiscountMismatch = new("ReviewedDocument.DocumentDiscountMismatch", "Document discount percent and amount do not match (within 0.01 tolerance).");
+    public static readonly Error DocumentDiscountExceedsSubtotal = new("ReviewedDocument.DocumentDiscountExceedsSubtotal", "Document discount cannot exceed subtotal.");
+    public static readonly Error DiscountPercentOutOfRange = new("ReviewedDocument.DiscountPercentOutOfRange", "Discount percent must be between 0 and 100.");
+    public static readonly Error DiscountAmountInvalid = new("ReviewedDocument.DiscountAmountInvalid", "Discount amount must be greater than or equal to zero.");
 }

@@ -82,7 +82,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         }
 
         var lineItems = request.LineItems
-            .Select(item => ReviewedDocumentLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+            .Select(item => ReviewedDocumentLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.DiscountPercent, item.DiscountAmount, item.Total))
             .ToList();
 
         var documentResult = ReviewedDocument.CreateSubmitted(
@@ -98,6 +98,8 @@ public sealed class SubmitReviewedDocumentCommandHandler
             request.Category,
             request.VendorTaxId,
             request.Subtotal,
+            request.DocumentDiscountPercent,
+            request.DocumentDiscountAmount,
             request.Vat,
             request.TotalAmount,
             string.IsNullOrWhiteSpace(request.Source) ? "manual-submission" : request.Source,

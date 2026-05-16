@@ -29,4 +29,15 @@ public static readonly Error UnsupportedContentType = new("UploadedDocumentDraft
     public static readonly Error FileTooLarge = new("UploadedDocumentDraft.FileTooLarge", "The uploaded file exceeds the maximum allowed size of 10MB.");
     public static readonly Error OcrNotAvailableForCurrentPlan = new("Documents.OcrNotAvailableForCurrentPlan", "OCR is not available for the current plan.");
     public static readonly Error ImageContentTypeRequired = new("UploadedDocumentDraft.ImageContentTypeRequired", "Image content type is required when has image is true.");
+
+    // Lifecycle (Spec: document-draft-lifecycle-and-discount)
+    public static readonly Error AlreadySubmitted = new("UploadedDocumentDraft.AlreadySubmitted", "Draft has already been submitted and cannot be modified.");
+    public static readonly Error AlreadyActive = new("UploadedDocumentDraft.AlreadyActive", "Draft is already active.");
+
+    // Discount invariants
+    public static readonly Error LineDiscountMismatch = new("UploadedDocumentDraft.LineDiscountMismatch", "Line discount percent and amount do not match (within 0.01 tolerance).");
+    public static readonly Error DocumentDiscountMismatch = new("UploadedDocumentDraft.DocumentDiscountMismatch", "Document discount percent and amount do not match (within 0.01 tolerance).");
+    public static readonly Error DocumentDiscountExceedsSubtotal = new("UploadedDocumentDraft.DocumentDiscountExceedsSubtotal", "Document discount cannot exceed subtotal.");
+    public static readonly Error DiscountPercentOutOfRange = new("UploadedDocumentDraft.DiscountPercentOutOfRange", "Discount percent must be between 0 and 100.");
+    public static readonly Error DiscountAmountInvalid = new("UploadedDocumentDraft.DiscountAmountInvalid", "Discount amount must be greater than or equal to zero.");
 }

@@ -92,6 +92,29 @@ public sealed record SaveReviewedOcrDraftPayload(Guid DraftId);
 
 public sealed record ReindexReviewedDocumentsInput(Guid? DocumentId);
 
+public sealed record UpdateDocumentDraftLineItemInput(
+    string ItemName,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal? DiscountPercent,
+    decimal DiscountAmount,
+    decimal Total);
+
+public sealed record UpdateDocumentDraftInput(
+    Guid DraftId,
+    string VendorName,
+    string Reference,
+    DateOnly DocumentDate,
+    string Category,
+    string? VendorTaxId,
+    decimal Subtotal,
+    decimal? DocumentDiscountPercent,
+    decimal DocumentDiscountAmount,
+    decimal Vat,
+    decimal TotalAmount,
+    string? ConfidenceLabel,
+    IReadOnlyList<UpdateDocumentDraftLineItemInput> LineItems);
+
 public sealed record ReindexReviewedDocumentsPayload(
     int ScannedDocuments,
     int IndexedDocuments,
@@ -444,4 +467,94 @@ public sealed class DocumentsMutations
 
     private static GraphQLException ToGraphQlException(DomainError error) =>
         new(new HotChocolate.Error(error.Description, error.Code));
+
+    // ─── New mutations: UpdateDocumentDraft, DeleteDocumentDraft, WithdrawReviewedDocument ───
+
+    [Authorize]
+    public async Task<DocumentOcrDraftPayload> UpdateDocumentDraftAsync(
+        UpdateDocumentDraftInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var isTenantOwner = IsTenantOwnerRole(context);
+
+        var result = await mediator.Send(
+            new Application.Documents.Commands.UpdateDocumentDraft.UpdateDocumentDraftCommand(
+                input.DraftId,
+                tenantId,
+                membershipId,
+                isTenantOwner,
+                input.VendorName,
+                input.Reference,
+                input.DocumentDate,
+                input.Category,
+                input.VendorTaxId,
+                input.Subtotal,
+                input.DocumentDiscountPercent,
+                input.DocumentDiscountAmount,
+                input.Vat,
+                input.TotalAmount,
+                input.ConfidenceLabel ?? "Staff corrected",
+                input.LineItems.Select(x => new Application.Documents.Commands.UpdateDocumentDraft.UpdateDocumentDraftLineItem(
+                    x.ItemName, x.Quantity, x.UnitPrice, x.DiscountPercent, x.DiscountAmount, x.Total)).ToList()),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return ToDocumentOcrDraftPayload(result.Value);
+    }
+
+    [Authorize]
+    public async Task<bool> DeleteDocumentDraftAsync(
+        Guid draftId,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var isTenantOwner = IsTenantOwnerRole(context);
+
+        var result = await mediator.Send(
+            new Application.Documents.Commands.DeleteDocumentDraft.DeleteDocumentDraftCommand(
+                draftId, tenantId, membershipId, isTenantOwner),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return true;
+    }
+
+    [Authorize]
+    public async Task<ReviewedDocumentPayload> WithdrawReviewedDocumentAsync(
+        Guid documentId,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var isTenantOwner = IsTenantOwnerRole(context);
+
+        var result = await mediator.Send(
+            new Application.Documents.Commands.WithdrawReviewedDocument.WithdrawReviewedDocumentCommand(
+                documentId, tenantId, membershipId, isTenantOwner),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return ToReviewedDocumentPayload(result.Value);
+    }
+
+    private static bool IsTenantOwnerRole(IResolverContext context)
+    {
+        var rawRole = GetOptionalClaim(context, ClaimTypes.Role, "http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
+        return Enum.TryParse<RoleType>(rawRole, out var role) && role == RoleType.TenantAdmin;
+    }
 }
