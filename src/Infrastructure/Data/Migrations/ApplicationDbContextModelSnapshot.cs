@@ -289,6 +289,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int>("Year")
                         .HasColumnType("integer")
                         .HasColumnName("year");
@@ -494,6 +500,62 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.ToTable("invitation", (string)null);
                 });
 
+            modelBuilder.Entity("FinFlow.Domain.Entities.MemberUsageSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ChatbotMessagesUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("chatbot_messages_used");
+
+                    b.Property<Guid>("IdTenant")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_tenant");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("membership_id");
+
+                    b.Property<int>("OcrPagesUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("ocr_pages_used");
+
+                    b.Property<DateOnly>("PeriodEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("period_end");
+
+                    b.Property<DateOnly>("PeriodStart")
+                        .HasColumnType("date")
+                        .HasColumnName("period_start");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId");
+
+                    b.HasIndex("IdTenant", "MembershipId", "PeriodStart", "PeriodEnd")
+                        .IsUnique()
+                        .HasDatabaseName("ux_member_usage_snapshot_period");
+
+                    b.ToTable("member_usage_snapshot", (string)null);
+                });
+
             modelBuilder.Entity("FinFlow.Domain.Entities.PasswordResetChallenge", b =>
                 {
                     b.Property<Guid>("Id")
@@ -607,6 +669,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("token");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AccountId");
@@ -651,6 +719,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<DateOnly>("DocumentDate")
                         .HasColumnType("date")
                         .HasColumnName("document_date");
+
+                    b.Property<decimal>("DocumentDiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("document_discount_amount");
+
+                    b.Property<decimal?>("DocumentDiscountPercent")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("document_discount_percent");
 
                     b.Property<Guid>("IdDepartment")
                         .HasColumnType("uuid")
@@ -735,6 +813,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("vendor_tax_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -982,6 +1066,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("BillingCycleMonths")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("billing_cycle_months");
+
+                    b.Property<DateTime?>("CanceledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("canceled_at");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -991,9 +1085,19 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("features");
 
+                    b.Property<int>("GracePeriodDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3)
+                        .HasColumnName("grace_period_days");
+
                     b.Property<Guid>("IdTenant")
                         .HasColumnType("uuid")
                         .HasColumnName("id_tenant");
+
+                    b.Property<DateTime?>("PausedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paused_at");
 
                     b.Property<DateTime>("PeriodEnd")
                         .HasColumnType("date")
@@ -1018,6 +1122,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -1068,6 +1178,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasDefaultValue(0L)
                         .HasColumnName("storage_used_bytes");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IdTenant", "PeriodStart", "PeriodEnd")
@@ -1104,9 +1220,23 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
                     b.Property<DateOnly>("DocumentDate")
                         .HasColumnType("date")
                         .HasColumnName("document_date");
+
+                    b.Property<decimal>("DocumentDiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("document_discount_amount");
+
+                    b.Property<decimal?>("DocumentDiscountPercent")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("document_discount_percent");
 
                     b.Property<Guid>("IdTenant")
                         .HasColumnType("uuid")
@@ -1185,6 +1315,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("vendor_tax_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -1381,6 +1517,9 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("payment_id");
 
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1495,6 +1634,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("recorded_by_membership_id");
 
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("RejectedByMembershipId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -1567,6 +1712,21 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FinFlow.Domain.Entities.MemberUsageSnapshot", b =>
+                {
+                    b.HasOne("FinFlow.Domain.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("IdTenant")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FinFlow.Domain.Entities.TenantMembership", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FinFlow.Domain.Entities.RefreshToken", b =>
                 {
                     b.HasOne("FinFlow.Domain.Entities.Account", null)
@@ -1588,6 +1748,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                             b1.Property<Guid>("Id")
                                 .HasColumnType("uuid")
                                 .HasColumnName("id");
+
+                            b1.Property<decimal>("DiscountAmount")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("numeric(18,2)")
+                                .HasDefaultValue(0m)
+                                .HasColumnName("discount_amount");
+
+                            b1.Property<decimal?>("DiscountPercent")
+                                .HasColumnType("numeric(5,2)")
+                                .HasColumnName("discount_percent");
 
                             b1.Property<string>("ItemName")
                                 .IsRequired()
@@ -1672,6 +1842,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                             b1.Property<Guid>("Id")
                                 .HasColumnType("uuid")
                                 .HasColumnName("id");
+
+                            b1.Property<decimal>("DiscountAmount")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("numeric(18,2)")
+                                .HasDefaultValue(0m)
+                                .HasColumnName("discount_amount");
+
+                            b1.Property<decimal?>("DiscountPercent")
+                                .HasColumnType("numeric(5,2)")
+                                .HasColumnName("discount_percent");
 
                             b1.Property<string>("ItemName")
                                 .IsRequired()
