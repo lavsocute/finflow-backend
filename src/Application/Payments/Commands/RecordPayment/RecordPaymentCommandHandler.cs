@@ -72,8 +72,12 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
         if (!AllowedReimbursementMethods.Contains(paymentMethod))
             return Result.Failure<PaymentResponse>(new Error("Payment.InvalidMethod", $"Payment method '{request.PaymentMethod}' is not supported for employee reimbursement."));
 
-        var currencyCode = CurrencyCode.VND;
-        var exchangeRate = DefaultExchangeRate;
+        // Multi-currency: derive from document. Document carries its native currency
+        // and the exchange rate captured at upload/review time. Payment inherits the
+        // same snapshot so historical reports remain bound to the original rate.
+        var currencyCode = document.CurrencyCode;
+        var exchangeRate = document.ExchangeRate;
+        var baseCurrencyCode = document.BaseCurrencyCode;
 
         var paymentResult = Payment.Create(
             _currentTenant.Id.Value,
@@ -82,6 +86,7 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
             document.TotalAmount,
             currencyCode,
             exchangeRate,
+            baseCurrencyCode,
             _currentTenant.MembershipId.Value,
             paymentMethod,
             request.Notes);
@@ -99,8 +104,10 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
             payment.Id,
             payment.DocumentId,
             payment.Amount,
-            payment.CurrencyCode.ToString(),
-            payment.AmountInVnd,
+            payment.CurrencyCode,
+            payment.AmountInBaseCurrency,
+            payment.BaseCurrencyCode,
+            payment.ExchangeRate,
             payment.Method.ToString(),
             payment.Status.ToString(),
             payment.RecordedAt,

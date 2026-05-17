@@ -14,21 +14,21 @@ internal sealed class TenantRepository : ITenantRepository
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
             .Where(t => t.Id == id)
-            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
+            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive, t.Currency))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<IReadOnlyList<TenantSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
             .Where(t => ids.Contains(t.Id))
-            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
+            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive, t.Currency))
             .ToListAsync(cancellationToken);
 
     public async Task<TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
             .Where(t => t.TenantCode == tenantCode.Trim().ToLowerInvariant())
-            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
+            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive, t.Currency))
             .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<bool> ExistsByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
@@ -39,7 +39,7 @@ internal sealed class TenantRepository : ITenantRepository
         await _dbContext.Set<Tenant>()
             .AsNoTracking()
             .Where(t => t.IsActive)
-            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive))
+            .Select(t => new TenantSummary(t.Id, t.Name, t.TenantCode, t.TenancyModel, t.IsActive, t.Currency))
             .ToListAsync(cancellationToken);
 
     public void Add(Tenant tenant) => _dbContext.Set<Tenant>().Add(tenant);

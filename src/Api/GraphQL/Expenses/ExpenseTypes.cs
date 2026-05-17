@@ -8,7 +8,8 @@ public sealed class ExpensePayload
     public string VendorName { get; set; } = null!;
     public decimal Amount { get; set; }
     public string CurrencyCode { get; set; } = null!;
-    public decimal AmountInVnd { get; set; }
+    public decimal AmountInBaseCurrency { get; set; }
+    public string BaseCurrencyCode { get; set; } = null!;
     public int Month { get; set; }
     public int Year { get; set; }
     public DateTime ExpenseDate { get; set; }
@@ -20,8 +21,9 @@ public sealed class ExpensePayload
         Id = summary.Id,
         VendorName = summary.VendorName,
         Amount = summary.Amount,
-        CurrencyCode = summary.CurrencyCode.ToString(),
-        AmountInVnd = summary.AmountInVnd,
+        CurrencyCode = summary.CurrencyCode,
+        AmountInBaseCurrency = summary.AmountInBaseCurrency,
+        BaseCurrencyCode = summary.BaseCurrencyCode,
         Month = summary.Month,
         Year = summary.Year,
         ExpenseDate = summary.ExpenseDate,

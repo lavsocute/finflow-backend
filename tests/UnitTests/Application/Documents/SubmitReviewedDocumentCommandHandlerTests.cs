@@ -51,9 +51,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
             draftRepository.Object,
             membershipRepository.Object,
             vendorRepository.Object,
-            unitOfWork.Object,
-            indexer.Object,
-            logger.Object);
+            unitOfWork.Object, indexer.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), logger.Object);
 
         var result = await sut.Handle(CreateCommand(tenantId, membershipId), CancellationToken.None);
 
@@ -101,9 +99,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
             draftRepository.Object,
             membershipRepository.Object,
             vendorRepository.Object,
-            unitOfWork.Object,
-            indexer.Object,
-            logger.Object);
+            unitOfWork.Object, indexer.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), logger.Object);
 
         var result = await sut.Handle(CreateCommand(tenantId, membershipId), CancellationToken.None);
 

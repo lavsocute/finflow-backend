@@ -16,5 +16,9 @@ public sealed record DocumentOcrDraftResponse(
     string ReviewedByStaff,
     string ConfidenceLabel,
     bool HasImage,
-    IReadOnlyList<DocumentOcrDraftLineItemResponse> LineItems
+    IReadOnlyList<DocumentOcrDraftLineItemResponse> LineItems,
+    string CurrencyCode = "VND",
+    decimal ExchangeRate = 1m,
+    string BaseCurrencyCode = "VND",
+    decimal TotalAmountInBaseCurrency = 0m
 );

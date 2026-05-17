@@ -25,6 +25,7 @@ public static class LlmVisionOcrParser
             var subtotal = GetRequiredDecimal(root, "subtotal");
             var vat = GetRequiredDecimal(root, "vat");
             var totalAmount = GetRequiredDecimal(root, "totalAmount");
+            var currencyCode = NormalizeCurrencyCode(GetOptionalString(root, "currencyCode"));
 
             if (!root.TryGetProperty("lineItems", out var lineItemsElement) || lineItemsElement.ValueKind != JsonValueKind.Array)
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
@@ -52,7 +53,8 @@ public static class LlmVisionOcrParser
                 source,
                 "AI extracted",
                 lineItems,
-                0));
+                0,
+                currencyCode));
         }
         catch (FormatException)
         {
@@ -106,7 +108,8 @@ public static class LlmVisionOcrParser
     private static DateOnly GetRequiredDate(JsonElement element, string propertyName)
     {
         var value = GetRequiredString(element, propertyName);
-        if (!DateOnly.TryParse(value, out var date))
+        // Fix #22: force InvariantCulture / ISO-8601 to avoid month-day flip on non-en-US hosts.
+        if (!DateOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date))
             throw new FormatException($"{propertyName} must be a valid date.");
 
         return date;
@@ -118,7 +121,7 @@ public static class LlmVisionOcrParser
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
-        if (!DateOnly.TryParse(value, out var date))
+        if (!DateOnly.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date))
             throw new FormatException($"{propertyName} must be a valid date.");
 
         return date;
@@ -144,5 +147,28 @@ public static class LlmVisionOcrParser
 
         var normalized = value.Trim();
         return normalized.Length <= 50 ? normalized : null;
+    }
+
+    /// <summary>
+    /// Normalize currency code: trim, uppercase, validate ISO 4217 format (3 letters A-Z).
+    /// Returns null when the LLM emits something unparseable; the caller will then fall back
+    /// to the tenant base currency.
+    /// </summary>
+    private static string? NormalizeCurrencyCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim().ToUpperInvariant();
+        if (normalized.Length != 3)
+            return null;
+
+        for (var i = 0; i < normalized.Length; i++)
+        {
+            if (normalized[i] is < 'A' or > 'Z')
+                return null;
+        }
+
+        return normalized;
     }
 }

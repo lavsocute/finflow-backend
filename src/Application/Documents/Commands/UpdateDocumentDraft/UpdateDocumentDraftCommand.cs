@@ -20,7 +20,9 @@ public sealed record UpdateDocumentDraftCommand(
     decimal Vat,
     decimal TotalAmount,
     string ConfidenceLabel,
-    IReadOnlyList<UpdateDocumentDraftLineItem> LineItems
+    IReadOnlyList<UpdateDocumentDraftLineItem> LineItems,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null
 ) : IRequest<Result<DocumentOcrDraftResponse>>;
 
 public sealed record UpdateDocumentDraftLineItem(

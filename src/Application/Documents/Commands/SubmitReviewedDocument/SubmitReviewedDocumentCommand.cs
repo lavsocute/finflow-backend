@@ -32,5 +32,7 @@ public sealed record SubmitReviewedDocumentCommand(
     DateTime SubmittedAt,
     IReadOnlyList<SubmitReviewedDocumentLineItem> LineItems,
     decimal? DocumentDiscountPercent = null,
-    decimal DocumentDiscountAmount = 0m
+    decimal DocumentDiscountAmount = 0m,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null
 ) : ICommand<Result<ReviewedDocumentResponse>>;

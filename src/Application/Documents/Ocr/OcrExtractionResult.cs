@@ -14,6 +14,7 @@ public sealed record OcrExtractionResult(
     string ConfidenceLabel,
     IReadOnlyList<OcrExtractionLineItem> LineItems,
     int ProcessedPageCount,
+    string? CurrencyCode = null,
     IReadOnlyList<string> Warnings = null!
 )
 {
@@ -31,7 +32,8 @@ public sealed record OcrExtractionResult(
         string confidenceLabel,
         IReadOnlyList<OcrExtractionLineItem> lineItems,
         int processedPageCount,
-        bool wasTruncated = false)
+        bool wasTruncated = false,
+        string? currencyCode = null)
     {
         var warnings = new List<string>();
         if (wasTruncated)
@@ -51,6 +53,7 @@ public sealed record OcrExtractionResult(
             confidenceLabel,
             lineItems,
             processedPageCount,
+            currencyCode,
             warnings);
     }
 }

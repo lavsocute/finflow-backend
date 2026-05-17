@@ -116,7 +116,7 @@ internal sealed class BudgetRepository : IBudgetRepository
                     e.Month == key.Month &&
                     e.Year == key.Year &&
                     e.Status == FinFlow.Domain.Expenses.ExpenseStatus.Confirmed)
-                .SumAsync(e => e.AmountInVnd, cancellationToken);
+                .SumAsync(e => e.AmountInBaseCurrency, cancellationToken);
             spentByKey[key] = spent;
         }
 
@@ -158,7 +158,7 @@ internal sealed class BudgetRepository : IBudgetRepository
                 e.Month == month &&
                 e.Year == year &&
                 e.Status == FinFlow.Domain.Expenses.ExpenseStatus.Confirmed)
-            .SumAsync(e => e.AmountInVnd, cancellationToken);
+            .SumAsync(e => e.AmountInBaseCurrency, cancellationToken);
     }
 
     public void Add(Budget budget) => _dbContext.Set<Budget>().Add(budget);

@@ -13,7 +13,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -45,7 +45,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -81,7 +81,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var documentDate = new DateOnly(2026, 4, 1);
 
@@ -114,7 +114,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -144,7 +144,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -174,7 +174,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -204,7 +204,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -234,7 +234,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -264,7 +264,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -292,7 +292,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -322,7 +322,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -352,7 +352,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(
@@ -382,7 +382,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork);
+        var handler = new SaveManualDraftCommandHandler(repository, unitOfWork, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SaveManualDraftCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new SaveManualDraftCommand(

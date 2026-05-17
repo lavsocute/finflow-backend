@@ -26,6 +26,11 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         builder.Property(x => x.Subtotal).HasColumnName("subtotal").HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(x => x.Vat).HasColumnName("vat").HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").HasColumnType("numeric(18,2)").IsRequired();
+
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").HasMaxLength(3).IsRequired().HasDefaultValue("VND");
+        builder.Property(x => x.BaseCurrencyCode).HasColumnName("base_currency_code").HasMaxLength(3).IsRequired().HasDefaultValue("VND");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").HasColumnType("numeric(18,6)").IsRequired().HasDefaultValue(1m);
+
         builder.Property(x => x.Source).HasColumnName("source").HasMaxLength(100).IsRequired();
         builder.Property(x => x.ReviewedByStaff).HasColumnName("reviewed_by_staff").HasMaxLength(200).IsRequired();
         builder.Property(x => x.ConfidenceLabel).HasColumnName("confidence_label").HasMaxLength(100).IsRequired();

@@ -49,5 +49,9 @@ public sealed class GetMyDocumentDraftQueryHandler
             draft.HasImage,
             draft.LineItems
                 .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
-                .ToList());
+                .ToList(),
+            draft.CurrencyCode,
+            draft.ExchangeRate,
+            draft.BaseCurrencyCode,
+            decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero));
 }

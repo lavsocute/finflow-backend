@@ -2,7 +2,7 @@ using FinFlow.Domain.Enums;
 
 namespace FinFlow.Domain.Tenants;
 
-public record TenantSummary(Guid Id, string Name, string TenantCode, TenancyModel TenancyModel, bool IsActive);
+public record TenantSummary(Guid Id, string Name, string TenantCode, TenancyModel TenancyModel, bool IsActive, string Currency);
 
 public interface ITenantRepository
 {

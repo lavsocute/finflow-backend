@@ -23,7 +23,8 @@ internal sealed class ExpenseRepository : IExpenseRepository
                 e.VendorName,
                 e.Amount,
                 e.CurrencyCode,
-                e.AmountInVnd,
+                e.AmountInBaseCurrency,
+                e.BaseCurrencyCode,
                 e.Month,
                 e.Year,
                 e.ExpenseDate,
@@ -46,7 +47,8 @@ internal sealed class ExpenseRepository : IExpenseRepository
                 e.VendorName,
                 e.Amount,
                 e.CurrencyCode,
-                e.AmountInVnd,
+                e.AmountInBaseCurrency,
+                e.BaseCurrencyCode,
                 e.Month,
                 e.Year,
                 e.ExpenseDate,
@@ -76,7 +78,8 @@ internal sealed class ExpenseRepository : IExpenseRepository
                 e.VendorName,
                 e.Amount,
                 e.CurrencyCode,
-                e.AmountInVnd,
+                e.AmountInBaseCurrency,
+                e.BaseCurrencyCode,
                 e.Month,
                 e.Year,
                 e.ExpenseDate,
@@ -90,7 +93,7 @@ internal sealed class ExpenseRepository : IExpenseRepository
         await _dbContext.Set<Expense>()
             .AsNoTracking()
             .Where(e => e.IdDepartment == departmentId && e.Month == month && e.Year == year && e.Status == status)
-            .SumAsync(e => e.AmountInVnd, cancellationToken);
+            .SumAsync(e => e.AmountInBaseCurrency, cancellationToken);
 
     public async Task<Expense?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<Expense>()

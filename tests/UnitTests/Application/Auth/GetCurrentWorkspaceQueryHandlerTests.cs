@@ -42,7 +42,8 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
                 "Claims Only Workspace",
                 "claims-only-workspace",
                 TenancyModel.Shared,
-                true)));
+                true,
+                "VND")));
 
         var result = await handler.Handle(
             new GetCurrentWorkspaceQuery(accountId, tenantId, membershipId),

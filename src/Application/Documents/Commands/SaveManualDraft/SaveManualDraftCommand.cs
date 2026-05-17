@@ -23,5 +23,7 @@ public sealed record SaveManualDraftCommand(
     decimal Vat,
     decimal TotalAmount,
     string ReviewedByStaff,
-    IReadOnlyList<SaveManualDraftLineItem> LineItems
+    IReadOnlyList<SaveManualDraftLineItem> LineItems,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null
 ) : ICommand<Result<Guid>>;

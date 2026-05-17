@@ -6,12 +6,16 @@ public static class LlmVisionPrompt
         """
         Extract this expense document into strict JSON only.
         Return keys:
-        vendorName, reference, documentDate, extractedInvoiceDueDate, category, vendorTaxId, subtotal, vat, totalAmount, lineItems.
+        vendorName, reference, documentDate, extractedInvoiceDueDate, category, vendorTaxId,
+        currencyCode, subtotal, vat, totalAmount, lineItems.
         lineItems must be an array of objects with itemName, quantity, unitPrice, total.
         Rules:
-        - Output JSON only
-        - Dates must use yyyy-MM-dd
-        - Use numbers for money and quantities
-        - Do not invent values
+        - Output JSON only.
+        - Dates must use yyyy-MM-dd.
+        - Use numbers for money and quantities (no thousand separators).
+        - currencyCode must be a 3-letter ISO 4217 code in uppercase (USD, VND, EUR, GBP, JPY, SGD, CNY...).
+          Infer it from currency symbols or words on the document. If genuinely unknown, return null.
+          Do NOT default to a region's currency; only return a code you can verify on the page.
+        - Do not invent values. Use null for fields you cannot read.
         """;
 }

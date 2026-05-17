@@ -1,7 +1,9 @@
+using FinFlow.Application.Common.ExchangeRates;
 using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Tenants;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -10,17 +12,25 @@ namespace FinFlow.Application.Documents.Commands.UpdateDocumentDraft;
 internal sealed class UpdateDocumentDraftCommandHandler
     : IRequestHandler<UpdateDocumentDraftCommand, Result<DocumentOcrDraftResponse>>
 {
+    private const string DefaultBaseCurrency = "VND";
+
     private readonly IUploadedDocumentDraftRepository _draftRepo;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ITenantRepository _tenantRepository;
+    private readonly IExchangeRateService _exchangeRateService;
     private readonly ILogger<UpdateDocumentDraftCommandHandler> _logger;
 
     public UpdateDocumentDraftCommandHandler(
         IUploadedDocumentDraftRepository draftRepo,
         IUnitOfWork unitOfWork,
+        ITenantRepository tenantRepository,
+        IExchangeRateService exchangeRateService,
         ILogger<UpdateDocumentDraftCommandHandler> logger)
     {
         _draftRepo = draftRepo;
         _unitOfWork = unitOfWork;
+        _tenantRepository = tenantRepository;
+        _exchangeRateService = exchangeRateService;
         _logger = logger;
     }
 
@@ -61,6 +71,29 @@ internal sealed class UpdateDocumentDraftCommandHandler
         if (updateResult.IsFailure)
             return Result.Failure<DocumentOcrDraftResponse>(updateResult.Error);
 
+        // Currency edit path. Reviewer may correct a wrong OCR currency
+        // (e.g. inferred USD but invoice is actually AUD), or override the rate.
+        // We re-resolve only when the caller provided either field; otherwise the
+        // existing snapshot stays intact.
+        if (cmd.CurrencyCode is not null || cmd.ExchangeRate is not null)
+        {
+            var ctxResult = await ResolveCurrencyContextAsync(
+                cmd.TenantId,
+                cmd.CurrencyCode ?? draft.CurrencyCode,
+                cmd.ExchangeRate,
+                cmd.DocumentDate,
+                draft.BaseCurrencyCode,
+                ct);
+
+            if (ctxResult.IsFailure)
+                return Result.Failure<DocumentOcrDraftResponse>(ctxResult.Error);
+
+            var ctx = ctxResult.Value;
+            var setCurrency = draft.SetCurrencyContext(ctx.DocumentCurrency, ctx.BaseCurrency, ctx.ExchangeRate);
+            if (setCurrency.IsFailure)
+                return Result.Failure<DocumentOcrDraftResponse>(setCurrency.Error);
+        }
+
         _draftRepo.Update(draft);
         await _unitOfWork.SaveChangesAsync(ct);
 
@@ -69,6 +102,51 @@ internal sealed class UpdateDocumentDraftCommandHandler
             draft.Id, cmd.TenantId, cmd.MembershipId, cmd.IsTenantOwner);
 
         return Result.Success(MapToResponse(draft));
+    }
+
+    private async Task<Result<CurrencyContext>> ResolveCurrencyContextAsync(
+        Guid tenantId,
+        string requestedCurrency,
+        decimal? requestedRate,
+        DateOnly documentDate,
+        string existingBaseCurrency,
+        CancellationToken cancellationToken)
+    {
+        // Base currency is locked at draft creation — never changes during edit.
+        var baseCurrency = string.IsNullOrWhiteSpace(existingBaseCurrency)
+            ? DefaultBaseCurrency
+            : existingBaseCurrency;
+
+        // Fall back to tenant default when caller passes blank.
+        if (string.IsNullOrWhiteSpace(baseCurrency))
+        {
+            var tenantSummary = await _tenantRepository.GetByIdAsync(tenantId, cancellationToken);
+            baseCurrency = string.IsNullOrWhiteSpace(tenantSummary?.Currency)
+                ? DefaultBaseCurrency
+                : tenantSummary!.Currency;
+        }
+
+        var documentCurrency = string.IsNullOrWhiteSpace(requestedCurrency)
+            ? baseCurrency
+            : requestedCurrency.Trim().ToUpperInvariant();
+
+        if (string.Equals(documentCurrency, baseCurrency, StringComparison.OrdinalIgnoreCase))
+            return Result.Success(new CurrencyContext(baseCurrency, baseCurrency, 1m));
+
+        if (requestedRate is { } explicitRate && explicitRate > 0m)
+            return Result.Success(new CurrencyContext(documentCurrency, baseCurrency, explicitRate));
+
+        var rateResult = await _exchangeRateService.GetRateAsync(
+            documentCurrency, baseCurrency, documentDate, cancellationToken);
+
+        if (rateResult.IsSuccess)
+            return Result.Success(new CurrencyContext(documentCurrency, baseCurrency, rateResult.Value.Rate));
+
+        _logger.LogWarning(
+            "Update draft currency rate {From}->{To} on {Date} unavailable; keeping base currency. {Error}",
+            documentCurrency, baseCurrency, documentDate, rateResult.Error.Description);
+
+        return Result.Success(new CurrencyContext(baseCurrency, baseCurrency, 1m));
     }
 
     private static DocumentOcrDraftResponse MapToResponse(UploadedDocumentDraft draft) =>
@@ -90,5 +168,11 @@ internal sealed class UpdateDocumentDraftCommandHandler
             draft.HasImage,
             draft.LineItems
                 .Select(li => new DocumentOcrDraftLineItemResponse(li.ItemName, li.Quantity, li.UnitPrice, li.Total))
-                .ToList());
+                .ToList(),
+            draft.CurrencyCode,
+            draft.ExchangeRate,
+            draft.BaseCurrencyCode,
+            decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero));
+
+    private readonly record struct CurrencyContext(string DocumentCurrency, string BaseCurrency, decimal ExchangeRate);
 }

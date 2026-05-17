@@ -21,7 +21,7 @@ public sealed class UpdateDocumentDraftCommandHandlerTests
         repo.Setup(r => r.GetByIdAsync(draft.Id, TenantId, MembershipId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(draft);
         var uow = new Mock<IUnitOfWork>();
-        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
+        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
 
         var cmd = BuildCommand(draft.Id, isTenantOwner: false);
         var result = await handler.Handle(cmd, CancellationToken.None);
@@ -40,7 +40,7 @@ public sealed class UpdateDocumentDraftCommandHandlerTests
             .ReturnsAsync((UploadedDocumentDraft?)null);
         var uow = new Mock<IUnitOfWork>();
         
-        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
+        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
 
         var cmd = BuildCommand(Guid.NewGuid(), isTenantOwner: false);
         var result = await handler.Handle(cmd, CancellationToken.None);
@@ -58,7 +58,7 @@ public sealed class UpdateDocumentDraftCommandHandlerTests
             .ReturnsAsync(draft);
         var uow = new Mock<IUnitOfWork>();
         
-        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
+        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
 
         var cmd = BuildCommand(draft.Id, isTenantOwner: true);
         var result = await handler.Handle(cmd, CancellationToken.None);
@@ -77,7 +77,7 @@ public sealed class UpdateDocumentDraftCommandHandlerTests
             .ReturnsAsync(draft);
         var uow = new Mock<IUnitOfWork>();
         
-        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
+        var handler = new UpdateDocumentDraftCommandHandler(repo.Object, uow.Object, new FinFlow.UnitTests.TestStubs.StubTenantRepository(), new FinFlow.UnitTests.TestStubs.StubExchangeRateService(), NullLogger<UpdateDocumentDraftCommandHandler>.Instance);
 
         var cmd = BuildCommand(draft.Id, isTenantOwner: false);
         var result = await handler.Handle(cmd, CancellationToken.None);

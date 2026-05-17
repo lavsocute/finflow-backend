@@ -511,6 +511,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("chatbot_messages_used");
 
+                    b.Property<long>("ChatbotTokensUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("chatbot_tokens_used");
+
                     b.Property<Guid>("IdTenant")
                         .HasColumnType("uuid")
                         .HasColumnName("id_tenant");
@@ -694,6 +700,14 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BaseCurrencyCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("VND")
+                        .HasColumnName("base_currency_code");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -716,6 +730,14 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("VND")
+                        .HasColumnName("currency_code");
+
                     b.Property<DateOnly>("DocumentDate")
                         .HasColumnType("date")
                         .HasColumnName("document_date");
@@ -729,6 +751,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<decimal?>("DocumentDiscountPercent")
                         .HasColumnType("numeric(5,2)")
                         .HasColumnName("document_discount_percent");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("exchange_rate");
 
                     b.Property<Guid>("IdDepartment")
                         .HasColumnType("uuid")
@@ -1148,6 +1176,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("chatbot_messages_used");
 
+                    b.Property<long>("ChatbotTokensUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("chatbot_tokens_used");
+
                     b.Property<Guid>("IdTenant")
                         .HasColumnType("uuid")
                         .HasColumnName("id_tenant");
@@ -1198,6 +1232,14 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BaseCurrencyCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("VND")
+                        .HasColumnName("base_currency_code");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1220,6 +1262,14 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("VND")
+                        .HasColumnName("currency_code");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -1237,6 +1287,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<decimal?>("DocumentDiscountPercent")
                         .HasColumnType("numeric(5,2)")
                         .HasColumnName("document_discount_percent");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("exchange_rate");
 
                     b.Property<Guid>("IdTenant")
                         .HasColumnType("uuid")
@@ -1390,6 +1446,57 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.ToTable("vendor", (string)null);
                 });
 
+            modelBuilder.Entity("FinFlow.Domain.ExchangeRates.ExchangeRateHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedByMembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_membership_id");
+
+                    b.Property<string>("FromCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("from_currency");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rate");
+
+                    b.Property<DateOnly>("RateDate")
+                        .HasColumnType("date")
+                        .HasColumnName("rate_date");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("ToCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("to_currency");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromCurrency", "ToCurrency", "RateDate")
+                        .HasDatabaseName("ix_exchange_rate_lookup");
+
+                    b.HasIndex("FromCurrency", "ToCurrency", "RateDate", "Source")
+                        .IsUnique()
+                        .HasDatabaseName("uq_exchange_rate_key");
+
+                    b.ToTable("exchange_rate_history", (string)null);
+                });
+
             modelBuilder.Entity("FinFlow.Domain.Expenses.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1470,10 +1577,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(15,2)")
                         .HasColumnName("amount");
 
-                    b.Property<decimal>("AmountInVnd")
+                    b.Property<decimal>("AmountInBaseCurrency")
                         .HasPrecision(15, 2)
                         .HasColumnType("numeric(15,2)")
-                        .HasColumnName("amount_in_vnd");
+                        .HasColumnName("amount_in_base_currency");
+
+                    b.Property<string>("BaseCurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("base_currency_code");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1517,8 +1630,30 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("payment_id");
 
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rejected_at");
+
+                    b.Property<Guid?>("RejectedByMembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rejected_by_membership_id");
+
                     b.Property<string>("RejectionReason")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<DateTime?>("ReopenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reopened_at");
+
+                    b.Property<Guid?>("ReopenedByMembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reopened_by_membership_id");
+
+                    b.Property<string>("ReopenedReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reopened_reason");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1535,6 +1670,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("vendor_name");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<int>("Year")
                         .HasColumnType("integer")
@@ -1571,10 +1712,29 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(15,2)")
                         .HasColumnName("amount");
 
-                    b.Property<decimal>("AmountInVnd")
+                    b.Property<decimal>("AmountInBaseCurrency")
                         .HasPrecision(15, 2)
                         .HasColumnType("numeric(15,2)")
-                        .HasColumnName("amount_in_vnd");
+                        .HasColumnName("amount_in_base_currency");
+
+                    b.Property<string>("BaseCurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("base_currency_code");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledByMembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_membership_id");
 
                     b.Property<DateTime?>("ConfirmedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1635,10 +1795,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnName("recorded_by_membership_id");
 
                     b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rejected_at");
 
                     b.Property<Guid?>("RejectedByMembershipId")
-                        .HasColumnType("uuid");
+                        .HasColumnType("uuid")
+                        .HasColumnName("rejected_by_membership_id");
 
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
@@ -1660,6 +1822,12 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DocumentId")
@@ -1672,6 +1840,78 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("payment", (string)null);
+                });
+
+            modelBuilder.Entity("FinFlow.Domain.Expenses.PaymentRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("failure_reason");
+
+                    b.Property<Guid>("IdTenant")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id_tenant");
+
+                    b.Property<DateTime>("InitiatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("initiated_at");
+
+                    b.Property<Guid>("InitiatedByMembershipId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("initiated_by_membership_id");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdTenant");
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("payment_refund", (string)null);
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.Department", b =>

@@ -28,7 +28,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             subscriptionQuotaGate,
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -77,7 +77,10 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             new DeniedSubscriptionQuotaGate(),
-            new NoOpDocumentStorageProvider())!;
+            new NoOpDocumentStorageProvider(),
+            new StubTenantRepositoryWithCurrency("VND"),
+            new StubExchangeRateService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance)!;
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -132,7 +135,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             subscriptionQuotaGate,
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -232,7 +235,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             new AllowAllSubscriptionQuotaGate(),
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -263,7 +266,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         var ocrService = new StubOcrExtractionService(Result.Failure<OcrExtractionResult>(ocrError));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -302,7 +305,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 [new OcrExtractionLineItem("Cloud Compute Instance", 1, 850.00m, 850.00m)], 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -341,7 +344,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 null!, 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -367,7 +370,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             Result.Success(CreateValidOcrResult([])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -395,7 +398,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -423,7 +426,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -451,7 +454,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -479,7 +482,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -515,7 +518,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             new AllowAllSubscriptionQuotaGate(),
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -549,7 +552,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             new AllowAllSubscriptionQuotaGate(),
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -586,7 +589,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             unitOfWork,
             ocrService,
             new AllowAllSubscriptionQuotaGate(),
-            new NoOpDocumentStorageProvider());
+            new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -626,7 +629,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
                 ], 1)));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -654,7 +657,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         ])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -701,7 +704,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             Result.Success(CreateValidOcrResult([new OcrExtractionLineItem("Cloud Compute Instance", 1, 850.00m, 850.00m)])));
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
-        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider());
+        var handler = new UploadDocumentForReviewCommandHandler(repository, unitOfWork, ocrService, new AllowAllSubscriptionQuotaGate(), new NoOpDocumentStorageProvider(), new StubTenantRepositoryWithCurrency("VND"), new StubExchangeRateService(), Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
 
         var result = await handler.Handle(
             new UploadDocumentForReviewCommand(
@@ -940,5 +943,45 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
 
         public Task<string?> GetContentTypeAsync(Guid documentId, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
+    }
+
+    private sealed class StubTenantRepositoryWithCurrency : FinFlow.Domain.Tenants.ITenantRepository
+    {
+        private readonly string _currency;
+        public StubTenantRepositoryWithCurrency(string currency) => _currency = currency;
+
+        public Task<FinFlow.Domain.Tenants.TenantSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<FinFlow.Domain.Tenants.TenantSummary?>(
+                new FinFlow.Domain.Tenants.TenantSummary(id, "Test", "test", FinFlow.Domain.Enums.TenancyModel.Shared, true, _currency));
+
+        public Task<IReadOnlyList<FinFlow.Domain.Tenants.TenantSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<FinFlow.Domain.Tenants.TenantSummary>>(Array.Empty<FinFlow.Domain.Tenants.TenantSummary>());
+
+        public Task<FinFlow.Domain.Tenants.TenantSummary?> GetByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) =>
+            Task.FromResult<FinFlow.Domain.Tenants.TenantSummary?>(null);
+
+        public Task<bool> ExistsByCodeAsync(string tenantCode, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<FinFlow.Domain.Tenants.TenantSummary>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<FinFlow.Domain.Tenants.TenantSummary>>(Array.Empty<FinFlow.Domain.Tenants.TenantSummary>());
+
+        public void Add(FinFlow.Domain.Entities.Tenant tenant) { }
+        public void Update(FinFlow.Domain.Entities.Tenant tenant) { }
+        public void Remove(FinFlow.Domain.Entities.Tenant tenant) { }
+    }
+
+    private sealed class StubExchangeRateService : FinFlow.Application.Common.ExchangeRates.IExchangeRateService
+    {
+        public Task<FinFlow.Domain.Abstractions.Result<FinFlow.Application.Common.ExchangeRates.ExchangeRateLookupResult>> GetRateAsync(
+            string fromCurrency, string toCurrency, DateOnly rateDate, CancellationToken cancellationToken = default)
+        {
+            // Simple stub: same currency = 1.0; otherwise default to a fake rate.
+            var rate = string.Equals(fromCurrency, toCurrency, StringComparison.OrdinalIgnoreCase)
+                ? 1m
+                : 25_000m;
+            return Task.FromResult(FinFlow.Domain.Abstractions.Result.Success(
+                new FinFlow.Application.Common.ExchangeRates.ExchangeRateLookupResult(
+                    rate, rateDate, FinFlow.Domain.ExchangeRates.ExchangeRateSource.System)));
+        }
     }
 }

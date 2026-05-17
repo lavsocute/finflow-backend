@@ -17,9 +17,10 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.DocumentId).HasColumnName("document_id").IsRequired();
         builder.Property(x => x.IdDepartment).HasColumnName("id_department").IsRequired();
         builder.Property(x => x.Amount).HasColumnName("amount").HasPrecision(15, 2).IsRequired();
-        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").HasConversion<string>().HasMaxLength(3).IsRequired();
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").HasMaxLength(3).IsRequired();
         builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").HasPrecision(18, 6).IsRequired();
-        builder.Property(x => x.AmountInVnd).HasColumnName("amount_in_vnd").HasPrecision(15, 2).IsRequired();
+        builder.Property(x => x.AmountInBaseCurrency).HasColumnName("amount_in_base_currency").HasPrecision(15, 2).IsRequired();
+        builder.Property(x => x.BaseCurrencyCode).HasColumnName("base_currency_code").HasMaxLength(3).IsRequired();
         builder.Property(x => x.RecordedByMembershipId).HasColumnName("recorded_by_membership_id").IsRequired();
         builder.Property(x => x.RecordedAt).HasColumnName("recorded_at").IsRequired();
         builder.Property(x => x.Method).HasColumnName("payment_method").HasConversion<string>().HasMaxLength(50).IsRequired();
@@ -32,6 +33,19 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.Notes).HasColumnName("notes").HasColumnType("text");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+        builder.Property(x => x.RejectedAt).HasColumnName("rejected_at");
+        builder.Property(x => x.RejectedByMembershipId).HasColumnName("rejected_by_membership_id");
+
+        builder.Property(x => x.CancelledByMembershipId).HasColumnName("cancelled_by_membership_id");
+        builder.Property(x => x.CancelledAt).HasColumnName("cancelled_at");
+        builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(500);
+
+        builder.Property(x => x.Version)
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
 
         builder.HasIndex(x => x.IdTenant);
         builder.HasIndex(x => x.DocumentId).IsUnique();
