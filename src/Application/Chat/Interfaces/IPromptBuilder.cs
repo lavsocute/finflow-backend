@@ -16,7 +16,8 @@ public interface IPromptBuilder
 public record Prompt(
     string System,
     string User,
-    IReadOnlyList<ChatMessage> History
+    IReadOnlyList<ChatMessage> History,
+    string Version = "1.0.0"
 );
 
 public record ChatAccessScope(

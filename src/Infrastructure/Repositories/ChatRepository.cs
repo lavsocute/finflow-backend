@@ -20,6 +20,14 @@ public class ChatRepository : IChatRepository
             .FirstOrDefaultAsync(s => s.Id == sessionId && s.MembershipId == membershipId, ct);
     }
 
+    public async Task<ChatSession?> GetOwnedSessionAsync(Guid sessionId, Guid tenantId, Guid membershipId, CancellationToken ct = default)
+    {
+        return await _dbContext.ChatSessions
+            .FirstOrDefaultAsync(
+                s => s.Id == sessionId && s.IdTenant == tenantId && s.MembershipId == membershipId,
+                ct);
+    }
+
     public async Task<IReadOnlyList<ChatMessage>> GetMessagesBySessionAsync(Guid sessionId, CancellationToken ct = default)
     {
         return await _dbContext.ChatMessages

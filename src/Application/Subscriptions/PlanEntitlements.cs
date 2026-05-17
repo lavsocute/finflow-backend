@@ -8,7 +8,9 @@ public sealed record PlanEntitlements(
     int WorkspaceMonthlyOcrPages,
     int MemberMonthlyOcrPages,
     int WorkspaceMonthlyChatbotMessages,
-    int MemberMonthlyChatbotMessages)
+    int MemberMonthlyChatbotMessages,
+    long WorkspaceMonthlyChatbotTokens = 0L,
+    long MemberMonthlyChatbotTokens = 0L)
 {
     // Compatibility only: later quota-gate work should bind to the workspace/member-specific properties instead.
     [Obsolete("Compatibility alias for workspace OCR quota only. Prefer WorkspaceMonthlyOcrPages or MemberMonthlyOcrPages.", false)]

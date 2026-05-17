@@ -79,6 +79,29 @@ public sealed class MemberUsageService : IMemberUsageService
             throw new InvalidOperationException(result.Error.Description);
     }
 
+    public async Task RecordChatbotTokensAsync(
+        Guid tenantId,
+        Guid membershipId,
+        long tokensUsed,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken cancellationToken = default)
+    {
+        if (tokensUsed <= 0)
+            return;
+
+        var snapshot = await GetOrCreateSnapshotAsync(
+            tenantId,
+            membershipId,
+            periodStart,
+            periodEnd,
+            cancellationToken);
+
+        var result = snapshot.RecordChatbotTokens(tokensUsed);
+        if (result.IsFailure)
+            throw new InvalidOperationException(result.Error.Description);
+    }
+
     private async Task<MemberUsageSnapshot> GetOrCreateSnapshotAsync(
         Guid tenantId,
         Guid membershipId,

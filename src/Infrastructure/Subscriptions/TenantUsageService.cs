@@ -49,6 +49,22 @@ public sealed class TenantUsageService : ITenantUsageService
             throw new InvalidOperationException(result.Error.Description);
     }
 
+    public async Task RecordChatbotTokensAsync(
+        Guid tenantId,
+        long tokensUsed,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken cancellationToken = default)
+    {
+        if (tokensUsed <= 0)
+            return;
+
+        var snapshot = await GetOrCreateSnapshotAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        var result = snapshot.RecordChatbotTokens(tokensUsed);
+        if (result.IsFailure)
+            throw new InvalidOperationException(result.Error.Description);
+    }
+
     public async Task SetStorageUsedBytesAsync(
         Guid tenantId,
         long storageUsedBytes,

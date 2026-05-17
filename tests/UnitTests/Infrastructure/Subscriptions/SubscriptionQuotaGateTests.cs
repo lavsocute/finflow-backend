@@ -338,6 +338,14 @@ public sealed class SubscriptionQuotaGateTests
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task RecordChatbotTokensAsync(
+            Guid tenantId,
+            long tokensUsed,
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task SetStorageUsedBytesAsync(
             Guid tenantId,
             long storageUsedBytes,
@@ -377,6 +385,15 @@ public sealed class SubscriptionQuotaGateTests
             Guid tenantId,
             Guid membershipId,
             int messageCount,
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RecordChatbotTokensAsync(
+            Guid tenantId,
+            Guid membershipId,
+            long tokensUsed,
             DateOnly periodStart,
             DateOnly periodEnd,
             CancellationToken cancellationToken = default)
@@ -423,6 +440,14 @@ public sealed class SubscriptionQuotaGateTests
             return Task.CompletedTask;
         }
 
+        public Task RecordChatbotTokensAsync(
+            Guid tenantId,
+            long tokensUsed,
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task SetStorageUsedBytesAsync(
             Guid tenantId,
             long storageUsedBytes,
@@ -465,6 +490,14 @@ public sealed class SubscriptionQuotaGateTests
         public Task RecordChatbotUsageAsync(
             Guid tenantId,
             int messageCount,
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            CancellationToken cancellationToken = default)
+            => Task.FromException(_exception);
+
+        public Task RecordChatbotTokensAsync(
+            Guid tenantId,
+            long tokensUsed,
             DateOnly periodStart,
             DateOnly periodEnd,
             CancellationToken cancellationToken = default)
@@ -521,5 +554,14 @@ public sealed class SubscriptionQuotaGateTests
             ChatbotRecord = (tenantId, membershipId, messageCount, periodStart, periodEnd);
             return Task.CompletedTask;
         }
+
+        public Task RecordChatbotTokensAsync(
+            Guid tenantId,
+            Guid membershipId,
+            long tokensUsed,
+            DateOnly periodStart,
+            DateOnly periodEnd,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

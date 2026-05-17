@@ -21,6 +21,7 @@ internal sealed class MemberUsageSnapshotConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.PeriodEnd).HasColumnName("period_end").HasColumnType("date").IsRequired();
         builder.Property(x => x.OcrPagesUsed).HasColumnName("ocr_pages_used").HasDefaultValue(0).IsRequired();
         builder.Property(x => x.ChatbotMessagesUsed).HasColumnName("chatbot_messages_used").HasDefaultValue(0).IsRequired();
+        builder.Property(x => x.ChatbotTokensUsed).HasColumnName("chatbot_tokens_used").HasDefaultValue(0L).IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
         builder.Property(x => x.Version)

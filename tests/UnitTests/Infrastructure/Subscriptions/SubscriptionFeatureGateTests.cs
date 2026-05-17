@@ -170,6 +170,9 @@ public sealed class SubscriptionFeatureGateTests
         public Task RecordChatbotUsageAsync(Guid tenantId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task RecordChatbotTokensAsync(Guid tenantId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task SetStorageUsedBytesAsync(Guid tenantId, long storageUsedBytes, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }

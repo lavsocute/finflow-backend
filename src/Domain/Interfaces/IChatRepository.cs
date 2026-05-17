@@ -5,6 +5,7 @@ namespace FinFlow.Domain.Interfaces;
 public interface IChatRepository
 {
     Task<ChatSession?> GetSessionByIdAndMembershipAsync(Guid sessionId, Guid membershipId, CancellationToken ct = default);
+    Task<ChatSession?> GetOwnedSessionAsync(Guid sessionId, Guid tenantId, Guid membershipId, CancellationToken ct = default);
     Task<IReadOnlyList<ChatMessage>> GetMessagesBySessionAsync(Guid sessionId, CancellationToken ct = default);
     Task AddSessionAsync(ChatSession session, CancellationToken ct = default);
     Task UpdateSessionAsync(ChatSession session, CancellationToken ct = default);

@@ -39,4 +39,16 @@ public interface IMemberUsageService
         DateOnly periodStart,
         DateOnly periodEnd,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records actual chatbot token consumption against the member snapshot.
+    /// Called after the LLM response is received using provider-reported Usage.TotalTokens.
+    /// </summary>
+    Task RecordChatbotTokensAsync(
+        Guid tenantId,
+        Guid membershipId,
+        long tokensUsed,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken cancellationToken = default);
 }

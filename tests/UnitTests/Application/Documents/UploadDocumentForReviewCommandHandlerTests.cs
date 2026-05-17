@@ -796,6 +796,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
+        public Task<Result> EnsureChatbotTokensAvailableAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task RecordChatbotTokensAsync(Guid tenantId, Guid membershipId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
@@ -840,6 +846,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
+        public Task<Result> EnsureChatbotTokensAvailableAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task RecordChatbotTokensAsync(Guid tenantId, Guid membershipId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
         {
             RecordOcrUsageCallCount++;
@@ -867,6 +879,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
+        public Task<Result> EnsureChatbotTokensAvailableAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task RecordChatbotTokensAsync(Guid tenantId, Guid membershipId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
         {
             RecordOcrUsageCallCount++;
@@ -883,6 +901,12 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             => Task.FromResult(Result.Success(CreateDecision(tenantId, membershipId, SubscriptionFeature.DocumentsOcr, pageCount)));
 
         public Task RecordChatbotUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public Task<Result> EnsureChatbotTokensAvailableAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken)
+            => Task.FromResult(Result.Success());
+
+        public Task RecordChatbotTokensAsync(Guid tenantId, Guid membershipId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public Task RecordOcrUsageAsync(SubscriptionQuotaDecision decision, CancellationToken cancellationToken)

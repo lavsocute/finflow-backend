@@ -665,6 +665,9 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         public Task RecordChatbotUsageAsync(Guid tenantId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task RecordChatbotTokensAsync(Guid tenantId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task SetStorageUsedBytesAsync(Guid tenantId, long storageUsedBytes, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
@@ -916,6 +919,26 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     .Where(chunk => !departmentId.HasValue || chunk.DepartmentId == departmentId.Value)
                     .Where(chunk => !ownerId.HasValue || chunk.OwnerMembershipId == ownerId.Value)
                     .Where(chunk => allowedTypes == null || allowedTypes.Count == 0 || allowedTypes.Contains(chunk.Type))
+                    .OrderBy(chunk => chunk.CreatedAt)
+                    .Take(topK)
+                    .ToList());
+
+        public Task<IReadOnlyList<DocumentChunk>> KeywordSearchAsync(
+            string query,
+            Guid tenantId,
+            Guid? departmentId,
+            Guid? ownerId,
+            IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
+            int topK = 20,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<DocumentChunk>>(
+                _dbContext.DocumentChunks
+                    .AsNoTracking()
+                    .Where(chunk => chunk.IdTenant == tenantId)
+                    .Where(chunk => !departmentId.HasValue || chunk.DepartmentId == departmentId.Value)
+                    .Where(chunk => !ownerId.HasValue || chunk.OwnerMembershipId == ownerId.Value)
+                    .Where(chunk => allowedTypes == null || allowedTypes.Count == 0 || allowedTypes.Contains(chunk.Type))
+                    .Where(chunk => string.IsNullOrEmpty(query) || chunk.Content.Contains(query))
                     .OrderBy(chunk => chunk.CreatedAt)
                     .Take(topK)
                     .ToList());

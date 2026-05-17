@@ -24,6 +24,13 @@ public interface ITenantUsageService
         DateOnly periodEnd,
         CancellationToken cancellationToken = default);
 
+    Task RecordChatbotTokensAsync(
+        Guid tenantId,
+        long tokensUsed,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken cancellationToken = default);
+
     Task SetStorageUsedBytesAsync(
         Guid tenantId,
         long storageUsedBytes,

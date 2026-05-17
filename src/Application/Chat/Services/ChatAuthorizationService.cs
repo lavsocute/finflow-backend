@@ -79,6 +79,7 @@ public sealed class ChatAuthorizationService : IChatAuthorizationService
                 {
                     DocumentChunkType.Expense,
                     DocumentChunkType.Receipt,
+                    DocumentChunkType.LineItem,
                     DocumentChunkType.ApprovalFlow,
                     DocumentChunkType.Budget
                 },
@@ -95,7 +96,8 @@ public sealed class ChatAuthorizationService : IChatAuthorizationService
                 new HashSet<DocumentChunkType>
                 {
                     DocumentChunkType.Expense,
-                    DocumentChunkType.Receipt
+                    DocumentChunkType.Receipt,
+                    DocumentChunkType.LineItem
                 },
                 BudgetAccessLevel.LimitOnly,
                 ApprovalAccessLevel.OwnOnly),

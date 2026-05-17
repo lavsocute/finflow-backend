@@ -16,7 +16,9 @@ public sealed class PlanEntitlementCatalog
                 WorkspaceMonthlyOcrPages: 0,
                 MemberMonthlyOcrPages: 0,
                 WorkspaceMonthlyChatbotMessages: 0,
-                MemberMonthlyChatbotMessages: 0),
+                MemberMonthlyChatbotMessages: 0,
+                WorkspaceMonthlyChatbotTokens: 0L,
+                MemberMonthlyChatbotTokens: 0L),
             PlanTier.Pro => new PlanEntitlements(
                 DocumentsManualEntryEnabled: true,
                 DocumentsOcrEnabled: true,
@@ -25,7 +27,10 @@ public sealed class PlanEntitlementCatalog
                 WorkspaceMonthlyOcrPages: 1_000,
                 MemberMonthlyOcrPages: 100,
                 WorkspaceMonthlyChatbotMessages: 10_000,
-                MemberMonthlyChatbotMessages: 500),
+                MemberMonthlyChatbotMessages: 500,
+                // Token caps assume ~1.5K tokens/message average for Pro tier.
+                WorkspaceMonthlyChatbotTokens: 15_000_000L,
+                MemberMonthlyChatbotTokens: 750_000L),
             PlanTier.Enterprise => new PlanEntitlements(
                 DocumentsManualEntryEnabled: true,
                 DocumentsOcrEnabled: true,
@@ -34,7 +39,9 @@ public sealed class PlanEntitlementCatalog
                 WorkspaceMonthlyOcrPages: 10_000,
                 MemberMonthlyOcrPages: 1_000,
                 WorkspaceMonthlyChatbotMessages: 100_000,
-                MemberMonthlyChatbotMessages: 5_000),
+                MemberMonthlyChatbotMessages: 5_000,
+                WorkspaceMonthlyChatbotTokens: 150_000_000L,
+                MemberMonthlyChatbotTokens: 7_500_000L),
             _ => throw new ArgumentOutOfRangeException(nameof(planTier), planTier, null)
         };
 }
