@@ -3,7 +3,7 @@ using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Expenses;
 
-public sealed class Category : Entity, IMultiTenant
+public sealed class Category : Entity, IMultiTenant, ISoftDeletable
 {
     private Category(
         Guid id,

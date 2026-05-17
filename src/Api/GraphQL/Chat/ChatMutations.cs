@@ -59,7 +59,9 @@ public class ChatMutations
             result.SessionId,
             result.MessageId,
             result.DocumentCount,
-            result.TokenUsage);
+            result.TokenUsage,
+            result.Citations?.Select(c => new ChatCitationType(c.ChunkNumber, c.ChunkId, c.DocumentId, c.ChunkType, c.Preview)).ToList()
+                ?? new List<ChatCitationType>());
     }
 
     private static Guid? ResolveMembershipId(IResolverContext context, ICurrentTenant currentTenant)
@@ -92,5 +94,13 @@ public sealed record ChatResponseType(
     Guid SessionId,
     Guid MessageId,
     int DocumentCount,
-    int TokenUsage
+    int TokenUsage,
+    IReadOnlyList<ChatCitationType> Citations
 );
+
+public sealed record ChatCitationType(
+    int ChunkNumber,
+    Guid ChunkId,
+    Guid DocumentId,
+    string ChunkType,
+    string Preview);

@@ -37,8 +37,19 @@ public class ChatServiceTests
         _chatRepositoryMock = new Mock<IChatRepository>();
         _chatAuthServiceMock = new Mock<IChatAuthorizationService>();
         _subscriptionQuotaGateMock = new Mock<ISubscriptionQuotaGate>();
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotTokensAvailableAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+        _subscriptionQuotaGateMock
+            .Setup(x => x.RecordChatbotTokensAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
         _embeddingServiceMock = new Mock<IEmbeddingService>();
         _vectorStoreMock = new Mock<IVectorStore>();
+        _vectorStoreMock
+            .Setup(x => x.KeywordSearchAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(),
+                It.IsAny<IReadOnlyCollection<FinFlow.Domain.Documents.DocumentChunkType>?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<FinFlow.Domain.Documents.DocumentChunk>());
         _rerankServiceMock = new Mock<IRerankService>();
         _promptBuilderMock = new Mock<IPromptBuilder>();
         _currentTenantMock = new Mock<ICurrentTenant>();

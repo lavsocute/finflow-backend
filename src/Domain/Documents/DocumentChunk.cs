@@ -10,7 +10,8 @@ public enum DocumentChunkType
     Receipt,
     ApprovalFlow,
     Budget,
-    Report
+    Report,
+    LineItem
 }
 
 public class DocumentChunk : Entity, IMultiTenant

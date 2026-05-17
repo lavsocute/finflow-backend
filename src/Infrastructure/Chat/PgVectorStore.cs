@@ -3,6 +3,7 @@ using FinFlow.Domain.Documents;
 using FinFlow.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace FinFlow.Infrastructure.Chat;
 
@@ -76,6 +77,67 @@ public class PgVectorStore : IVectorStore
         return chunks
             .OrderBy(c => orderLookup[c.Id])
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<DocumentChunk>> KeywordSearchAsync(
+        string query,
+        Guid tenantId,
+        Guid? departmentId,
+        Guid? ownerId,
+        IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
+        int topK = 20,
+        CancellationToken ct = default)
+    {
+        if (tenantId == Guid.Empty)
+            throw new ArgumentException("tenantId is required.", nameof(tenantId));
+        if (string.IsNullOrWhiteSpace(query))
+            return [];
+        if (topK <= 0)
+            return [];
+
+        var allowedTypeStrings = allowedTypes is { Count: > 0 }
+            ? allowedTypes.Select(x => x.ToString()).ToArray()
+            : null;
+
+        var sql = """
+            SELECT c."Id" AS "Value"
+            FROM document_chunks AS c
+            WHERE c."IdTenant" = @tenantId
+              AND (@departmentId IS NULL OR c."DepartmentId" = @departmentId)
+              AND (@ownerId IS NULL OR c."OwnerMembershipId" = @ownerId)
+              AND (@allowedTypes IS NULL OR c."Type" = ANY(@allowedTypes))
+              AND to_tsvector('simple', c."Content") @@ plainto_tsquery('simple', @query)
+            ORDER BY ts_rank_cd(to_tsvector('simple', c."Content"), plainto_tsquery('simple', @query)) DESC
+            LIMIT @topK
+            """;
+
+        var parameters = new List<NpgsqlParameter>
+        {
+            new("tenantId", NpgsqlDbType.Uuid) { Value = tenantId },
+            new("departmentId", NpgsqlDbType.Uuid) { Value = departmentId.HasValue ? departmentId.Value : DBNull.Value },
+            new("ownerId", NpgsqlDbType.Uuid) { Value = ownerId.HasValue ? ownerId.Value : DBNull.Value },
+            new("allowedTypes", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = (object?)allowedTypeStrings ?? DBNull.Value },
+            new("query", NpgsqlDbType.Text) { Value = query },
+            new("topK", NpgsqlDbType.Integer) { Value = topK }
+        };
+
+        var orderedIds = await _dbContext.Database
+            .SqlQueryRaw<Guid>(sql, parameters.Cast<object>().ToArray())
+            .ToListAsync(ct);
+
+        if (orderedIds.Count == 0)
+            return [];
+
+        var chunks = await _dbContext.DocumentChunks
+            .AsNoTracking()
+            .Where(c => orderedIds.Contains(c.Id))
+            .ToListAsync(ct);
+
+        var orderLookup = orderedIds
+            .Select((id, index) => new { id, index })
+            .ToDictionary(x => x.id, x => x.index);
+
+        return chunks.OrderBy(c => orderLookup[c.Id]).ToList();
     }
 
     public async Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default)

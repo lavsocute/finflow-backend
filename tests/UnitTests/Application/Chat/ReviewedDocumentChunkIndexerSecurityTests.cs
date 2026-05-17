@@ -41,7 +41,7 @@ public sealed class ReviewedDocumentChunkIndexerSecurityTests
 
         await sut.ReindexAsync(document, CancellationToken.None);
 
-        Assert.Equal(2, capturedTexts.Count);
+        Assert.Equal(3, capturedTexts.Count);
         Assert.All(capturedTexts, text =>
         {
             Assert.DoesNotContain("SYSTEM:", text, StringComparison.OrdinalIgnoreCase);

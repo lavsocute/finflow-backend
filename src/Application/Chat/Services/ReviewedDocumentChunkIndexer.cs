@@ -1,5 +1,6 @@
 using System.Text;
 using FinFlow.Application.Chat.Interfaces;
+using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 
@@ -11,13 +12,16 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 
     private readonly IChunkingService _chunkingService;
     private readonly IVectorStore _vectorStore;
+    private readonly ICacheService? _cacheService;
 
     public ReviewedDocumentChunkIndexer(
         IChunkingService chunkingService,
-        IVectorStore vectorStore)
+        IVectorStore vectorStore,
+        ICacheService? cacheService = null)
     {
         _chunkingService = chunkingService;
         _vectorStore = vectorStore;
+        _cacheService = cacheService;
     }
 
     public async Task<int> ReindexAsync(ReviewedDocument document, CancellationToken cancellationToken = default)
@@ -45,13 +49,42 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             ct: cancellationToken);
         ValidateGeneratedChunks(document, receiptChunks, DocumentChunkType.Receipt);
 
-        var chunks = expenseChunks
+        // Per-line-item chunks (semantic chunking): each line item gets its own chunk
+        // so semantic search can locate "Cloud Compute Instance for ACME" precisely
+        // instead of having it diluted into a 500-char generic chunk.
+        var lineItemChunks = new List<DocumentChunk>();
+        foreach (var lineItem in document.LineItems)
+        {
+            var content = BuildLineItemContent(document, lineItem);
+            var chunks = await _chunkingService.ChunkAsync(
+                document.IdTenant,
+                content,
+                DocumentChunkType.LineItem,
+                document.Id,
+                document.MembershipId,
+                document.IdDepartment,
+                ct: cancellationToken);
+            ValidateGeneratedChunks(document, chunks, DocumentChunkType.LineItem);
+            lineItemChunks.AddRange(chunks);
+        }
+
+        var chunksToWrite = expenseChunks
             .Concat(receiptChunks)
+            .Concat(lineItemChunks)
             .ToList();
 
         // Atomic replace: delete old chunks + insert new ones in a single transaction.
-        await _vectorStore.ReplaceDocumentChunksAsync(document.Id, chunks, cancellationToken);
-        return chunks.Count;
+        await _vectorStore.ReplaceDocumentChunksAsync(document.Id, chunksToWrite, cancellationToken);
+
+        // Invalidate per-tenant chat response cache so future queries see updated chunks.
+        if (_cacheService is not null)
+        {
+            await _cacheService.RemoveByPrefixAsync(
+                ChatResponseCacheKey.TenantInvalidationKey(document.IdTenant),
+                cancellationToken);
+        }
+
+        return chunksToWrite.Count;
     }
 
     public async Task<int> RemoveAsync(Guid documentId, CancellationToken cancellationToken = default)
@@ -60,6 +93,9 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             throw new ArgumentException("Document id is required.", nameof(documentId));
 
         await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+
+        // Note: tenant id is not available here; the chunks delete handles tenant scope
+        // via document_id FK. Caller should also invalidate cache if it has tenant context.
         return 0; // Actual count not available from delete; return 0 as sentinel.
     }
 
@@ -115,6 +151,32 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             }
         }
 
+        return builder.ToString().Trim();
+    }
+
+    /// <summary>
+    /// Per-line-item content (semantic chunking).
+    /// Includes parent document context so the chunk is self-contained for retrieval.
+    /// </summary>
+    internal static string BuildLineItemContent(ReviewedDocument document, ReviewedDocumentLineItem lineItem)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Line item");
+        builder.AppendLine($"Vendor: {NormalizeForEvidence(document.VendorName)}");
+        builder.AppendLine($"Document reference: {NormalizeForEvidence(document.Reference)}");
+        builder.AppendLine($"Document date: {document.DocumentDate:yyyy-MM-dd}");
+        builder.AppendLine($"Category: {NormalizeForEvidence(document.Category)}");
+        builder.AppendLine($"Item name: {NormalizeForEvidence(lineItem.ItemName)}");
+        builder.AppendLine($"Quantity: {lineItem.Quantity:0.##}");
+        builder.AppendLine($"Unit price: {lineItem.UnitPrice:0.##}");
+        if (lineItem.DiscountAmount > 0)
+        {
+            builder.Append($"Discount: {lineItem.DiscountAmount:0.##}");
+            if (lineItem.DiscountPercent.HasValue)
+                builder.Append($" ({lineItem.DiscountPercent.Value:0.##}%)");
+            builder.AppendLine();
+        }
+        builder.AppendLine($"Total: {lineItem.Total:0.##}");
         return builder.ToString().Trim();
     }
 
