@@ -122,7 +122,8 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
                 parseResult.Value.ConfidenceLabel,
                 parseResult.Value.LineItems,
                 processedPageCount,
-                wasTruncated));
+                wasTruncated,
+                parseResult.Value.CurrencyCode));
         }
         catch (HttpRequestException)
         {
@@ -131,6 +132,10 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
         catch (TaskCanceledException)
         {
             return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrProviderUnavailable);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
         }
     }
 

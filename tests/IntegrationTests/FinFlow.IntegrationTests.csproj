@@ -29,4 +29,10 @@
     <ProjectReference Include="..\..\src\Infrastructure\FinFlow.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Chat\EvalDataset.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

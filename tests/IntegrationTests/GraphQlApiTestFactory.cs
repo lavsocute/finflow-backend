@@ -109,7 +109,8 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             {
                 services.AddSingleton<IOptions<OcrOptions>>(Options.Create(new OcrOptions
                 {
-                    ActiveProvider = DeterministicPdfOcrProvider.ProviderName
+                    ActiveProvider = DeterministicPdfOcrProvider.ProviderName,
+                    EnableContentHashCache = false
                 }));
                 services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
                 services.AddScoped<IOcrProvider, DeterministicPdfOcrProvider>();
