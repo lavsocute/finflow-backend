@@ -171,6 +171,7 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<MembershipQueries>()
     .AddTypeExtension<PlatformQueries>()
     .AddTypeExtension<ChatQueries>()
+    .AddTypeExtension<FinFlow.Api.GraphQL.ExchangeRates.ExchangeRateQueries>()
     .AddMutationType<AuthMutations>()
     .AddTypeExtension<DocumentsMutations>()
     .AddTypeExtension<PaymentMutations>()
@@ -179,6 +180,10 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<VendorMutations>()
     .AddTypeExtension<ChatMutations>()
     .AddTypeExtension<FinFlow.Api.GraphQL.Subscriptions.SubscriptionsMutations>()
+    .AddTypeExtension<FinFlow.Api.GraphQL.ExchangeRates.ExchangeRateMutations>()
+    .AddSubscriptionType<FinFlow.Api.GraphQL.SubscriptionType>()
+    .AddTypeExtension<FinFlow.Api.GraphQL.Chat.ChatSubscriptions>()
+    .AddInMemorySubscriptions()
     // Register DataLoaders to prevent N+1 queries in nested GraphQL field resolvers.
     .AddDataLoader<FinFlow.Api.GraphQL.DataLoaders.TenantBatchDataLoader>()
     .AddDataLoader<FinFlow.Api.GraphQL.DataLoaders.TenantMembershipBatchDataLoader>()
@@ -243,6 +248,7 @@ app.UseAuthorization();
 
 app.UseMiddleware<FinFlow.Infrastructure.Middleware.TenantMiddleware>();
 app.UseMiddleware<FinFlow.Infrastructure.Middleware.RequestTimeoutMiddleware>();
+app.UseMiddleware<FinFlow.Infrastructure.Audit.IdempotencyMiddleware>();
 app.UseMiddleware<FinFlow.Infrastructure.Audit.AuditMiddleware>();
 
 app.MapHealthChecks("/health", new HealthCheckOptions
@@ -257,6 +263,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     ResponseWriter = HealthCheckResponseWriter.Write
 });
 
+app.UseWebSockets();
 app.MapGraphQL("/graphql");
 
 app.Run();

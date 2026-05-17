@@ -70,6 +70,31 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
 
     private ReviewedDocument() { }
 
+    /// <summary>
+    /// Apply currency snapshot. Should be called by handler immediately after <c>CreateSubmitted</c>
+    /// before saving. After save, currency is immutable.
+    /// </summary>
+    public Result SetCurrencyContext(string currencyCode, string baseCurrencyCode, decimal exchangeRate)
+    {
+        var currency = FinFlow.Domain.Common.Currency.Create(currencyCode);
+        if (currency.IsFailure) return Result.Failure(currency.Error);
+
+        var baseCurrency = FinFlow.Domain.Common.Currency.Create(baseCurrencyCode);
+        if (baseCurrency.IsFailure) return Result.Failure(baseCurrency.Error);
+
+        if (exchangeRate <= 0)
+            return Result.Failure(FinFlow.Domain.Common.CurrencyErrors.InvalidRate);
+
+        if (currency.Value.Code == baseCurrency.Value.Code && exchangeRate != 1m)
+            return Result.Failure(FinFlow.Domain.Common.CurrencyErrors.MismatchBase);
+
+        CurrencyCode = currency.Value.Code;
+        BaseCurrencyCode = baseCurrency.Value.Code;
+        ExchangeRate = exchangeRate;
+        UpdatedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
     public Guid IdTenant { get; private set; }
     public Guid IdDepartment { get; private set; }
     public Guid MembershipId { get; private set; }
@@ -85,6 +110,20 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
     public decimal DocumentDiscountAmount { get; private set; }
     public decimal Vat { get; private set; }
     public decimal TotalAmount { get; private set; }
+
+    /// <summary>ISO 4217 code of the document's native currency. Defaults to "VND".</summary>
+    public string CurrencyCode { get; private set; } = "VND";
+
+    /// <summary>Tenant base currency at the time of submission. Snapshot, never changes after save.</summary>
+    public string BaseCurrencyCode { get; private set; } = "VND";
+
+    /// <summary>Rate of <c>1 unit CurrencyCode = ExchangeRate units BaseCurrencyCode</c>. Snapshot.</summary>
+    public decimal ExchangeRate { get; private set; } = 1m;
+
+    /// <summary>Convenience: TotalAmount converted to base currency, rounded to 2 decimals.</summary>
+    public decimal TotalAmountInBaseCurrency =>
+        decimal.Round(TotalAmount * ExchangeRate, 2, MidpointRounding.AwayFromZero);
+
     public string Source { get; private set; } = null!;
     public string ReviewedByStaff { get; private set; } = null!;
     public string ConfidenceLabel { get; private set; } = null!;
@@ -258,7 +297,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
             lineItems));
     }
 
-    public Result Approve()
+    public Result Approve(Guid? approvedByMembershipId = null)
     {
         if (Status != ReviewedDocumentStatus.ReadyForApproval)
             return Result.Failure(ReviewedDocumentErrors.AlreadyProcessed);
@@ -266,10 +305,12 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         Status = ReviewedDocumentStatus.Approved;
         RejectionReason = null;
         UpdatedAt = DateTime.UtcNow;
+
+        RaiseDomainEvent(new ReviewedDocumentApprovedDomainEvent(Id, IdTenant, approvedByMembershipId));
         return Result.Success();
     }
 
-    public Result Reject(string reason)
+    public Result Reject(string reason, Guid? rejectedByMembershipId = null)
     {
         if (Status != ReviewedDocumentStatus.ReadyForApproval)
             return Result.Failure(ReviewedDocumentErrors.AlreadyProcessed);
@@ -283,6 +324,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         Status = ReviewedDocumentStatus.Rejected;
         RejectionReason = normalizedReason;
         UpdatedAt = DateTime.UtcNow;
+
+        RaiseDomainEvent(new ReviewedDocumentRejectedDomainEvent(Id, IdTenant, rejectedByMembershipId, normalizedReason));
         return Result.Success();
     }
 

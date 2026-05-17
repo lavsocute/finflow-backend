@@ -1,4 +1,5 @@
 using FinFlow.Domain.Abstractions;
+using FinFlow.Domain.Events;
 using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
@@ -67,7 +68,7 @@ public sealed class Budget : Entity, IMultiTenant
             return Result.Failure<Budget>(BudgetErrors.InvalidAmount);
 
         var now = DateTime.UtcNow;
-        return Result.Success(new Budget(
+        var budget = new Budget(
             Guid.NewGuid(),
             idTenant,
             idDepartment,
@@ -76,7 +77,13 @@ public sealed class Budget : Entity, IMultiTenant
             allocatedAmount,
             spentAmount: 0,
             createdAt: now,
-            updatedAt: now));
+            updatedAt: now);
+
+        budget.RaiseDomainEvent(new BudgetCreatedDomainEvent(
+            budget.Id, budget.IdTenant, budget.IdDepartment,
+            budget.Month, budget.Year, budget.AllocatedAmount));
+
+        return Result.Success(budget);
     }
 
     public Result UpdateAmount(decimal amount)
@@ -86,6 +93,9 @@ public sealed class Budget : Entity, IMultiTenant
 
         AllocatedAmount = amount;
         UpdatedAt = DateTime.UtcNow;
+
+        RaiseDomainEvent(new BudgetUpdatedDomainEvent(
+            Id, IdTenant, IdDepartment, AllocatedAmount, SpentAmount));
         return Result.Success();
     }
 
@@ -93,7 +103,15 @@ public sealed class Budget : Entity, IMultiTenant
     {
         if (spentAmount < 0)
             spentAmount = 0;
+
+        var changed = SpentAmount != spentAmount;
         SpentAmount = spentAmount;
         UpdatedAt = DateTime.UtcNow;
+
+        if (changed)
+        {
+            RaiseDomainEvent(new BudgetUpdatedDomainEvent(
+                Id, IdTenant, IdDepartment, AllocatedAmount, SpentAmount));
+        }
     }
 }

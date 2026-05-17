@@ -1,6 +1,9 @@
 using FinFlow.Application.Payments.Commands.RecordPayment;
 using FinFlow.Application.Payments.Commands.ConfirmPayment;
 using FinFlow.Application.Payments.Commands.RejectPayment;
+using FinFlow.Application.Payments.Commands.UpdatePayment;
+using FinFlow.Application.Payments.Commands.CancelPayment;
+using FinFlow.Application.Payments.Commands.RefundPayment;
 using FinFlow.Application.Expenses.Commands.RejectExpense;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
@@ -127,6 +130,82 @@ public sealed class PaymentMutations
             throw ToGraphQlException(result.Error);
 
         return true;
+    }
+
+    [Authorize]
+    public async Task<bool> ReopenExpenseAsync(
+        Guid expenseId,
+        string reason,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        EnsureManagerRole(context);
+
+        var result = await mediator.Send(
+            new FinFlow.Application.Expenses.Commands.ReopenExpense.ReopenExpenseCommand(expenseId, reason),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return true;
+    }
+
+    [Authorize]
+    public async Task<PaymentPayload> UpdatePaymentAsync(
+        Guid paymentId,
+        string paymentMethod,
+        string? notes,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        EnsureAccountantRole(context);
+
+        var result = await mediator.Send(new UpdatePaymentCommand(paymentId, paymentMethod, notes), cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return PaymentPayload.FromResponse(result.Value);
+    }
+
+    [Authorize]
+    public async Task<PaymentPayload> CancelPaymentAsync(
+        Guid paymentId,
+        string reason,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        EnsureAccountantRole(context);
+
+        var result = await mediator.Send(new CancelPaymentCommand(paymentId, reason), cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return PaymentPayload.FromResponse(result.Value);
+    }
+
+    [Authorize]
+    public async Task<PaymentRefundPayload> RefundPaymentAsync(
+        Guid paymentId,
+        decimal amount,
+        string reason,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        EnsureAccountantRole(context);
+
+        var result = await mediator.Send(new RefundPaymentCommand(paymentId, amount, reason), cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return PaymentRefundPayload.FromResponse(result.Value);
     }
 
     internal static void EnsureManagerRole(IResolverContext context)

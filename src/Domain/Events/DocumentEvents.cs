@@ -10,6 +10,23 @@ public sealed record ReviewedDocumentWithdrawnDomainEvent(
     public DateTime OccurredOn { get; } = DateTime.UtcNow;
 }
 
+public sealed record ReviewedDocumentApprovedDomainEvent(
+    Guid DocumentId,
+    Guid TenantId,
+    Guid? ApprovedByMembershipId) : IDomainEvent
+{
+    public DateTime OccurredOn { get; } = DateTime.UtcNow;
+}
+
+public sealed record ReviewedDocumentRejectedDomainEvent(
+    Guid DocumentId,
+    Guid TenantId,
+    Guid? RejectedByMembershipId,
+    string Reason) : IDomainEvent
+{
+    public DateTime OccurredOn { get; } = DateTime.UtcNow;
+}
+
 public sealed record UploadedDocumentDraftDeletedDomainEvent(
     Guid DraftId,
     Guid TenantId,

@@ -1,3 +1,4 @@
+using FinFlow.Application.Common.Audit;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
@@ -5,9 +6,11 @@ using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Chat;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
 using Pgvector;
 
 namespace FinFlow.Infrastructure;
@@ -16,12 +19,28 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
 {
     internal const int DocumentChunkEmbeddingDimensions = 2048;
     private readonly ICurrentTenant _currentTenant;
+    private readonly IDomainEventAuditMapper? _auditMapper;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly ILogger<ApplicationDbContext>? _logger;
 
     public ApplicationDbContext(
         DbContextOptions<ApplicationDbContext> options,
         ICurrentTenant currentTenant) : base(options)
     {
         _currentTenant = currentTenant;
+    }
+
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        ICurrentTenant currentTenant,
+        IDomainEventAuditMapper auditMapper,
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<ApplicationDbContext> logger) : base(options)
+    {
+        _currentTenant = currentTenant;
+        _auditMapper = auditMapper;
+        _httpContextAccessor = httpContextAccessor;
+        _logger = logger;
     }
 
     public DbSet<EmailChallenge> EmailChallenges => Set<EmailChallenge>();
@@ -33,10 +52,12 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<Budget> Budgets => Set<Budget>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentRefund> PaymentRefunds => Set<PaymentRefund>();
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<FinFlow.Domain.ExchangeRates.ExchangeRateHistory> ExchangeRateHistory => Set<FinFlow.Domain.ExchangeRates.ExchangeRateHistory>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -125,7 +146,79 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             }
         }
 
-        return await base.SaveChangesAsync(cancellationToken);
+        var affected = await base.SaveChangesAsync(cancellationToken);
+        await DispatchDomainEventsAsync(cancellationToken);
+        return affected;
+    }
+
+    private async Task DispatchDomainEventsAsync(CancellationToken cancellationToken)
+    {
+        if (_auditMapper is null)
+            return;
+
+        var entitiesWithEvents = ChangeTracker.Entries<Entity>()
+            .Select(e => e.Entity)
+            .Where(entity => entity.GetDomainEvents().Count > 0)
+            .ToList();
+
+        if (entitiesWithEvents.Count == 0)
+            return;
+
+        var accountId = ResolveAccountId();
+        var tenantId = _currentTenant.Id;
+
+        var auditLogs = new List<AuditLog>();
+        foreach (var entity in entitiesWithEvents)
+        {
+            foreach (var domainEvent in entity.GetDomainEvents())
+            {
+                try
+                {
+                    var log = _auditMapper.Map(domainEvent, tenantId, accountId);
+                    if (log is not null)
+                        auditLogs.Add(log);
+                }
+                catch (Exception ex)
+                {
+                    // REQ-A5: never block business save on audit failures.
+                    _logger?.LogError(
+                        ex,
+                        "Failed to map domain event {EventType} for entity {EntityType}#{EntityId}.",
+                        domainEvent.GetType().Name,
+                        entity.GetType().Name,
+                        entity.Id);
+                }
+            }
+            entity.ClearDomainEvents();
+        }
+
+        if (auditLogs.Count == 0)
+            return;
+
+        try
+        {
+            Set<AuditLog>().AddRange(auditLogs);
+            await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(
+                ex,
+                "Failed to persist {Count} audit log entries for domain events.",
+                auditLogs.Count);
+        }
+    }
+
+    private Guid? ResolveAccountId()
+    {
+        var user = _httpContextAccessor?.HttpContext?.User;
+        if (user is null)
+            return null;
+
+        var rawAccountId = user.FindFirst("sub")?.Value
+            ?? user.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")?.Value;
+
+        return Guid.TryParse(rawAccountId, out var id) ? id : null;
     }
 
     private static Guid? GetTenantIdValue(object? value) =>
@@ -174,6 +267,9 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<Payment>().HasQueryFilter(e =>
+            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+
+        builder.Entity<PaymentRefund>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
 
         builder.Entity<Expense>().HasQueryFilter(e =>

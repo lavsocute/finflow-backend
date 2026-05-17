@@ -32,6 +32,7 @@ using FinFlow.Infrastructure.Subscriptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pgvector.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -78,7 +79,9 @@ public static class DependencyInjection
         services.AddScoped<IVendorRepository, VendorRepository>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<IPaymentRefundRepository, PaymentRefundRepository>();
         services.AddScoped<IExpenseRepository, ExpenseRepository>();
+        services.AddScoped<FinFlow.Domain.ExchangeRates.IExchangeRateRepository, ExchangeRateRepository>();
         services.AddScoped<ITenantUsageSnapshotRepository, TenantUsageSnapshotRepository>();
         services.AddScoped<IMemberUsageSnapshotRepository, MemberUsageSnapshotRepository>();
         services.AddScoped<ITenantUsageService, TenantUsageService>();
@@ -142,7 +145,13 @@ public static class DependencyInjection
                     new AuthenticationHeaderValue("Bearer", apiKey);
             }
         });
-        services.AddScoped<IEmbeddingService>(sp => sp.GetRequiredService<OpenRouterEmbeddingService>());
+        services.AddScoped<IEmbeddingService>(sp =>
+        {
+            var inner = sp.GetRequiredService<OpenRouterEmbeddingService>();
+            var cache = sp.GetRequiredService<ICacheService>();
+            var logger = sp.GetRequiredService<ILogger<Application.Chat.Services.CachingEmbeddingService>>();
+            return new Application.Chat.Services.CachingEmbeddingService(inner, cache, logger);
+        });
 
         services.Configure<Application.Chat.Services.GroqChatOptions>(configuration.GetSection("Chat"));
         services.AddHttpClient<Application.Chat.Services.ChatService>((sp, client) =>
@@ -167,6 +176,16 @@ public static class DependencyInjection
         services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
         services.AddScoped<IOcrExtractionService, ConfigurableOcrExtractionService>();
 
+        // Exchange rate provider chain — Frankfurter is the default free, no-API-key source.
+        services.AddHttpClient<ExchangeRates.FrankfurterExchangeRateProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.frankfurter.app/");
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddScoped<Application.Common.ExchangeRates.IExchangeRateProvider>(sp =>
+            sp.GetRequiredService<ExchangeRates.FrankfurterExchangeRateProvider>());
+        services.AddScoped<Application.Common.ExchangeRates.IExchangeRateService, ExchangeRates.ExchangeRateService>();
+
         var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";
         services.AddSingleton(new Lazy<IConnectionMultiplexer>(() => ConnectionMultiplexer.Connect(redisConnection)));
         services.AddMemoryCache();
@@ -189,6 +208,10 @@ public static class DependencyInjection
         services.AddScoped<IReviewedDocumentChunkIndexer, ReviewedDocumentChunkIndexer>();
         services.AddScoped<IRerankService, RerankService>();
         services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
+        services.AddScoped<IChatOutputFilter, ChatOutputFilter>();
+        services.AddScoped<IContentModerator, RegexContentModerator>();
+        services.AddScoped<IQueryRewriter, NoOpQueryRewriter>();
+        services.AddSingleton<ISecretProvider, Secrets.EnvironmentSecretProvider>();
         services.AddScoped<IVectorStore, PgVectorStore>();
         services.AddScoped<IChatService>(sp => sp.GetRequiredService<Application.Chat.Services.ChatService>());
 

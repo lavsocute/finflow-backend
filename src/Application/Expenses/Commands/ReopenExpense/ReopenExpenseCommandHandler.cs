@@ -1,20 +1,19 @@
-using FinFlow.Application.Common.Abstractions;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using MediatR;
 
-namespace FinFlow.Application.Expenses.Commands.RejectExpense;
+namespace FinFlow.Application.Expenses.Commands.ReopenExpense;
 
-internal sealed class RejectExpenseCommandHandler : IRequestHandler<RejectExpenseCommand, Result<Unit>>
+internal sealed class ReopenExpenseCommandHandler : IRequestHandler<ReopenExpenseCommand, Result<Unit>>
 {
     private readonly IExpenseRepository _expenseRepository;
     private readonly IBudgetRepository _budgetRepository;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
 
-    public RejectExpenseCommandHandler(
+    public ReopenExpenseCommandHandler(
         IExpenseRepository expenseRepository,
         IBudgetRepository budgetRepository,
         ICurrentTenant currentTenant,
@@ -26,18 +25,18 @@ internal sealed class RejectExpenseCommandHandler : IRequestHandler<RejectExpens
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<Result<Unit>> Handle(RejectExpenseCommand request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(ReopenExpenseCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentTenant.MembershipId.HasValue)
+            return Result.Failure<Unit>(new Error("Expense.MembershipContext", "Membership context is not available."));
+
         var expense = await _expenseRepository.GetEntityByIdAsync(request.ExpenseId, cancellationToken);
         if (expense is null)
             return Result.Failure<Unit>(ExpenseErrors.NotFound);
 
-        if (expense.Status != ExpenseStatus.Confirmed)
-            return Result.Failure<Unit>(ExpenseErrors.AlreadyProcessed);
-
-        var rejectResult = expense.Reject(request.Reason, _currentTenant.MembershipId);
-        if (rejectResult.IsFailure)
-            return Result.Failure<Unit>(rejectResult.Error);
+        var reopenResult = expense.Reopen(request.Reason, _currentTenant.MembershipId.Value);
+        if (reopenResult.IsFailure)
+            return Result.Failure<Unit>(reopenResult.Error);
 
         _expenseRepository.Update(expense);
 

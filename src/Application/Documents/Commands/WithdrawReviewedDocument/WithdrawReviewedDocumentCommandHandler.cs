@@ -99,6 +99,10 @@ internal sealed class WithdrawReviewedDocumentCommandHandler
             doc.VendorName,
             doc.Reference,
             doc.TotalAmount,
-            doc.ReviewedByStaff));
+            doc.ReviewedByStaff,
+            doc.CurrencyCode,
+            doc.ExchangeRate,
+            doc.BaseCurrencyCode,
+            doc.TotalAmountInBaseCurrency));
     }
 }

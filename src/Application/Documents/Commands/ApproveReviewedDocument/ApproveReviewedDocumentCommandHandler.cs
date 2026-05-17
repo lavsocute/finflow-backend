@@ -37,7 +37,7 @@ public sealed class ApproveReviewedDocumentCommandHandler
         if (document.MembershipId == request.MembershipId)
             return Result.Failure<ReviewedDocumentResponse>(ReviewedDocumentErrors.SelfApprovalNotAllowed);
 
-        var approveResult = document.Approve();
+        var approveResult = document.Approve(request.MembershipId);
         if (approveResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(approveResult.Error);
 
@@ -64,6 +64,10 @@ public sealed class ApproveReviewedDocumentCommandHandler
             document.VendorName,
             document.Reference,
             document.TotalAmount,
-            document.ReviewedByStaff));
+            document.ReviewedByStaff,
+            document.CurrencyCode,
+            document.ExchangeRate,
+            document.BaseCurrencyCode,
+            document.TotalAmountInBaseCurrency));
     }
 }

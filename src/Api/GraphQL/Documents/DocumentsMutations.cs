@@ -43,7 +43,9 @@ public sealed record SubmitReviewedDocumentInput(
     decimal TotalAmount,
     string? Source,
     string? ConfidenceLabel,
-    IReadOnlyList<SubmitReviewedDocumentLineItemInput> LineItems);
+    IReadOnlyList<SubmitReviewedDocumentLineItemInput> LineItems,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null);
 
 public sealed record ApproveReviewedDocumentInput(Guid DocumentId, string? Comment);
 
@@ -65,7 +67,9 @@ public sealed record SaveManualDraftInput(
     decimal Subtotal,
     decimal Vat,
     decimal TotalAmount,
-    IReadOnlyList<SaveManualDraftLineItemInput> LineItems);
+    IReadOnlyList<SaveManualDraftLineItemInput> LineItems,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null);
 
 public sealed record SaveManualDraftPayload(Guid DraftId);
 
@@ -113,7 +117,9 @@ public sealed record UpdateDocumentDraftInput(
     decimal Vat,
     decimal TotalAmount,
     string? ConfidenceLabel,
-    IReadOnlyList<UpdateDocumentDraftLineItemInput> LineItems);
+    IReadOnlyList<UpdateDocumentDraftLineItemInput> LineItems,
+    string? CurrencyCode = null,
+    decimal? ExchangeRate = null);
 
 public sealed record ReindexReviewedDocumentsPayload(
     int ScannedDocuments,
@@ -143,7 +149,11 @@ public sealed record DocumentOcrDraftPayload(
     string ReviewedByStaff,
     string ConfidenceLabel,
     bool HasImage,
-    IReadOnlyList<DocumentOcrDraftLineItemPayload> LineItems);
+    IReadOnlyList<DocumentOcrDraftLineItemPayload> LineItems,
+    string CurrencyCode = "VND",
+    decimal ExchangeRate = 1m,
+    string BaseCurrencyCode = "VND",
+    decimal TotalAmountInBaseCurrency = 0m);
 
 public sealed record ReviewedDocumentPayload(
     Guid DocumentId,
@@ -152,7 +162,11 @@ public sealed record ReviewedDocumentPayload(
     string VendorName,
     string Reference,
     decimal TotalAmount,
-    string ReviewedByStaff);
+    string ReviewedByStaff,
+    string CurrencyCode = "VND",
+    decimal ExchangeRate = 1m,
+    string BaseCurrencyCode = "VND",
+    decimal TotalAmountInBaseCurrency = 0m);
 
 [ExtendObjectType(typeof(FinFlow.Api.GraphQL.Auth.AuthMutations))]
 public sealed class DocumentsMutations
@@ -216,7 +230,9 @@ public sealed class DocumentsMutations
                 reviewedByStaff,
                 string.IsNullOrWhiteSpace(input.ConfidenceLabel) ? "Staff corrected" : input.ConfidenceLabel,
                 DateTime.UtcNow,
-                input.LineItems.Select(x => new SubmitReviewedDocumentLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList()),
+                input.LineItems.Select(x => new SubmitReviewedDocumentLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                CurrencyCode: input.CurrencyCode,
+                ExchangeRate: input.ExchangeRate),
             cancellationToken);
 
         if (result.IsFailure)
@@ -229,7 +245,11 @@ public sealed class DocumentsMutations
             result.Value.VendorName,
             result.Value.Reference,
             result.Value.TotalAmount,
-            result.Value.ReviewedByStaff);
+            result.Value.ReviewedByStaff,
+            result.Value.CurrencyCode,
+            result.Value.ExchangeRate,
+            result.Value.BaseCurrencyCode,
+            result.Value.TotalAmountInBaseCurrency);
     }
 
     [Authorize]
@@ -257,7 +277,9 @@ public sealed class DocumentsMutations
                 input.Vat,
                 input.TotalAmount,
                 reviewedByStaff,
-                input.LineItems.Select(x => new SaveManualDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList()),
+                input.LineItems.Select(x => new SaveManualDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                CurrencyCode: input.CurrencyCode,
+                ExchangeRate: input.ExchangeRate),
             cancellationToken);
 
         if (result.IsFailure)
@@ -463,7 +485,11 @@ public sealed class DocumentsMutations
             response.HasImage,
             response.LineItems
                 .Select(x => new DocumentOcrDraftLineItemPayload(x.ItemName, x.Quantity, x.UnitPrice, x.Total))
-                .ToList());
+                .ToList(),
+            response.CurrencyCode,
+            response.ExchangeRate,
+            response.BaseCurrencyCode,
+            response.TotalAmountInBaseCurrency);
 
     private static GraphQLException ToGraphQlException(DomainError error) =>
         new(new HotChocolate.Error(error.Description, error.Code));
@@ -499,7 +525,9 @@ public sealed class DocumentsMutations
                 input.TotalAmount,
                 input.ConfidenceLabel ?? "Staff corrected",
                 input.LineItems.Select(x => new Application.Documents.Commands.UpdateDocumentDraft.UpdateDocumentDraftLineItem(
-                    x.ItemName, x.Quantity, x.UnitPrice, x.DiscountPercent, x.DiscountAmount, x.Total)).ToList()),
+                    x.ItemName, x.Quantity, x.UnitPrice, x.DiscountPercent, x.DiscountAmount, x.Total)).ToList(),
+                CurrencyCode: input.CurrencyCode,
+                ExchangeRate: input.ExchangeRate),
             cancellationToken);
 
         if (result.IsFailure)
