@@ -31,22 +31,38 @@ public sealed class PdfPageRenderer : IPdfPageRenderer
             var pageCount = Conversion.GetPageCount(pdfBytes, null);
             var pagesToRender = Math.Min(pageCount, maxPages);
             var renderedPages = new List<OcrPageImage>(pagesToRender);
+            var failedPages = 0;
 
             for (var pageIndex = 0; pageIndex < pagesToRender; pageIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                using var bitmap = Conversion.ToImage(pdfBytes, pageIndex, null, new RenderOptions());
-                using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+                try
+                {
+                    using var bitmap = Conversion.ToImage(pdfBytes, pageIndex, null, new RenderOptions());
+                    using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
 
-                if (encoded is null)
-                    return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
+                    if (encoded is null)
+                    {
+                        failedPages++;
+                        continue;
+                    }
 
-                renderedPages.Add(new OcrPageImage(
-                    pageIndex + 1,
-                    "image/png",
-                    Convert.ToBase64String(encoded.ToArray())));
+                    renderedPages.Add(new OcrPageImage(
+                        pageIndex + 1,
+                        "image/png",
+                        Convert.ToBase64String(encoded.ToArray())));
+                }
+                catch
+                {
+                    // Fix #7: per-page render error does not kill the whole document.
+                    // If at least one page succeeds we surface a truncated result.
+                    failedPages++;
+                }
             }
+
+            if (renderedPages.Count == 0)
+                return Task.FromResult(Result.Failure<PdfRenderResult>(DocumentOcrErrors.OcrPdfRenderFailed));
 
             return Task.FromResult(Result.Success(PdfRenderResult.Success(renderedPages, pageCount)));
         }

@@ -124,7 +124,8 @@ public sealed class GroqOcrProvider : IOcrProvider
                 parseResult.Value.ConfidenceLabel,
                 parseResult.Value.LineItems,
                 processedPageCount,
-                wasTruncated));
+                wasTruncated,
+                parseResult.Value.CurrencyCode));
         }
         catch (HttpRequestException)
         {
@@ -133,6 +134,11 @@ public sealed class GroqOcrProvider : IOcrProvider
         catch (TaskCanceledException)
         {
             return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrProviderUnavailable);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Fix #27: provider returned 200 OK with non-JSON (HTML captive portal, etc.)
+            return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
         }
     }
 

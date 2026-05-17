@@ -104,6 +104,47 @@ public class RedisCacheService : ICacheService
         _memoryCache.Remove(key);
     }
 
+    public async Task RemoveByPrefixAsync(string keyPrefix, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(keyPrefix))
+            return;
+
+        var redis = GetRedis();
+        if (redis != null)
+        {
+            try
+            {
+                // Iterate over all servers and SCAN matching keys.
+                // Pattern wraps with wildcard suffix so prefix-only match is straightforward.
+                var pattern = keyPrefix + "*";
+                foreach (var endpoint in _redisFactory.Value.GetEndPoints())
+                {
+                    var server = _redisFactory.Value.GetServer(endpoint);
+                    var keys = server.Keys(pattern: pattern, pageSize: 250);
+                    var batch = new List<RedisKey>();
+                    foreach (var k in keys)
+                    {
+                        batch.Add(k);
+                        if (batch.Count >= 250)
+                        {
+                            await redis.KeyDeleteAsync(batch.ToArray());
+                            batch.Clear();
+                        }
+                    }
+                    if (batch.Count > 0)
+                        await redis.KeyDeleteAsync(batch.ToArray());
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis SCAN/DELETE failed for prefix {Prefix}.", keyPrefix);
+            }
+        }
+
+        // IMemoryCache does not support prefix removal natively; relies on TTL.
+        // For tests / dev with no Redis, callers should manage cache lifecycle explicitly.
+    }
+
     public async Task<T> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
     {
         var cached = await GetAsync<T>(key, cancellationToken);
@@ -114,4 +155,36 @@ public class RedisCacheService : ICacheService
         await SetAsync(key, value, expiration, cancellationToken);
         return value;
     }
+
+    public async Task<long> IncrementWithExpiryAsync(string key, TimeSpan expiry, CancellationToken cancellationToken = default)
+    {
+        var redis = GetRedis();
+        if (redis != null)
+        {
+            try
+            {
+                // INCR + EXPIRE only when counter was just created (value == 1).
+                // This implements a fixed-window counter without resetting TTL on every hit.
+                var newValue = await redis.StringIncrementAsync(key);
+                if (newValue == 1)
+                    await redis.KeyExpireAsync(key, expiry);
+                return newValue;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Redis INCR failed for key {Key}; falling back to memory cache.", key);
+            }
+        }
+
+        // Memory-cache fallback (single-process). Stored as boxed long.
+        if (_memoryCache.TryGetValue<long>(key, out var current))
+        {
+            var next = current + 1;
+            _memoryCache.Set(key, next, expiry);
+            return next;
+        }
+        _memoryCache.Set(key, 1L, expiry);
+        return 1;
+    }
+
 }
