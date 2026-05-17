@@ -16,6 +16,8 @@ public sealed class SubscriptionQuotaGate : ISubscriptionQuotaGate
     private static readonly Error OcrMemberQuotaExceeded = new("Subscription.OcrMemberQuotaExceeded", "The current member has reached the monthly OCR quota.");
     private static readonly Error ChatbotQuotaExceeded = new("Subscription.ChatbotQuotaExceeded", "The current plan has reached its monthly chatbot quota.");
     private static readonly Error ChatbotMemberQuotaExceeded = new("Subscription.ChatbotMemberQuotaExceeded", "The current member has reached the monthly chatbot quota.");
+    private static readonly Error ChatbotTokenQuotaExceeded = new("Subscription.ChatbotTokenQuotaExceeded", "The current plan has reached its monthly chatbot token quota.");
+    private static readonly Error ChatbotMemberTokenQuotaExceeded = new("Subscription.ChatbotMemberTokenQuotaExceeded", "The current member has reached the monthly chatbot token quota.");
     private static readonly Error ChatbotNotAvailableForCurrentPlan = new("Subscription.ChatbotNotAvailableForCurrentPlan", "Chatbot is not available for the current plan.");
 
     private readonly ITenantSubscriptionRepository _tenantSubscriptionRepository;
@@ -101,6 +103,69 @@ public sealed class SubscriptionQuotaGate : ISubscriptionQuotaGate
             decision.PeriodStart,
             decision.PeriodEnd,
             cancellationToken);
+    }
+
+    public async Task<Result> EnsureChatbotTokensAvailableAsync(
+        Guid tenantId,
+        Guid membershipId,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await _tenantSubscriptionRepository.GetByTenantIdAsync(tenantId, cancellationToken);
+        if (subscription is null)
+            return Result.Failure(ChatbotNotAvailableForCurrentPlan);
+
+        var now = DateTime.UtcNow;
+        if (subscription.ComputeEffectiveStatus(now) != SubscriptionStatus.Active)
+            return Result.Failure(ChatbotNotAvailableForCurrentPlan);
+
+        var entitlements = _planEntitlementCatalog.GetFor(subscription.PlanTier);
+        if (!entitlements.ChatbotEnabled)
+            return Result.Failure(ChatbotNotAvailableForCurrentPlan);
+
+        // Token cap of 0 means unlimited (legacy behaviour for plans that haven't opted in).
+        if (entitlements.WorkspaceMonthlyChatbotTokens <= 0 && entitlements.MemberMonthlyChatbotTokens <= 0)
+            return Result.Success();
+
+        var (currentPeriodStart, currentPeriodEnd) = subscription.ComputeCurrentPeriod(now);
+        var periodStart = DateOnly.FromDateTime(currentPeriodStart);
+        var periodEnd = DateOnly.FromDateTime(currentPeriodEnd);
+
+        var workspaceUsage = await _tenantUsageService.GetCurrentUsageAsync(tenantId, periodStart, periodEnd, cancellationToken);
+        if (entitlements.WorkspaceMonthlyChatbotTokens > 0 &&
+            workspaceUsage.ChatbotTokensUsed >= entitlements.WorkspaceMonthlyChatbotTokens)
+        {
+            _logger.LogInformation(
+                "Subscription quota decision WorkspaceTokenQuotaExceeded for Chatbot. TenantId: {TenantId}, MembershipId: {MembershipId}, WorkspaceTokensUsed: {WorkspaceTokensUsed}, WorkspaceTokenLimit: {WorkspaceTokenLimit}",
+                tenantId, membershipId, workspaceUsage.ChatbotTokensUsed, entitlements.WorkspaceMonthlyChatbotTokens);
+            return Result.Failure(ChatbotTokenQuotaExceeded);
+        }
+
+        var memberUsage = await _memberUsageService.GetCurrentUsageAsync(tenantId, membershipId, periodStart, periodEnd, cancellationToken);
+        if (entitlements.MemberMonthlyChatbotTokens > 0 &&
+            memberUsage.ChatbotTokensUsed >= entitlements.MemberMonthlyChatbotTokens)
+        {
+            _logger.LogInformation(
+                "Subscription quota decision MemberTokenQuotaExceeded for Chatbot. TenantId: {TenantId}, MembershipId: {MembershipId}, MemberTokensUsed: {MemberTokensUsed}, MemberTokenLimit: {MemberTokenLimit}",
+                tenantId, membershipId, memberUsage.ChatbotTokensUsed, entitlements.MemberMonthlyChatbotTokens);
+            return Result.Failure(ChatbotMemberTokenQuotaExceeded);
+        }
+
+        return Result.Success();
+    }
+
+    public async Task RecordChatbotTokensAsync(
+        Guid tenantId,
+        Guid membershipId,
+        long tokensUsed,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken cancellationToken)
+    {
+        if (tokensUsed <= 0)
+            return;
+
+        await _tenantUsageService.RecordChatbotTokensAsync(tenantId, tokensUsed, periodStart, periodEnd, cancellationToken);
+        await _memberUsageService.RecordChatbotTokensAsync(tenantId, membershipId, tokensUsed, periodStart, periodEnd, cancellationToken);
     }
 
     public async Task RecordOcrUsageAsync(

@@ -33,6 +33,7 @@ public sealed class MemberUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
     public DateOnly PeriodEnd { get; private set; }
     public int OcrPagesUsed { get; private set; }
     public int ChatbotMessagesUsed { get; private set; }
+    public long ChatbotTokensUsed { get; private set; }
     public bool IsActive { get; private set; } = true;
 
     /// <summary>
@@ -78,6 +79,15 @@ public sealed class MemberUsageSnapshot : Entity, IMultiTenant, ISoftDeletable
             return Result.Failure(MemberUsageSnapshotErrors.ChatbotUsageMustBePositive);
 
         ChatbotMessagesUsed += messageCount;
+        return Result.Success();
+    }
+
+    public Result RecordChatbotTokens(long tokens)
+    {
+        if (tokens < 0)
+            return Result.Failure(MemberUsageSnapshotErrors.ChatbotUsageMustBePositive);
+
+        ChatbotTokensUsed += tokens;
         return Result.Success();
     }
 }

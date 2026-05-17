@@ -176,6 +176,9 @@ public sealed class GetCurrentSubscriptionQueryHandlerTests
         public Task RecordChatbotUsageAsync(Guid tenantId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task RecordChatbotTokensAsync(Guid tenantId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
         public Task SetStorageUsedBytesAsync(Guid tenantId, long storageUsedBytes, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
@@ -218,6 +221,9 @@ public sealed class GetCurrentSubscriptionQueryHandlerTests
             => Task.CompletedTask;
 
         public Task RecordChatbotUsageAsync(Guid tenantId, Guid membershipId, int messageCount, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RecordChatbotTokensAsync(Guid tenantId, Guid membershipId, long tokensUsed, DateOnly periodStart, DateOnly periodEnd, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 

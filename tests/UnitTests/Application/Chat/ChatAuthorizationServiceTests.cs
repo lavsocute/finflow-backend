@@ -81,7 +81,7 @@ public class ChatAuthorizationServiceTests
         Assert.Equal(RoleType.Staff, scope.Role);
         Assert.Equal(membershipId, scope.OwnerMembershipId);
         Assert.Equal(departmentId, scope.DepartmentId);
-        Assert.Equal(new HashSet<DocumentChunkType> { DocumentChunkType.Expense, DocumentChunkType.Receipt }, scope.AllowedChunkTypes);
+        Assert.Equal(new HashSet<DocumentChunkType> { DocumentChunkType.Expense, DocumentChunkType.Receipt, DocumentChunkType.LineItem }, scope.AllowedChunkTypes);
     }
 
     [Fact]
