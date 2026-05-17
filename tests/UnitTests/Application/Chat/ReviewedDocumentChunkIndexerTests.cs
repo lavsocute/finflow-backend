@@ -42,17 +42,31 @@ public sealed class ReviewedDocumentChunkIndexerTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([CreateChunk(document, DocumentChunkType.Receipt)]);
 
+        chunkingService
+            .Setup(x => x.ChunkAsync(
+                document.IdTenant,
+                It.IsAny<string>(),
+                DocumentChunkType.LineItem,
+                document.Id,
+                document.MembershipId,
+                document.IdDepartment,
+                500,
+                50,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([CreateChunk(document, DocumentChunkType.LineItem)]);
+
         var sut = new ReviewedDocumentChunkIndexer(chunkingService.Object, vectorStore.Object);
 
         var result = await sut.ReindexAsync(document, CancellationToken.None);
 
-        Assert.Equal(2, result);
+        Assert.Equal(3, result);
         vectorStore.Verify(x => x.ReplaceDocumentChunksAsync(
             document.Id,
             It.Is<IEnumerable<DocumentChunk>>(chunks =>
-                chunks.Count() == 2 &&
+                chunks.Count() == 3 &&
                 chunks.Any(chunk => chunk.Type == DocumentChunkType.Expense) &&
-                chunks.Any(chunk => chunk.Type == DocumentChunkType.Receipt)),
+                chunks.Any(chunk => chunk.Type == DocumentChunkType.Receipt) &&
+                chunks.Any(chunk => chunk.Type == DocumentChunkType.LineItem)),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -82,15 +96,15 @@ public sealed class ReviewedDocumentChunkIndexerTests
         var firstCount = await sut.ReindexAsync(document, CancellationToken.None);
         var secondCount = await sut.ReindexAsync(document, CancellationToken.None);
 
-        Assert.Equal(2, firstCount);
-        Assert.Equal(2, secondCount);
-        Assert.Equal(2, vectorStore.StoredChunks.Count);
+        Assert.Equal(3, firstCount);
+        Assert.Equal(3, secondCount);
+        Assert.Equal(3, vectorStore.StoredChunks.Count);
         Assert.Equal(2, vectorStore.DeleteCalls);
         Assert.Equal(2, vectorStore.UpsertCalls);
         Assert.Equal(
-            ["content-Expense", "content-Receipt"],
+            ["content-Expense", "content-LineItem", "content-Receipt"],
             vectorStore.StoredChunks
-                .OrderBy(chunk => chunk.Type)
+                .OrderBy(chunk => chunk.Type.ToString(), StringComparer.Ordinal)
                 .Select(chunk => chunk.Content)
                 .ToArray());
     }
@@ -188,6 +202,16 @@ public sealed class ReviewedDocumentChunkIndexerTests
             int topK = 20,
             CancellationToken ct = default) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<DocumentChunk>> KeywordSearchAsync(
+            string query,
+            Guid tenantId,
+            Guid? departmentId,
+            Guid? ownerId,
+            IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
+            int topK = 20,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<DocumentChunk>>(Array.Empty<DocumentChunk>());
 
         public Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default)
         {

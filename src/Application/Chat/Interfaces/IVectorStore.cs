@@ -13,10 +13,20 @@ public interface IVectorStore
         IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
         int topK = 20,
         CancellationToken ct = default);
-    Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default);
 
     /// <summary>
-    /// Atomically replaces all chunks for a document (delete + insert in one transaction).
+    /// PostgreSQL full-text-search on chunk content (tsvector).
+    /// Used as keyword half of hybrid retrieval; results are fused with vector search.
     /// </summary>
+    Task<IReadOnlyList<DocumentChunk>> KeywordSearchAsync(
+        string query,
+        Guid tenantId,
+        Guid? departmentId,
+        Guid? ownerId,
+        IReadOnlyCollection<DocumentChunkType>? allowedTypes = null,
+        int topK = 20,
+        CancellationToken ct = default);
+
+    Task DeleteByDocumentIdAsync(Guid documentId, CancellationToken ct = default);
     Task ReplaceDocumentChunksAsync(Guid documentId, IEnumerable<DocumentChunk> newChunks, CancellationToken ct = default);
 }
