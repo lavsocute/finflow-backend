@@ -120,6 +120,40 @@ internal sealed class DomainEventAuditMapper : IDomainEventAuditMapper
                 "DOCUMENT_DRAFT_DELETED", "UploadedDocumentDraft", e.DraftId, tenantId, accountId,
                 payload: new { membershipId = e.MembershipId }),
 
+            BudgetExceededDomainEvent e => CreateLog(
+                "BUDGET_EXCEEDED", "Budget", e.BudgetId, tenantId, accountId,
+                payload: new
+                {
+                    departmentId = e.DepartmentId,
+                    month = e.Month,
+                    year = e.Year,
+                    allocated = e.AllocatedAmount,
+                    committed = e.CommittedAmount,
+                    spent = e.SpentAmount,
+                    overAmount = e.OverAmount,
+                    trigger = e.Trigger.ToString()
+                }),
+
+            BudgetWarningThresholdReachedDomainEvent e => CreateLog(
+                "BUDGET_WARNING_THRESHOLD", "Budget", e.BudgetId, tenantId, accountId,
+                payload: new
+                {
+                    departmentId = e.DepartmentId,
+                    utilizationPercent = e.UtilizationPercent,
+                    threshold = e.Threshold
+                }),
+
+            BudgetOverrideUsedDomainEvent e => CreateLog(
+                "BUDGET_OVERRIDE_USED", "Budget", e.BudgetId, tenantId, accountId,
+                payload: new
+                {
+                    overrodeByMembershipId = e.OverrodeByMembershipId,
+                    justification = e.Justification,
+                    overAmount = e.OverAmount,
+                    sourceEntityId = e.SourceEntityId,
+                    sourceEntityType = e.SourceEntityType
+                }),
+
             _ => null
         };
     }

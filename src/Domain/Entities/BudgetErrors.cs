@@ -18,4 +18,7 @@ public static class BudgetErrors
     public static readonly Error InvalidEnforcementMode = new("Budget.InvalidEnforcementMode", "Enforcement mode is not recognized.");
     public static readonly Error AlreadyArchived = new("Budget.AlreadyArchived", "Budget is already archived.");
     public static readonly Error CannotArchiveActive = new("Budget.CannotArchiveActive", "Budget cannot be archived while it has movements in the current period.");
+    public static readonly Error HardBlocked = new("Budget.HardBlocked", "This action would exceed the department's hard-blocked budget. Adjust the amount or change the budget enforcement mode.");
+    public static readonly Error OverrideRequired = new("Budget.OverrideRequired", "This action exceeds the budget. Provide an override justification to proceed.");
+    public static readonly Error OverrideJustificationRequired = new("Budget.OverrideJustificationRequired", "Override justification cannot be empty.");
 }

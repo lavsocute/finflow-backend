@@ -273,6 +273,29 @@ public sealed class Budget : Entity, IMultiTenant, ISoftDeletable
     }
 
     /// <summary>
+    /// Append an audit-trail row for an over-budget approval that the manager
+    /// forced through. Pure event raise — does not change committed/spent
+    /// (caller already applied the commit). Notification mapper fans out to
+    /// tenant admins.
+    /// </summary>
+    public void RecordOverrideUsed(
+        Guid overrodeByMembershipId,
+        string justification,
+        decimal overAmount,
+        Guid sourceEntityId,
+        string sourceEntityType)
+    {
+        RaiseDomainEvent(new BudgetOverrideUsedDomainEvent(
+            BudgetId: Id,
+            TenantId: IdTenant,
+            OverrodeByMembershipId: overrodeByMembershipId,
+            Justification: justification,
+            OverAmount: overAmount,
+            SourceEntityId: sourceEntityId,
+            SourceEntityType: sourceEntityType));
+    }
+
+    /// <summary>
     /// Legacy helper for callers that recompute the entire spent total
     /// (vd: data migrations). Avoid in lifecycle pipelines.
     /// </summary>

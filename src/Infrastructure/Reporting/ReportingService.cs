@@ -144,12 +144,18 @@ internal sealed class ReportingService : IReportingService
         if (departmentId.HasValue)
             budgetQuery = budgetQuery.Where(b => b.IdDepartment == departmentId.Value);
 
+        // Pull the entity-level snapshot. CommittedAmount + SpentAmount are
+        // maintained in-memory by the lifecycle pipeline — we trust them and
+        // do NOT recompute via SUM (that would re-introduce the B-1 bug).
         var budgets = await budgetQuery
             .Select(b => new
             {
                 b.Id,
                 b.IdDepartment,
-                b.AllocatedAmount
+                b.AllocatedAmount,
+                b.CommittedAmount,
+                b.SpentAmount,
+                b.CarryOverFromPreviousMonth
             })
             .ToListAsync(cancellationToken);
 
@@ -157,7 +163,6 @@ internal sealed class ReportingService : IReportingService
             return [];
 
         var deptIds = budgets.Select(b => b.IdDepartment).Distinct().ToList();
-
         var deptNames = await _dbContext.Set<Department>()
             .AsNoTracking()
             .Where(d => deptIds.Contains(d.Id))
@@ -165,24 +170,14 @@ internal sealed class ReportingService : IReportingService
             .ToListAsync(cancellationToken);
         var deptNameMap = deptNames.ToDictionary(d => d.Id, d => d.Name);
 
-        var spentByDept = await _dbContext.Expenses
-            .AsNoTracking()
-            .Where(e => e.IdTenant == tenantId
-                && e.Status == ExpenseStatus.Confirmed
-                && e.Month == month
-                && e.Year == year
-                && deptIds.Contains(e.IdDepartment))
-            .GroupBy(e => e.IdDepartment)
-            .Select(g => new { DepartmentId = g.Key, Total = g.Sum(e => e.AmountInBaseCurrency) })
-            .ToDictionaryAsync(x => x.DepartmentId, x => x.Total, cancellationToken);
-
         return budgets
             .Select(b =>
             {
-                var spent = spentByDept.GetValueOrDefault(b.IdDepartment, 0m);
-                var remaining = b.AllocatedAmount - spent;
-                var pct = b.AllocatedAmount > 0
-                    ? Math.Round((spent / b.AllocatedAmount) * 100m, 2, MidpointRounding.AwayFromZero)
+                var pool = b.AllocatedAmount + (b.CarryOverFromPreviousMonth ?? 0m);
+                var totalUsed = b.CommittedAmount + b.SpentAmount;
+                var remaining = pool - totalUsed;
+                var pct = pool > 0
+                    ? Math.Round((totalUsed / pool) * 100m, 2, MidpointRounding.AwayFromZero)
                     : 0m;
                 return new BudgetUtilizationDto(
                     DepartmentId: b.IdDepartment,
@@ -190,10 +185,11 @@ internal sealed class ReportingService : IReportingService
                     Month: month,
                     Year: year,
                     Allocated: b.AllocatedAmount,
-                    Spent: spent,
+                    Committed: b.CommittedAmount,
+                    Spent: b.SpentAmount,
                     Remaining: remaining,
                     UtilizationPercent: pct,
-                    IsApproachingLimit: pct >= 90m && pct < 100m,
+                    IsApproachingLimit: pct >= 85m && pct < 100m,
                     IsOverBudget: pct >= 100m,
                     BaseCurrencyCode: baseCurrency);
             })

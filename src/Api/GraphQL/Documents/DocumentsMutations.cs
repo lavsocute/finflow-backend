@@ -47,7 +47,7 @@ public sealed record SubmitReviewedDocumentInput(
     string? CurrencyCode = null,
     decimal? ExchangeRate = null);
 
-public sealed record ApproveReviewedDocumentInput(Guid DocumentId, string? Comment);
+public sealed record ApproveReviewedDocumentInput(Guid DocumentId, string? Comment, string? OverrideJustification = null);
 
 public sealed record RejectReviewedDocumentInput(Guid DocumentId, string Reason, string? Comment);
 
@@ -332,7 +332,7 @@ public sealed class DocumentsMutations
         var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
         var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
 
-        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Comment), cancellationToken);
+        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Comment, input.OverrideJustification), cancellationToken);
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 

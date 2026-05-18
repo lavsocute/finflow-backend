@@ -1,6 +1,6 @@
+using FinFlow.Application.Budgets.Services;
 using FinFlow.Application.Payments.DTOs;
 using FinFlow.Domain.Abstractions;
-using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using MediatR;
@@ -12,7 +12,7 @@ internal sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymen
     private readonly IPaymentRepository _paymentRepository;
     private readonly IPaymentRefundRepository _paymentRefundRepository;
     private readonly IExpenseRepository _expenseRepository;
-    private readonly IBudgetRepository _budgetRepository;
+    private readonly IBudgetReservationService _budgetReservation;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -20,14 +20,14 @@ internal sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymen
         IPaymentRepository paymentRepository,
         IPaymentRefundRepository paymentRefundRepository,
         IExpenseRepository expenseRepository,
-        IBudgetRepository budgetRepository,
+        IBudgetReservationService budgetReservation,
         ICurrentTenant currentTenant,
         IUnitOfWork unitOfWork)
     {
         _paymentRepository = paymentRepository;
         _paymentRefundRepository = paymentRefundRepository;
         _expenseRepository = expenseRepository;
-        _budgetRepository = budgetRepository;
+        _budgetReservation = budgetReservation;
         _currentTenant = currentTenant;
         _unitOfWork = unitOfWork;
     }
@@ -53,7 +53,7 @@ internal sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymen
         _paymentRefundRepository.Add(refund);
         _paymentRepository.Update(payment);
 
-        // Reject the linked expense (if any) so budget recalculation excludes the refunded amount.
+        // Reject the linked expense (if any) so reporting reflects the rollback.
         var matchingExpense = await _expenseRepository.GetByPaymentIdAsync(payment.Id, cancellationToken);
         if (matchingExpense is not null)
         {
@@ -63,21 +63,21 @@ internal sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymen
                 expenseEntity.Reject($"Refunded: {refund.Reason}", _currentTenant.MembershipId.Value);
                 _expenseRepository.Update(expenseEntity);
 
-                var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-                    expenseEntity.IdTenant, expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
-
-                if (budget is not null)
-                {
-                    var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                        expenseEntity.IdTenant, expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
-
-                    var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, expenseEntity.IdTenant, cancellationToken);
-                    if (budgetEntity is not null)
-                    {
-                        budgetEntity.OverwriteSpent(spentAmount);
-                        _budgetRepository.Update(budgetEntity);
-                    }
-                }
+                // Reduce the spent pool by exactly the refund amount.
+                // Decimal-precise — no SQL SUM, no stale-by-one bug.
+                var releaseResult = await _budgetReservation.ReverseSpentAsync(
+                    new BudgetMovement(
+                        TenantId: expenseEntity.IdTenant,
+                        DepartmentId: expenseEntity.IdDepartment,
+                        Month: expenseEntity.Month,
+                        Year: expenseEntity.Year,
+                        AmountInBaseCurrency: refund.Amount * payment.ExchangeRate,
+                        SourceEntityId: refund.Id,
+                        SourceEntityType: "PaymentRefund",
+                        Reason: $"Refunded: {refund.Reason}"),
+                    cancellationToken);
+                if (releaseResult.IsFailure)
+                    return Result.Failure<PaymentRefundResponse>(releaseResult.Error);
             }
         }
 

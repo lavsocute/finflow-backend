@@ -1,8 +1,8 @@
-using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Budgets.Services;
 using FinFlow.Application.Payments.DTOs;
 using FinFlow.Domain.Abstractions;
-using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Documents;
+using FinFlow.Domain.Enums;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using MediatR;
@@ -15,7 +15,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
     private readonly IExpenseRepository _expenseRepository;
     private readonly IReviewedDocumentRepository _documentRepository;
     private readonly ICategoryRepository _categoryRepository;
-    private readonly IBudgetRepository _budgetRepository;
+    private readonly IBudgetReservationService _budgetReservation;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
 
@@ -24,7 +24,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         IExpenseRepository expenseRepository,
         IReviewedDocumentRepository documentRepository,
         ICategoryRepository categoryRepository,
-        IBudgetRepository budgetRepository,
+        IBudgetReservationService budgetReservation,
         ICurrentTenant currentTenant,
         IUnitOfWork unitOfWork)
     {
@@ -32,7 +32,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         _expenseRepository = expenseRepository;
         _documentRepository = documentRepository;
         _categoryRepository = categoryRepository;
-        _budgetRepository = budgetRepository;
+        _budgetReservation = budgetReservation;
         _currentTenant = currentTenant;
         _unitOfWork = unitOfWork;
     }
@@ -58,10 +58,27 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         _paymentRepository.Update(payment);
 
         var document = await _documentRepository.GetByIdForUpdateAsync(payment.DocumentId, _currentTenant.Id.Value, cancellationToken);
+        var documentDate = document?.DocumentDate.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow;
 
-        var expenseDate = document?.DocumentDate.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow;
+        // 1. Materialize the expense row.
+        await CreateExpenseAsync(payment, documentDate, cancellationToken);
 
-        await CreateExpenseAndUpdateBudgetAsync(payment, expenseDate, cancellationToken);
+        // 2. Move the budget pool: Committed -> Spent. Single in-memory mutation
+        //    on the Budget entity — no DB SUM (fixes B-1).
+        var moveResult = await _budgetReservation.ConvertCommitmentToSpentAsync(
+            new BudgetMovement(
+                TenantId: payment.IdTenant,
+                DepartmentId: payment.IdDepartment,
+                Month: documentDate.Month,
+                Year: documentDate.Year,
+                AmountInBaseCurrency: payment.AmountInBaseCurrency,
+                SourceEntityId: payment.Id,
+                SourceEntityType: "Payment",
+                Reason: "Confirmed"),
+            BudgetExceededTrigger.ConfirmPayment,
+            cancellationToken);
+        if (moveResult.IsFailure)
+            return Result.Failure<PaymentResponse>(moveResult.Error);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -80,11 +97,10 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
             payment.Notes));
     }
 
-    private async Task CreateExpenseAndUpdateBudgetAsync(Domain.Expenses.Payment payment, DateTime documentDate, CancellationToken cancellationToken)
+    private async Task CreateExpenseAsync(FinFlow.Domain.Expenses.Payment payment, DateTime documentDate, CancellationToken cancellationToken)
     {
-        var categories = await _categoryRepository.GetByTenantIdAsync(_currentTenant.Id.Value, includeInactive: true, cancellationToken);
+        var categories = await _categoryRepository.GetByTenantIdAsync(_currentTenant.Id!.Value, includeInactive: true, cancellationToken);
         var category = categories.FirstOrDefault(c => c.IsSystem) ?? categories.FirstOrDefault();
-
         if (category is null)
             return;
 
@@ -108,21 +124,5 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
             return;
 
         _expenseRepository.Add(expenseResult.Value);
-
-        var budgetSummary = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-            payment.IdTenant, payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
-
-        if (budgetSummary is not null)
-        {
-            var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                payment.IdTenant, payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
-
-            var budgetToUpdate = await _budgetRepository.GetEntityByIdAsync(budgetSummary.Id, payment.IdTenant, cancellationToken);
-            if (budgetToUpdate is not null)
-            {
-                budgetToUpdate.OverwriteSpent(spentAmount);
-                _budgetRepository.Update(budgetToUpdate);
-            }
-        }
     }
 }
