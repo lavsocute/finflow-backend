@@ -1,4 +1,5 @@
 using FinFlow.Application.Common.ExchangeRates;
+using FinFlow.Application.Documents.Duplicates;
 using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Application.Vendors.Services;
 using FinFlow.Domain.Abstractions;
@@ -22,17 +23,21 @@ public sealed class SubmitReviewedDocumentCommandHandler
     private readonly IUploadedDocumentDraftRepository _uploadedDocumentDraftRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
     private readonly IVendorLinkResolver _vendorLinkResolver;
+    private readonly IDuplicateReceiptDetector _duplicateReceiptDetector;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReviewedDocumentChunkIndexer _documentChunkIndexer;
     private readonly ITenantRepository _tenantRepository;
     private readonly IExchangeRateService _exchangeRateService;
     private readonly ILogger<SubmitReviewedDocumentCommandHandler> _logger;
 
+    private const int DuplicateSlidingWindowDays = 90;
+
     public SubmitReviewedDocumentCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
         IUploadedDocumentDraftRepository uploadedDocumentDraftRepository,
         ITenantMembershipRepository membershipRepository,
         IVendorLinkResolver vendorLinkResolver,
+        IDuplicateReceiptDetector duplicateReceiptDetector,
         IUnitOfWork unitOfWork,
         IReviewedDocumentChunkIndexer documentChunkIndexer,
         ITenantRepository tenantRepository,
@@ -43,6 +48,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
         _membershipRepository = membershipRepository;
         _vendorLinkResolver = vendorLinkResolver;
+        _duplicateReceiptDetector = duplicateReceiptDetector;
         _unitOfWork = unitOfWork;
         _documentChunkIndexer = documentChunkIndexer;
         _tenantRepository = tenantRepository;
@@ -187,6 +193,27 @@ public sealed class SubmitReviewedDocumentCommandHandler
         if (linkResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(linkResult.Error);
         documentEntity.LinkVendor(linkResult.Value.VendorId);
+
+        // Duplicate-receipt detection. Soft-warning only — submit proceeds even
+        // when matches are found. Notification mapper fans out to accountants.
+        var dedupHash = Duplicates.DocumentDedupHasher.Compute(
+            request.VendorTaxId,
+            request.VendorName,
+            request.Reference,
+            request.DocumentDate,
+            request.TotalAmount);
+        documentEntity.SetDedupHash(dedupHash);
+        if (dedupHash is not null)
+        {
+            var matches = await _duplicateReceiptDetector.FindMatchesAsync(
+                request.TenantId,
+                dedupHash,
+                documentEntity.Id,
+                DuplicateSlidingWindowDays,
+                cancellationToken);
+            if (matches.Count > 0)
+                documentEntity.FlagAsPotentialDuplicate(matches);
+        }
 
         if (draft != null)
         {

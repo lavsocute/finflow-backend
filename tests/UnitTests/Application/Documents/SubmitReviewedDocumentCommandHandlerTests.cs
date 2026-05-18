@@ -1,5 +1,6 @@
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Documents.Commands.SubmitReviewedDocument;
+using FinFlow.Application.Documents.Duplicates;
 using FinFlow.Application.Vendors.Services;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
@@ -81,6 +82,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
         var indexer = new Mock<IReviewedDocumentChunkIndexer>();
         var resolver = new Mock<IVendorLinkResolver>();
         var logger = new Mock<ILogger<SubmitReviewedDocumentCommandHandler>>();
+        var detector = new Mock<IDuplicateReceiptDetector>();
 
         var tenantId = Guid.NewGuid();
         var membershipId = Guid.NewGuid();
@@ -100,11 +102,18 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
             .Setup(x => x.ResolveAsync(It.IsAny<VendorLinkRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(VendorLinkResult.NotApplicable));
 
+        // Default detector: no duplicates found.
+        detector
+            .Setup(x => x.FindMatchesAsync(
+                It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Guid>());
+
         var handler = new SubmitReviewedDocumentCommandHandler(
             reviewedDocumentRepository.Object,
             draftRepository.Object,
             membershipRepository.Object,
             resolver.Object,
+            detector.Object,
             unitOfWork.Object,
             indexer.Object,
             new FinFlow.UnitTests.TestStubs.StubTenantRepository(),

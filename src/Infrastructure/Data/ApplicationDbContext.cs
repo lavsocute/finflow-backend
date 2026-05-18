@@ -1,4 +1,5 @@
 using FinFlow.Application.Common.Audit;
+using FinFlow.Application.Common.Notifications;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
@@ -20,6 +21,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     internal const int DocumentChunkEmbeddingDimensions = 2048;
     private readonly ICurrentTenant _currentTenant;
     private readonly IDomainEventAuditMapper? _auditMapper;
+    private readonly IDomainEventNotificationMapper? _notificationMapper;
     private readonly IHttpContextAccessor? _httpContextAccessor;
     private readonly ILogger<ApplicationDbContext>? _logger;
 
@@ -43,6 +45,21 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         _logger = logger;
     }
 
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        ICurrentTenant currentTenant,
+        IDomainEventAuditMapper auditMapper,
+        IDomainEventNotificationMapper notificationMapper,
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<ApplicationDbContext> logger) : base(options)
+    {
+        _currentTenant = currentTenant;
+        _auditMapper = auditMapper;
+        _notificationMapper = notificationMapper;
+        _httpContextAccessor = httpContextAccessor;
+        _logger = logger;
+    }
+
     public DbSet<EmailChallenge> EmailChallenges => Set<EmailChallenge>();
     public DbSet<ReviewedDocument> ReviewedDocuments => Set<ReviewedDocument>();
     public DbSet<UploadedDocumentDraft> UploadedDocumentDrafts => Set<UploadedDocumentDraft>();
@@ -59,6 +76,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<FinFlow.Domain.ExchangeRates.ExchangeRateHistory> ExchangeRateHistory => Set<FinFlow.Domain.ExchangeRates.ExchangeRateHistory>();
     public DbSet<FinFlow.Domain.Employees.EmployeeReimbursementProfile> EmployeeReimbursementProfiles => Set<FinFlow.Domain.Employees.EmployeeReimbursementProfile>();
+    public DbSet<FinFlow.Domain.Notifications.Notification> Notifications => Set<FinFlow.Domain.Notifications.Notification>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -154,7 +172,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
 
     private async Task DispatchDomainEventsAsync(CancellationToken cancellationToken)
     {
-        if (_auditMapper is null)
+        if (_auditMapper is null && _notificationMapper is null)
             return;
 
         var entitiesWithEvents = ChangeTracker.Entries<Entity>()
@@ -169,44 +187,66 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
         var tenantId = _currentTenant.Id;
 
         var auditLogs = new List<AuditLog>();
+        var notifications = new List<FinFlow.Domain.Notifications.Notification>();
+
         foreach (var entity in entitiesWithEvents)
         {
             foreach (var domainEvent in entity.GetDomainEvents())
             {
-                try
+                if (_auditMapper is not null)
                 {
-                    var log = _auditMapper.Map(domainEvent, tenantId, accountId);
-                    if (log is not null)
-                        auditLogs.Add(log);
+                    try
+                    {
+                        var log = _auditMapper.Map(domainEvent, tenantId, accountId);
+                        if (log is not null)
+                            auditLogs.Add(log);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError(
+                            ex,
+                            "Failed to map domain event {EventType} to audit log for entity {EntityType}#{EntityId}.",
+                            domainEvent.GetType().Name, entity.GetType().Name, entity.Id);
+                    }
                 }
-                catch (Exception ex)
+
+                if (_notificationMapper is not null)
                 {
-                    // REQ-A5: never block business save on audit failures.
-                    _logger?.LogError(
-                        ex,
-                        "Failed to map domain event {EventType} for entity {EntityType}#{EntityId}.",
-                        domainEvent.GetType().Name,
-                        entity.GetType().Name,
-                        entity.Id);
+                    try
+                    {
+                        var built = await _notificationMapper.MapAsync(domainEvent, tenantId, cancellationToken);
+                        if (built.Count > 0)
+                            notifications.AddRange(built);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError(
+                            ex,
+                            "Failed to map domain event {EventType} to notifications for entity {EntityType}#{EntityId}.",
+                            domainEvent.GetType().Name, entity.GetType().Name, entity.Id);
+                    }
                 }
             }
             entity.ClearDomainEvents();
         }
 
-        if (auditLogs.Count == 0)
+        if (auditLogs.Count == 0 && notifications.Count == 0)
             return;
 
         try
         {
-            Set<AuditLog>().AddRange(auditLogs);
+            if (auditLogs.Count > 0)
+                Set<AuditLog>().AddRange(auditLogs);
+            if (notifications.Count > 0)
+                Set<FinFlow.Domain.Notifications.Notification>().AddRange(notifications);
             await base.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             _logger?.LogError(
                 ex,
-                "Failed to persist {Count} audit log entries for domain events.",
-                auditLogs.Count);
+                "Failed to persist {AuditCount} audit log entries and {NotificationCount} notifications for domain events.",
+                auditLogs.Count, notifications.Count);
         }
     }
 

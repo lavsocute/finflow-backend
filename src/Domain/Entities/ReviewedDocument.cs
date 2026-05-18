@@ -106,6 +106,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
     public string Category { get; private set; } = null!;
     public string? VendorTaxId { get; private set; }
     public Guid? IdVendor { get; private set; }
+    public string? DedupHash { get; private set; }
     public decimal Subtotal { get; private set; }
     public decimal? DocumentDiscountPercent { get; private set; }
     public decimal DocumentDiscountAmount { get; private set; }
@@ -437,5 +438,37 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
     {
         IdVendor = vendorId;
         UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Set the dedup hash used by duplicate-receipt detection. Caller computes
+    /// it via <c>DocumentDedupHasher</c>; this method only stores it. Pass
+    /// null when the inputs were too sparse for a reliable hash (the caller
+    /// then opts out of dedup for this document).
+    /// </summary>
+    public void SetDedupHash(string? dedupHash)
+    {
+        DedupHash = string.IsNullOrWhiteSpace(dedupHash) ? null : dedupHash.Trim();
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Mark the document as a potential duplicate. Soft-warning: doesn't change
+    /// status. Raises a domain event so notification mapper can fan out to
+    /// accountants/admins.
+    /// </summary>
+    public void FlagAsPotentialDuplicate(IReadOnlyList<Guid> conflictingDocumentIds)
+    {
+        if (conflictingDocumentIds.Count == 0)
+            return;
+        if (string.IsNullOrEmpty(DedupHash))
+            return;
+
+        RaiseDomainEvent(new DuplicateReceiptFlaggedDomainEvent(
+            DocumentId: Id,
+            TenantId: IdTenant,
+            DedupHash: DedupHash,
+            SubmitterMembershipId: MembershipId,
+            ConflictingDocumentIds: conflictingDocumentIds));
     }
 }
