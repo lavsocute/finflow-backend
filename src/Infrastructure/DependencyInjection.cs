@@ -214,6 +214,7 @@ public static class DependencyInjection
         services.AddScoped<IQueryRewriter, NoOpQueryRewriter>();
         services.AddSingleton<ISecretProvider, Secrets.EnvironmentSecretProvider>();
         services.AddSingleton<Application.Common.Security.IPiiEncryptionService, Security.AesGcmPiiEncryptionService>();
+        services.AddScoped<Application.Reporting.IReportingService, Reporting.ReportingService>();
         services.AddScoped<IVectorStore, PgVectorStore>();
         services.AddScoped<IChatService>(sp => sp.GetRequiredService<Application.Chat.Services.ChatService>());
 
