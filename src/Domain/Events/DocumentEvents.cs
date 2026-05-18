@@ -27,6 +27,14 @@ public sealed record ReviewedDocumentRejectedDomainEvent(
     public DateTime OccurredOn { get; } = DateTime.UtcNow;
 }
 
+public sealed record ReviewedDocumentEscalatedDomainEvent(
+    Guid DocumentId,
+    Guid TenantId,
+    Guid ApprovedByMembershipId) : IDomainEvent
+{
+    public DateTime OccurredOn { get; } = DateTime.UtcNow;
+}
+
 public sealed record UploadedDocumentDraftDeletedDomainEvent(
     Guid DraftId,
     Guid TenantId,

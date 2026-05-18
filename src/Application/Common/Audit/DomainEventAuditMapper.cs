@@ -172,6 +172,10 @@ internal sealed class DomainEventAuditMapper : IDomainEventAuditMapper
                 "DEPARTMENT_DEACTIVATED", "Department", e.DepartmentId, tenantId, accountId,
                 payload: new { status = "Inactive" }),
 
+            ReviewedDocumentEscalatedDomainEvent e => CreateLog(
+                "DOCUMENT_ESCALATED", "ReviewedDocument", e.DocumentId, tenantId, accountId,
+                payload: new { approvedByMembershipId = e.ApprovedByMembershipId }),
+
             _ => null
         };
     }

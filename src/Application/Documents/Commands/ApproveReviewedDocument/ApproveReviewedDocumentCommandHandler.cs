@@ -5,6 +5,7 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.TenantSettings;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +15,7 @@ public sealed class ApproveReviewedDocumentCommandHandler
     : IRequestHandler<ApproveReviewedDocumentCommand, Result<ReviewedDocumentResponse>>
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
+    private readonly ITenantSettingsRepository _tenantSettingsRepository;
     private readonly IBudgetGuard _budgetGuard;
     private readonly IBudgetReservationService _budgetReservation;
     private readonly IUnitOfWork _unitOfWork;
@@ -22,6 +24,7 @@ public sealed class ApproveReviewedDocumentCommandHandler
 
     public ApproveReviewedDocumentCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
+        ITenantSettingsRepository tenantSettingsRepository,
         IBudgetGuard budgetGuard,
         IBudgetReservationService budgetReservation,
         IUnitOfWork unitOfWork,
@@ -29,6 +32,7 @@ public sealed class ApproveReviewedDocumentCommandHandler
         ILogger<ApproveReviewedDocumentCommandHandler> logger)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
+        _tenantSettingsRepository = tenantSettingsRepository;
         _budgetGuard = budgetGuard;
         _budgetReservation = budgetReservation;
         _unitOfWork = unitOfWork;
@@ -42,15 +46,52 @@ public sealed class ApproveReviewedDocumentCommandHandler
         if (document == null)
             return Result.Failure<ReviewedDocumentResponse>(ReviewedDocumentErrors.NotFound);
 
-        if (document.MembershipId == request.MembershipId)
+        // Load tenant approval policy (graceful fallback to permissive defaults).
+        var settings = await _tenantSettingsRepository.GetByTenantIdAsync(request.TenantId, cancellationToken);
+        var requireDifferentApprover = settings?.RequireDifferentApprover ?? true;
+        var escalationThreshold = settings?.EscalationThreshold ?? decimal.MaxValue;
+        var isEscalationEnabled = settings?.IsEscalationEnabled ?? false;
+
+        if (requireDifferentApprover && document.MembershipId == request.MembershipId)
             return Result.Failure<ReviewedDocumentResponse>(ReviewedDocumentErrors.SelfApprovalNotAllowed);
 
-        // Budget gate. Manager can override only via a dedicated mutation; the
-        // default approve path respects the enforcement mode strictly.
         var amount = document.TotalAmountInBaseCurrency;
         var month = document.DocumentDate.Month;
         var year = document.DocumentDate.Year;
 
+        // ─── Escalation logic ───
+        // If escalation is enabled and amount exceeds threshold, a Manager-level
+        // approval only escalates (PendingEscalation). The document is NOT fully
+        // approved until a higher-role user (Accountant/TenantAdmin) approves it.
+        // If the document is already PendingEscalation, this call is the second-
+        // level approval and proceeds to full Approved status.
+        if (isEscalationEnabled
+            && amount > escalationThreshold
+            && document.Status == ReviewedDocumentStatus.ReadyForApproval
+            && request.ApproverRole == RoleType.Manager)
+        {
+            var escalateResult = document.Escalate(request.MembershipId);
+            if (escalateResult.IsFailure)
+                return Result.Failure<ReviewedDocumentResponse>(escalateResult.Error);
+
+            _reviewedDocumentRepository.Update(document);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success(new ReviewedDocumentResponse(
+                document.Id,
+                document.Status.ToString(),
+                document.SubmittedAt,
+                document.VendorName,
+                document.Reference,
+                document.TotalAmount,
+                document.ReviewedByStaff,
+                document.CurrencyCode,
+                document.ExchangeRate,
+                document.BaseCurrencyCode,
+                document.TotalAmountInBaseCurrency));
+        }
+
+        // ─── Budget gate ───
         var check = await _budgetGuard.CheckAsync(
             request.TenantId, document.IdDepartment, month, year, amount, cancellationToken);
 
@@ -67,9 +108,7 @@ public sealed class ApproveReviewedDocumentCommandHandler
         if (approveResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(approveResult.Error);
 
-        // Reserve the budget. When the manager supplied a justification AND
-        // the guard said an override was needed, ask the reservation service
-        // to record the override in audit + raise BudgetOverrideUsedDomainEvent.
+        // Reserve the budget.
         var movement = new BudgetMovement(
             TenantId: request.TenantId,
             DepartmentId: document.IdDepartment,

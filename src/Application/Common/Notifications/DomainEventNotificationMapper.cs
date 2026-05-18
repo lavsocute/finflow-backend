@@ -55,6 +55,7 @@ internal sealed class DomainEventNotificationMapper : IDomainEventNotificationMa
             BudgetWarningThresholdReachedDomainEvent e => await BuildBudgetWarning(e, tenantId.Value, cancellationToken),
             BudgetOverrideUsedDomainEvent e => await BuildBudgetOverride(e, tenantId.Value, cancellationToken),
             DepartmentDeactivatedDomainEvent e => await BuildDepartmentDeactivated(e, tenantId.Value, cancellationToken),
+            ReviewedDocumentEscalatedDomainEvent e => await BuildDocEscalated(e, tenantId.Value, cancellationToken),
             _ => []
         };
     }
@@ -327,6 +328,29 @@ internal sealed class DomainEventNotificationMapper : IDomainEventNotificationMa
                 title: "Phòng ban đã bị vô hiệu hóa",
                 body: $"Một phòng ban đã bị deactivate. Kiểm tra nếu cần re-assign nhân sự hoặc ngân sách.",
                 payloadJson: SerializePayload(new { departmentId = e.DepartmentId }),
+                severity: NotificationSeverity.Warning))
+            .Where(r => r.IsSuccess)
+            .Select(r => r.Value)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<Notification>> BuildDocEscalated(
+        ReviewedDocumentEscalatedDomainEvent e, Guid tenantId, CancellationToken ct)
+    {
+        // Notify accountants + tenant admins that a document needs escalation approval.
+        var recipients = await ResolveAccountantsAndAdmins(tenantId, ct);
+        if (recipients.Count == 0) return [];
+
+        var doc = await ResolveDocSubmitter(e.DocumentId, tenantId, ct);
+        var reference = doc?.Reference ?? "N/A";
+
+        return recipients
+            .Select(membershipId => Notification.Create(
+                tenantId, membershipId,
+                type: "DOCUMENT_ESCALATED",
+                title: "Hóa đơn cần duyệt cấp cao",
+                body: $"Hóa đơn {reference} đã được Manager duyệt sơ bộ nhưng vượt ngưỡng escalation. Cần phê duyệt cấp cao.",
+                payloadJson: SerializePayload(new { documentId = e.DocumentId, approvedByMembershipId = e.ApprovedByMembershipId }),
                 severity: NotificationSeverity.Warning))
             .Where(r => r.IsSuccess)
             .Select(r => r.Value)

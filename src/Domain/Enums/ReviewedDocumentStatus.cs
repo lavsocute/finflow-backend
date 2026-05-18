@@ -5,5 +5,6 @@ public enum ReviewedDocumentStatus
     Draft = 0,
     ReadyForApproval = 1,
     Approved = 2,
-    Rejected = 3
+    Rejected = 3,
+    PendingEscalation = 4
 }
