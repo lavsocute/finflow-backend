@@ -355,6 +355,7 @@ public sealed class PaymentReadQueriesTests
 
     private sealed class StubReviewedDocumentRepository(IReadOnlyList<ReviewedDocument> documents) : IReviewedDocumentRepository
     {
+        public Task<IReadOnlyList<ReviewedDocument>> GetByIdsAsync(IReadOnlyList<Guid> ids, Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ReviewedDocument>>(Array.Empty<ReviewedDocument>());
         public void Add(ReviewedDocument document) => throw new NotSupportedException();
         public void Update(ReviewedDocument document) => throw new NotSupportedException();
         public Task<ReviewedDocument?> GetByIdForUpdateAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) =>
@@ -413,6 +414,7 @@ public sealed class PaymentReadQueriesTests
             Task.FromResult(payments.Any(x => x.DocumentId == documentId));
 
         public Task<Payment?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Payment>> GetByIdsAsync(IReadOnlyList<Guid> ids, Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Payment>>(Array.Empty<Payment>());
         public void Add(Payment payment) => throw new NotSupportedException();
         public void Update(Payment payment) => throw new NotSupportedException();
 
@@ -461,6 +463,9 @@ public sealed class PaymentReadQueriesTests
     {
         public Task<AccountSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
             Task.FromResult(accounts.TryGetValue(id, out var value) ? value : null);
+
+        public Task<IReadOnlyList<AccountSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AccountSummary>>(ids.Where(accounts.ContainsKey).Select(id => accounts[id]).ToList());
 
         public Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AccountLoginInfo?> GetLoginInfoByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -28,6 +28,13 @@ public interface IPaymentRepository
     Task<IReadOnlyList<PaymentSummary>> GetPendingByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default);
     Task<bool> ExistsByDocumentIdAsync(Guid documentId, CancellationToken cancellationToken = default);
     Task<Payment?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bulk-load tracked payment entities by ID list, scoped to the given tenant.
+    /// Used by batch operations (e.g. CSV export) that need to validate/update many at once.
+    /// </summary>
+    Task<IReadOnlyList<Payment>> GetByIdsAsync(IReadOnlyList<Guid> ids, Guid tenantId, CancellationToken cancellationToken = default);
+
     void Add(Payment payment);
     void Update(Payment payment);
 }

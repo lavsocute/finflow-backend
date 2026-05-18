@@ -18,6 +18,13 @@ internal sealed class AccountRepository : IAccountRepository
             .Select(a => new AccountSummary(a.Id, a.Email, a.FullName, a.IsActive, a.IsEmailVerified, a.EmailVerifiedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<AccountSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Account>()
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.Id))
+            .Select(a => new AccountSummary(a.Id, a.Email, a.FullName, a.IsActive, a.IsEmailVerified, a.EmailVerifiedAt))
+            .ToListAsync(cancellationToken);
+
     // Read Method: Returns DTO via Select projection 
     // Account identity is global; tenant/workspace resolution happens via TenantMembership.
     public async Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default)

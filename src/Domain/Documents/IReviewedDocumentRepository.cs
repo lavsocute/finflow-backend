@@ -15,4 +15,10 @@ public interface IReviewedDocumentRepository
     Task<IReadOnlyList<ReviewedDocument>> GetOwnedSubmittedAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ReviewedDocument>> GetByStatusAsync(Guid tenantId, ApprovalStatusFilter status, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
     Task<int> CountByStatusAsync(Guid tenantId, ApprovalStatusFilter status, string? search, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bulk-load reviewed documents by ID list, scoped to the given tenant.
+    /// AsNoTracking — caller does not modify the loaded entities.
+    /// </summary>
+    Task<IReadOnlyList<ReviewedDocument>> GetByIdsAsync(IReadOnlyList<Guid> ids, Guid tenantId, CancellationToken cancellationToken = default);
 }

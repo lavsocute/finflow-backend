@@ -103,6 +103,11 @@ internal sealed class PaymentRepository : IPaymentRepository
         await _dbContext.Set<Payment>()
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Payment>> GetByIdsAsync(IReadOnlyList<Guid> ids, Guid tenantId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<Payment>()
+            .Where(p => p.IdTenant == tenantId && ids.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+
     public void Add(Payment payment) => _dbContext.Set<Payment>().Add(payment);
     public void Update(Payment payment) => _dbContext.Set<Payment>().Update(payment);
 }

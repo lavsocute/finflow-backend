@@ -70,6 +70,9 @@ public sealed class GetCurrentWorkspaceQueryHandlerTests
                 ? null
                 : new AccountSummary(_loginInfo.Id, _loginInfo.Email, null, _loginInfo.IsActive, _loginInfo.IsEmailVerified, _loginInfo.EmailVerifiedAt));
 
+        public Task<IReadOnlyList<AccountSummary>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AccountSummary>>([]);
+
         public Task<AccountLoginInfo?> GetLoginInfoByEmailAsync(string email, CancellationToken cancellationToken = default)
             => Task.FromResult<AccountLoginInfo?>(_loginInfo);
 

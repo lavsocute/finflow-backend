@@ -113,4 +113,13 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
 
         return await query.CountAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<ReviewedDocument>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids,
+        Guid tenantId,
+        CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<ReviewedDocument>()
+            .AsNoTracking()
+            .Where(d => d.IdTenant == tenantId && ids.Contains(d.Id))
+            .ToListAsync(cancellationToken);
 }
