@@ -3,6 +3,7 @@ using System;
 using FinFlow.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace FinFlow.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260518040423_AddNotifications")]
+    partial class AddNotifications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -821,11 +824,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .HasDefaultValue("VND")
                         .HasColumnName("currency_code");
 
-                    b.Property<string>("DedupHash")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("dedup_hash");
-
                     b.Property<DateOnly>("DocumentDate")
                         .HasColumnType("date")
                         .HasColumnName("document_date");
@@ -943,9 +941,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("IdDepartment");
-
-                    b.HasIndex("IdTenant", "DedupHash")
-                        .HasDatabaseName("ix_reviewed_document_tenant_dedup_hash");
 
                     b.HasIndex("IdTenant", "IdVendor");
 
@@ -2013,72 +2008,6 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("payment_refund", (string)null);
-                });
-
-            modelBuilder.Entity("FinFlow.Domain.Notifications.Notification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("body");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid>("IdTenant")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id_tenant");
-
-                    b.Property<bool>("IsRead")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false)
-                        .HasColumnName("is_read");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("payload_json");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("read_at");
-
-                    b.Property<Guid>("RecipientMembershipId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("recipient_membership_id");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("severity");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("title");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("type");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IdTenant", "CreatedAt");
-
-                    b.HasIndex("RecipientMembershipId", "IsRead", "CreatedAt")
-                        .HasDatabaseName("ix_notification_recipient_unread_created");
-
-                    b.ToTable("notification", (string)null);
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.Department", b =>

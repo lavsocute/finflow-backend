@@ -21,6 +21,7 @@ public static class DependencyInjection
         });
         services.AddScoped<TenantCreationActorAuthorizationService>();
         services.AddScoped<IDomainEventAuditMapper, DomainEventAuditMapper>();
+        services.AddScoped<Common.Notifications.IDomainEventNotificationMapper, Common.Notifications.DomainEventNotificationMapper>();
 
         // Bank CSV export — formatters are stateless, share single instance.
         services.AddSingleton<IBankCsvFormatter, VietcombankCsvFormatter>();
