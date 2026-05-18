@@ -5,6 +5,7 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.TenantSettings;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -18,7 +19,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
         var (sut, indexer, _) = BuildSut(out var doc);
 
         var result = await sut.Handle(
-            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid(), null),
+            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid()),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -34,7 +35,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
             .ThrowsAsync(new InvalidOperationException("embedding failed"));
 
         var result = await sut.Handle(
-            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid(), null),
+            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid()),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -57,7 +58,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
                 BudgetExists: true));
 
         var result = await sut.Handle(
-            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid(), null),
+            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid()),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -81,7 +82,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
                 BudgetExists: true));
 
         var result = await sut.Handle(
-            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid(), null),
+            new ApproveReviewedDocumentCommand(doc.Id, doc.IdTenant, Guid.NewGuid()),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -91,6 +92,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
     private static (ApproveReviewedDocumentCommandHandler Handler, Mock<IReviewedDocumentChunkIndexer> Indexer, Mock<IBudgetGuard> Guard) BuildSut(out ReviewedDocument doc)
     {
         var docRepo = new Mock<IReviewedDocumentRepository>();
+        var settingsRepo = new Mock<ITenantSettingsRepository>();
         var guard = new Mock<IBudgetGuard>();
         var reservation = new Mock<IBudgetReservationService>();
         var unitOfWork = new Mock<IUnitOfWork>();
@@ -103,6 +105,11 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
         docRepo
             .Setup(x => x.GetByIdForUpdateAsync(d.Id, d.IdTenant, It.IsAny<CancellationToken>()))
             .ReturnsAsync(d);
+
+        // Default: no settings → permissive defaults (no escalation).
+        settingsRepo
+            .Setup(x => x.GetByTenantIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TenantSettings?)null);
 
         unitOfWork.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         indexer.Setup(x => x.ReindexAsync(d, It.IsAny<CancellationToken>())).ReturnsAsync(2);
@@ -125,6 +132,7 @@ public sealed class ApproveReviewedDocumentCommandHandlerTests
 
         var handler = new ApproveReviewedDocumentCommandHandler(
             docRepo.Object,
+            settingsRepo.Object,
             guard.Object,
             reservation.Object,
             unitOfWork.Object,

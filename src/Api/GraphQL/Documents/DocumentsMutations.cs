@@ -331,8 +331,9 @@ public sealed class DocumentsMutations
         EnsureApproverRole(context);
         var tenantId = GetRequiredGuidClaim(context, "IdTenant", unauthorizedMessage: "The current user is not authorized to access this resource.");
         var membershipId = GetRequiredGuidClaim(context, "MembershipId", unauthorizedMessage: "The current user is not authorized to access this resource.");
+        var role = GetRequiredRole(context);
 
-        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, input.Comment, input.OverrideJustification), cancellationToken);
+        var result = await mediator.Send(new ApproveReviewedDocumentCommand(input.DocumentId, tenantId, membershipId, role, input.Comment, input.OverrideJustification), cancellationToken);
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
@@ -434,7 +435,7 @@ public sealed class DocumentsMutations
     internal static void EnsureApproverRole(IResolverContext context)
     {
         var role = GetRequiredRole(context);
-        if (role is RoleType.Manager or RoleType.TenantAdmin)
+        if (role is RoleType.Manager or RoleType.Accountant or RoleType.TenantAdmin)
             return;
 
         throw ToGraphQlException(ReviewedDocumentErrors.ForbiddenApproval);

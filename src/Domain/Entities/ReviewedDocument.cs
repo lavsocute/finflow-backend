@@ -301,7 +301,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
 
     public Result Approve(Guid? approvedByMembershipId = null)
     {
-        if (Status != ReviewedDocumentStatus.ReadyForApproval)
+        if (Status != ReviewedDocumentStatus.ReadyForApproval &&
+            Status != ReviewedDocumentStatus.PendingEscalation)
             return Result.Failure(ReviewedDocumentErrors.AlreadyProcessed);
 
         Status = ReviewedDocumentStatus.Approved;
@@ -312,9 +313,27 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         return Result.Success();
     }
 
-    public Result Reject(string reason, Guid? rejectedByMembershipId = null)
+    /// <summary>
+    /// First-level approval that requires escalation. Transitions
+    /// ReadyForApproval → PendingEscalation. The document is NOT yet
+    /// fully approved; a higher-role approver must call <see cref="Approve"/>.
+    /// </summary>
+    public Result Escalate(Guid approvedByMembershipId)
     {
         if (Status != ReviewedDocumentStatus.ReadyForApproval)
+            return Result.Failure(ReviewedDocumentErrors.AlreadyProcessed);
+
+        Status = ReviewedDocumentStatus.PendingEscalation;
+        UpdatedAt = DateTime.UtcNow;
+
+        RaiseDomainEvent(new ReviewedDocumentEscalatedDomainEvent(Id, IdTenant, approvedByMembershipId));
+        return Result.Success();
+    }
+
+    public Result Reject(string reason, Guid? rejectedByMembershipId = null)
+    {
+        if (Status != ReviewedDocumentStatus.ReadyForApproval &&
+            Status != ReviewedDocumentStatus.PendingEscalation)
             return Result.Failure(ReviewedDocumentErrors.AlreadyProcessed);
 
         var normalizedReason = reason?.Trim() ?? string.Empty;
