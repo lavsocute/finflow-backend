@@ -80,4 +80,5 @@ internal sealed class VendorRepository : IVendorRepository
 
     public void Add(Vendor vendor) => _dbContext.Set<Vendor>().Add(vendor);
     public void Update(Vendor vendor) => _dbContext.Set<Vendor>().Update(vendor);
+    public void Detach(Vendor vendor) => _dbContext.Entry(vendor).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
 }

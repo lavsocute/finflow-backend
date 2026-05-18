@@ -113,6 +113,7 @@ public sealed class VerifyVendorCommandHandlerTests
 
         public void Add(Vendor vendor) { }
         public void Update(Vendor vendor) => UpdatedVendors.Add(vendor);
+        public void Detach(Vendor vendor) { }
     }
 
     private sealed class StubUnitOfWork : IUnitOfWork

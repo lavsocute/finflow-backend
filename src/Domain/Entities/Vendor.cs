@@ -1,10 +1,13 @@
 using FinFlow.Domain.Abstractions;
+using FinFlow.Domain.Events;
 using FinFlow.Domain.Interfaces;
 
 namespace FinFlow.Domain.Entities;
 
 public sealed class Vendor : Entity, IMultiTenant, ISoftDeletable
 {
+    private const int MaxNameLength = 200;
+
     private Vendor(
         Guid id,
         Guid idTenant,
@@ -62,7 +65,7 @@ public sealed class Vendor : Entity, IMultiTenant, ISoftDeletable
         if (!IsValidTaxCodeFormat(normalizedTaxCode))
             return Result.Failure<Vendor>(VendorErrors.TaxCodeInvalid);
 
-        if (normalizedName.Length > 200)
+        if (normalizedName.Length > MaxNameLength)
             return Result.Failure<Vendor>(VendorErrors.NameTooLong);
 
         var now = DateTime.UtcNow;
@@ -76,6 +79,59 @@ public sealed class Vendor : Entity, IMultiTenant, ISoftDeletable
             verifiedAt: null,
             createdAt: now,
             updatedAt: now));
+    }
+
+    /// <summary>
+    /// Auto-create variant used by document submission flow when staff enters a
+    /// new tax code on a receipt. Same validation as <see cref="Create"/>, but
+    /// truncates over-long names instead of rejecting (OCR may capture extra
+    /// label text). The created vendor is always <c>IsVerified=false</c> and
+    /// raises <see cref="VendorAutoCreatedDomainEvent"/> so audit + manager
+    /// dashboards can flag it for review.
+    /// </summary>
+    public static Result<Vendor> CreateAuto(
+        Guid idTenant,
+        string taxCode,
+        string name,
+        Guid createdByMembershipId,
+        Guid sourceDocumentId)
+    {
+        if (idTenant == Guid.Empty)
+            return Result.Failure<Vendor>(VendorErrors.TenantRequired);
+
+        var normalizedTaxCode = taxCode?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedTaxCode))
+            return Result.Failure<Vendor>(VendorErrors.TaxCodeRequired);
+        if (normalizedTaxCode.Length is < 10 or > 14 || !IsValidTaxCodeFormat(normalizedTaxCode))
+            return Result.Failure<Vendor>(VendorErrors.TaxCodeInvalid);
+
+        var normalizedName = name?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedName))
+            return Result.Failure<Vendor>(VendorErrors.NameRequired);
+        if (normalizedName.Length > MaxNameLength)
+            normalizedName = normalizedName[..MaxNameLength];
+
+        var now = DateTime.UtcNow;
+        var vendor = new Vendor(
+            Guid.NewGuid(),
+            idTenant,
+            normalizedTaxCode.ToUpperInvariant(),
+            normalizedName,
+            isVerified: false,
+            verifiedByMembershipId: null,
+            verifiedAt: null,
+            createdAt: now,
+            updatedAt: now);
+
+        vendor.RaiseDomainEvent(new VendorAutoCreatedDomainEvent(
+            vendor.Id,
+            vendor.IdTenant,
+            vendor.TaxCode,
+            vendor.Name,
+            createdByMembershipId,
+            sourceDocumentId));
+
+        return Result.Success(vendor);
     }
 
     private static bool IsValidTaxCodeFormat(string taxCode)

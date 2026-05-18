@@ -23,4 +23,11 @@ public interface IVendorRepository
     Task<Vendor?> GetEntityByTaxCodeAsync(string taxCode, Guid tenantId, CancellationToken cancellationToken = default);
     void Add(Vendor vendor);
     void Update(Vendor vendor);
+
+    /// <summary>
+    /// Detach a tracked vendor from the change tracker. Used after a failed
+    /// auto-create insert (unique-constraint race) so the next SaveChanges
+    /// doesn't retry the same conflict.
+    /// </summary>
+    void Detach(Vendor vendor);
 }

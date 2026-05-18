@@ -88,6 +88,7 @@ public sealed class CreateVendorCommandHandlerTests
 
         public void Add(Vendor vendor) => AddedVendors.Add(vendor);
         public void Update(Vendor vendor) { }
+        public void Detach(Vendor vendor) { }
     }
 
     private sealed class StubUnitOfWork : IUnitOfWork

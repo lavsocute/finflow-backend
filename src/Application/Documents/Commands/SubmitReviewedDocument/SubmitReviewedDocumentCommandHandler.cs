@@ -1,5 +1,6 @@
 using FinFlow.Application.Common.ExchangeRates;
 using FinFlow.Application.Documents.DTOs.Responses;
+using FinFlow.Application.Vendors.Services;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
@@ -20,7 +21,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
     private readonly IUploadedDocumentDraftRepository _uploadedDocumentDraftRepository;
     private readonly ITenantMembershipRepository _membershipRepository;
-    private readonly IVendorRepository _vendorRepository;
+    private readonly IVendorLinkResolver _vendorLinkResolver;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IReviewedDocumentChunkIndexer _documentChunkIndexer;
     private readonly ITenantRepository _tenantRepository;
@@ -31,7 +32,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         IReviewedDocumentRepository reviewedDocumentRepository,
         IUploadedDocumentDraftRepository uploadedDocumentDraftRepository,
         ITenantMembershipRepository membershipRepository,
-        IVendorRepository vendorRepository,
+        IVendorLinkResolver vendorLinkResolver,
         IUnitOfWork unitOfWork,
         IReviewedDocumentChunkIndexer documentChunkIndexer,
         ITenantRepository tenantRepository,
@@ -41,7 +42,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
         _membershipRepository = membershipRepository;
-        _vendorRepository = vendorRepository;
+        _vendorLinkResolver = vendorLinkResolver;
         _unitOfWork = unitOfWork;
         _documentChunkIndexer = documentChunkIndexer;
         _tenantRepository = tenantRepository;
@@ -86,9 +87,10 @@ public sealed class SubmitReviewedDocumentCommandHandler
 
         if (!string.IsNullOrWhiteSpace(request.VendorTaxId))
         {
-            var vendorExists = await _vendorRepository.ExistsByTaxCodeAsync(request.VendorTaxId, request.TenantId, cancellationToken);
-            if (!vendorExists)
-                return Result.Failure<ReviewedDocumentResponse>(VendorErrors.NotFound);
+            // Vendor auto-link is resolved AFTER document validation passes so we
+            // don't pollute the DB with vendors for documents that fail later
+            // checks (currency, line items, etc). The resolver attaches the
+            // resulting vendor Id via documentEntity.LinkVendor().
         }
 
         var lineItems = request.LineItems
@@ -169,6 +171,22 @@ public sealed class SubmitReviewedDocumentCommandHandler
         var setCurrency = documentEntity.SetCurrencyContext(documentCurrency, baseCurrency, exchangeRate);
         if (setCurrency.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(setCurrency.Error);
+
+        // Resolve vendor link. Soft-failure: when the resolver returns
+        // NotApplicable (empty/invalid tax code) the document still saves with
+        // IdVendor=null. Hard failure (e.g. constraint race that re-fetch
+        // couldn't recover) bubbles up.
+        var linkResult = await _vendorLinkResolver.ResolveAsync(
+            new VendorLinkRequest(
+                TenantId: request.TenantId,
+                VendorTaxId: request.VendorTaxId,
+                VendorName: request.VendorName,
+                CreatedByMembershipId: request.MembershipId,
+                SourceDocumentId: documentEntity.Id),
+            cancellationToken);
+        if (linkResult.IsFailure)
+            return Result.Failure<ReviewedDocumentResponse>(linkResult.Error);
+        documentEntity.LinkVendor(linkResult.Value.VendorId);
 
         if (draft != null)
         {

@@ -23,6 +23,7 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         builder.Property(x => x.DocumentDate).HasColumnName("document_date").IsRequired();
         builder.Property(x => x.Category).HasColumnName("category").HasMaxLength(100).IsRequired();
         builder.Property(x => x.VendorTaxId).HasColumnName("vendor_tax_id").HasMaxLength(50);
+        builder.Property(x => x.IdVendor).HasColumnName("id_vendor");
         builder.Property(x => x.Subtotal).HasColumnName("subtotal").HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(x => x.Vat).HasColumnName("vat").HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").HasColumnType("numeric(18,2)").IsRequired();
@@ -54,6 +55,7 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
 
         builder.HasIndex(x => new { x.IdTenant, x.Status, x.SubmittedAt });
         builder.HasIndex(x => x.IdDepartment);
+        builder.HasIndex(x => new { x.IdTenant, x.IdVendor });
 
         builder.OwnsMany(x => x.LineItems, ownedBuilder =>
         {

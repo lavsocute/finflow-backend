@@ -105,6 +105,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
     public DateOnly DocumentDate { get; private set; }
     public string Category { get; private set; } = null!;
     public string? VendorTaxId { get; private set; }
+    public Guid? IdVendor { get; private set; }
     public decimal Subtotal { get; private set; }
     public decimal? DocumentDiscountPercent { get; private set; }
     public decimal DocumentDiscountAmount { get; private set; }
@@ -424,5 +425,17 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         _lineItems.AddRange(lineItems);
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Set or clear the strong link to a Vendor record. Pass null to unlink.
+    /// Pure mutator — caller is responsible for ensuring the vendor belongs to
+    /// the same tenant. Used by the document submit/save handlers via
+    /// <c>IVendorLinkResolver</c> after the lookup-or-create resolution.
+    /// </summary>
+    public void LinkVendor(Guid? vendorId)
+    {
+        IdVendor = vendorId;
+        UpdatedAt = DateTime.UtcNow;
     }
 }
