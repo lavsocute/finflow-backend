@@ -27,6 +27,7 @@ public sealed class GetBudgetByDepartmentQueryHandler : IRequestHandler<GetBudge
             return Result.Failure<BudgetDetailDto?>(DepartmentErrors.NotFound);
 
         var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
+            request.TenantId,
             request.DepartmentId,
             request.Month,
             request.Year,
@@ -35,19 +36,24 @@ public sealed class GetBudgetByDepartmentQueryHandler : IRequestHandler<GetBudge
         if (budget is null)
             return Result.Success<BudgetDetailDto?>(null);
 
-        var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-            request.DepartmentId, request.Month, request.Year, cancellationToken);
+        // Use the snapshot stored on Budget entity — committed/spent are now
+        // maintained in-memory by the lifecycle pipeline (no aggregation needed).
+        var available = budget.AllocatedAmount + (budget.CarryOverFromPreviousMonth ?? 0m)
+                         - budget.CommittedAmount - budget.SpentAmount;
+        var pool = budget.AllocatedAmount + (budget.CarryOverFromPreviousMonth ?? 0m);
+        var isOver = budget.SpentAmount > pool;
+        var isNearLimit = pool > 0 && (budget.CommittedAmount + budget.SpentAmount) >= (pool * 0.85m);
 
-        return Result.Success(new BudgetDetailDto(
+        return Result.Success<BudgetDetailDto?>(new BudgetDetailDto(
             budget.Id,
             budget.IdDepartment,
             budget.DepartmentName,
             budget.Month,
             budget.Year,
             budget.AllocatedAmount,
-            spentAmount,
-            budget.AllocatedAmount - spentAmount,
-            spentAmount > budget.AllocatedAmount,
-            budget.AllocatedAmount > 0 && spentAmount >= (budget.AllocatedAmount * 0.9m)));
+            budget.SpentAmount,
+            available,
+            isOver,
+            isNearLimit));
     }
 }

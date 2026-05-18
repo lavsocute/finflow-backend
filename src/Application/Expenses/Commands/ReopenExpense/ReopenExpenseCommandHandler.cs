@@ -41,17 +41,17 @@ internal sealed class ReopenExpenseCommandHandler : IRequestHandler<ReopenExpens
         _expenseRepository.Update(expense);
 
         var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-            expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
+            expense.IdTenant, expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
 
         if (budget != null)
         {
             var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
+                expense.IdTenant, expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
 
-            var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, cancellationToken);
+            var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, expense.IdTenant, cancellationToken);
             if (budgetEntity != null)
             {
-                budgetEntity.RecalculateSpent(spentAmount);
+                budgetEntity.OverwriteSpent(spentAmount);
                 _budgetRepository.Update(budgetEntity);
             }
         }

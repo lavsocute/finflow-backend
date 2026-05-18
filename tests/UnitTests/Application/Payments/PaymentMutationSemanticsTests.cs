@@ -303,12 +303,13 @@ public sealed class PaymentMutationSemanticsTests
 
     private sealed class StubBudgetRepository : IBudgetRepository
     {
-        public Task<BudgetSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Budget?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Budget?>(null);
-        public Task<BudgetSummary?> GetByDepartmentAndPeriodAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => Task.FromResult<BudgetSummary?>(null);
+        public Task<BudgetSummary?> GetByIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<Budget?> GetEntityByIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult<Budget?>(null);
+        public Task<BudgetSummary?> GetByDepartmentAndPeriodAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => Task.FromResult<BudgetSummary?>(null);
+        public Task<Budget?> GetEntityByDepartmentAndPeriodAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => Task.FromResult<Budget?>(null);
         public Task<IReadOnlyList<BudgetSummary>> GetByTenantIdAsync(Guid idTenant, int? month, int? year, Guid? departmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<bool> ExistsAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<decimal> CalculateSpentAmountAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => Task.FromResult(0m);
+        public Task<bool> ExistsAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<decimal> CalculateSpentAmountAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) => Task.FromResult(0m);
         public void Add(Budget budget) => throw new NotSupportedException();
         public void Update(Budget budget) => throw new NotSupportedException();
     }

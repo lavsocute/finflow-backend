@@ -1,5 +1,6 @@
-using FinFlow.Domain.Entities;
 using FinFlow.Domain.Budgets;
+using FinFlow.Domain.Entities;
+using FinFlow.Domain.Expenses;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinFlow.Infrastructure.Repositories;
@@ -10,157 +11,113 @@ internal sealed class BudgetRepository : IBudgetRepository
 
     public BudgetRepository(ApplicationDbContext dbContext) => _dbContext = dbContext;
 
-    public async Task<BudgetSummary?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<BudgetSummary?> GetByIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var budget = await _dbContext.Set<Budget>()
-            .IgnoreQueryFilters()
             .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(b => b.Id == id && b.IdTenant == tenantId, cancellationToken);
 
-        if (budget == null)
-            return null;
-
-        var department = await _dbContext.Set<Department>()
-            .AsNoTracking()
-            .Where(d => d.Id == budget.IdDepartment)
-            .Select(d => d.Name)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var spentAmount = await CalculateSpentAmountAsync(budget.IdDepartment, budget.Month, budget.Year, cancellationToken);
-
-        return new BudgetSummary(
-            budget.Id,
-            budget.IdTenant,
-            budget.IdDepartment,
-            department ?? string.Empty,
-            budget.Month,
-            budget.Year,
-            budget.AllocatedAmount,
-            spentAmount);
+        return budget is null ? null : await BuildSummaryAsync(budget, cancellationToken);
     }
 
-    public async Task<Budget?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Budget>()
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+    public Task<Budget?> GetEntityByIdAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) =>
+        _dbContext.Set<Budget>()
+            .FirstOrDefaultAsync(b => b.Id == id && b.IdTenant == tenantId, cancellationToken);
 
-    public async Task<BudgetSummary?> GetByDepartmentAndPeriodAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default)
+    public async Task<BudgetSummary?> GetByDepartmentAndPeriodAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default)
     {
         var budget = await _dbContext.Set<Budget>()
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(b =>
+                b.IdTenant == tenantId &&
                 b.IdDepartment == departmentId &&
                 b.Month == month &&
                 b.Year == year,
                 cancellationToken);
 
-        if (budget == null)
-            return null;
-
-        var department = await _dbContext.Set<Department>()
-            .AsNoTracking()
-            .Where(d => d.Id == budget.IdDepartment)
-            .Select(d => d.Name)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var spentAmount = await CalculateSpentAmountAsync(budget.IdDepartment, budget.Month, budget.Year, cancellationToken);
-
-        return new BudgetSummary(
-            budget.Id,
-            budget.IdTenant,
-            budget.IdDepartment,
-            department ?? string.Empty,
-            budget.Month,
-            budget.Year,
-            budget.AllocatedAmount,
-            spentAmount);
+        return budget is null ? null : await BuildSummaryAsync(budget, cancellationToken);
     }
+
+    public Task<Budget?> GetEntityByDepartmentAndPeriodAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) =>
+        _dbContext.Set<Budget>()
+            .FirstOrDefaultAsync(b =>
+                b.IdTenant == tenantId &&
+                b.IdDepartment == departmentId &&
+                b.Month == month &&
+                b.Year == year,
+                cancellationToken);
 
     public async Task<IReadOnlyList<BudgetSummary>> GetByTenantIdAsync(Guid idTenant, int? month, int? year, Guid? departmentId, CancellationToken cancellationToken = default)
     {
         var query = _dbContext.Set<Budget>()
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(b => b.IdTenant == idTenant);
 
-        if (month.HasValue)
-            query = query.Where(b => b.Month == month.Value);
-        if (year.HasValue)
-            query = query.Where(b => b.Year == year.Value);
-        if (departmentId.HasValue)
-            query = query.Where(b => b.IdDepartment == departmentId.Value);
+        if (month.HasValue) query = query.Where(b => b.Month == month.Value);
+        if (year.HasValue) query = query.Where(b => b.Year == year.Value);
+        if (departmentId.HasValue) query = query.Where(b => b.IdDepartment == departmentId.Value);
 
-        var budgets = await query
-            .AsSplitQuery()
-            .ToListAsync(cancellationToken);
+        var budgets = await query.ToListAsync(cancellationToken);
+        if (budgets.Count == 0) return [];
 
-        if (budgets.Count == 0)
-            return Array.Empty<BudgetSummary>();
-
-        var departmentIds = budgets.Select(b => b.IdDepartment).Distinct().ToList();
-        var departments = await _dbContext.Set<Department>()
+        var deptIds = budgets.Select(b => b.IdDepartment).Distinct().ToList();
+        var deptNames = await _dbContext.Set<Department>()
             .AsNoTracking()
-            .Where(d => departmentIds.Contains(d.Id))
+            .Where(d => deptIds.Contains(d.Id))
+            .Select(d => new { d.Id, d.Name })
             .ToDictionaryAsync(d => d.Id, d => d.Name, cancellationToken);
 
-        var budgetKeys = budgets.Select(b => (b.IdDepartment, b.Month, b.Year)).Distinct().ToList();
-        var spentByKey = new Dictionary<(Guid IdDepartment, int Month, int Year), decimal>();
-
-        foreach (var key in budgetKeys)
-        {
-            var spent = await _dbContext.Set<FinFlow.Domain.Expenses.Expense>()
-                .AsNoTracking()
-                .Where(e =>
-                    e.IdDepartment == key.IdDepartment &&
-                    e.Month == key.Month &&
-                    e.Year == key.Year &&
-                    e.Status == FinFlow.Domain.Expenses.ExpenseStatus.Confirmed)
-                .SumAsync(e => e.AmountInBaseCurrency, cancellationToken);
-            spentByKey[key] = spent;
-        }
-
-        var results = new List<BudgetSummary>(budgets.Count);
-        foreach (var budget in budgets)
-        {
-            departments.TryGetValue(budget.IdDepartment, out var deptName);
-            spentByKey.TryGetValue((budget.IdDepartment, budget.Month, budget.Year), out var spentAmount);
-
-            results.Add(new BudgetSummary(
-                budget.Id,
-                budget.IdTenant,
-                budget.IdDepartment,
-                deptName ?? string.Empty,
-                budget.Month,
-                budget.Year,
-                budget.AllocatedAmount,
-                spentAmount));
-        }
-
-        return results;
+        return budgets
+            .Select(b => MapSummary(b, deptNames.GetValueOrDefault(b.IdDepartment, string.Empty)))
+            .ToList();
     }
 
-    public async Task<bool> ExistsAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<Budget>()
-            .IgnoreQueryFilters()
+    public Task<bool> ExistsAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) =>
+        _dbContext.Set<Budget>()
             .AnyAsync(b =>
+                b.IdTenant == tenantId &&
                 b.IdDepartment == departmentId &&
                 b.Month == month &&
                 b.Year == year,
                 cancellationToken);
 
-    public async Task<decimal> CalculateSpentAmountAsync(Guid departmentId, int month, int year, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.Set<FinFlow.Domain.Expenses.Expense>()
+    public Task<decimal> CalculateSpentAmountAsync(Guid tenantId, Guid departmentId, int month, int year, CancellationToken cancellationToken = default) =>
+        _dbContext.Set<Expense>()
             .AsNoTracking()
             .Where(e =>
+                e.IdTenant == tenantId &&
                 e.IdDepartment == departmentId &&
                 e.Month == month &&
                 e.Year == year &&
-                e.Status == FinFlow.Domain.Expenses.ExpenseStatus.Confirmed)
+                e.Status == ExpenseStatus.Confirmed)
             .SumAsync(e => e.AmountInBaseCurrency, cancellationToken);
-    }
 
     public void Add(Budget budget) => _dbContext.Set<Budget>().Add(budget);
     public void Update(Budget budget) => _dbContext.Set<Budget>().Update(budget);
+
+    private async Task<BudgetSummary> BuildSummaryAsync(Budget budget, CancellationToken cancellationToken)
+    {
+        var deptName = await _dbContext.Set<Department>()
+            .AsNoTracking()
+            .Where(d => d.Id == budget.IdDepartment)
+            .Select(d => d.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+        return MapSummary(budget, deptName ?? string.Empty);
+    }
+
+    private static BudgetSummary MapSummary(Budget b, string departmentName) =>
+        new(
+            b.Id,
+            b.IdTenant,
+            b.IdDepartment,
+            departmentName,
+            b.Month,
+            b.Year,
+            b.AllocatedAmount,
+            b.CommittedAmount,
+            b.SpentAmount,
+            b.CarryOverFromPreviousMonth,
+            b.BaseCurrencyCode,
+            b.EnforcementMode,
+            b.IsActive);
 }

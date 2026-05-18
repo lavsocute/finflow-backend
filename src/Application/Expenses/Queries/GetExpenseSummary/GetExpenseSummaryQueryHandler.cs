@@ -30,6 +30,7 @@ internal sealed class GetExpenseSummaryQueryHandler : IRequestHandler<GetExpense
             cancellationToken);
 
         var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
+            request.TenantId,
             request.DepartmentId,
             request.Month,
             request.Year,

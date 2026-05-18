@@ -22,36 +22,37 @@ public sealed class UpdateBudgetCommandHandler : ICommandHandler<UpdateBudgetCom
 
     public async Task<Result<BudgetDetailDto>> Handle(UpdateBudgetCommand request, CancellationToken cancellationToken)
     {
-        var budget = await _budgetRepository.GetByIdAsync(request.BudgetId, cancellationToken);
-        if (budget is null || budget.IdTenant != request.TenantId)
+        var entity = await _budgetRepository.GetEntityByIdAsync(request.BudgetId, request.TenantId, cancellationToken);
+        if (entity is null)
             return Result.Failure<BudgetDetailDto>(BudgetErrors.NotFound);
 
-        var entity = await _budgetRepository.GetEntityByIdAsync(request.BudgetId, cancellationToken);
-        if (entity is null)
+        var summary = await _budgetRepository.GetByIdAsync(request.BudgetId, request.TenantId, cancellationToken);
+        if (summary is null)
             return Result.Failure<BudgetDetailDto>(BudgetErrors.NotFound);
 
         var updateResult = entity.UpdateAmount(request.Amount);
         if (updateResult.IsFailure)
             return Result.Failure<BudgetDetailDto>(updateResult.Error);
 
-        var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-            entity.IdDepartment, entity.Month, entity.Year, cancellationToken);
-
-        entity.RecalculateSpent(spentAmount);
-
+        // No more double-event: UpdateAmount alone raises BudgetUpdated.
+        // Spent + Committed are maintained by the lifecycle pipeline; we don't
+        // recompute them here.
         _budgetRepository.Update(entity);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var pool = entity.AllocatedAmount + (entity.CarryOverFromPreviousMonth ?? 0m);
+        var available = pool - entity.CommittedAmount - entity.SpentAmount;
 
         return Result.Success(new BudgetDetailDto(
             entity.Id,
             entity.IdDepartment,
-            budget.DepartmentName,
+            summary.DepartmentName,
             entity.Month,
             entity.Year,
             entity.AllocatedAmount,
-            spentAmount,
-            entity.AllocatedAmount - spentAmount,
-            spentAmount > entity.AllocatedAmount,
-            entity.AllocatedAmount > 0 && spentAmount >= (entity.AllocatedAmount * 0.9m)));
+            entity.SpentAmount,
+            available,
+            entity.IsOverSpent,
+            entity.IsNearLimit));
     }
 }

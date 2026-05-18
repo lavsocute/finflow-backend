@@ -27,20 +27,37 @@ public sealed class CheckBudgetAvailableQueryHandler : IRequestHandler<CheckBudg
             return Result.Failure<BudgetCheckDto>(DepartmentErrors.NotFound);
 
         var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
+            request.TenantId,
             request.DepartmentId,
             request.Month,
             request.Year,
             cancellationToken);
 
         decimal allocatedAmount = 0;
+        decimal committedAmount = 0;
         decimal spentAmount = 0;
+        decimal carryOver = 0;
 
         if (budget != null)
         {
             allocatedAmount = budget.AllocatedAmount;
-            spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                request.DepartmentId, request.Month, request.Year, cancellationToken);
+            committedAmount = budget.CommittedAmount;
+            spentAmount = budget.SpentAmount;
+            carryOver = budget.CarryOverFromPreviousMonth ?? 0m;
         }
+        else
+        {
+            // No budget row → still compute spent from confirmed expenses so
+            // callers checking "any allocation?" can distinguish "0 allocated, 0 spent"
+            // from "0 allocated, X spent" (latter means real overspend).
+            spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
+                request.TenantId, request.DepartmentId, request.Month, request.Year, cancellationToken);
+        }
+
+        var pool = allocatedAmount + carryOver;
+        var available = pool - committedAmount - spentAmount;
+        var isOver = (committedAmount + spentAmount) > pool;
+        var isNearLimit = pool > 0 && (committedAmount + spentAmount) >= (pool * 0.85m);
 
         return Result.Success(new BudgetCheckDto(
             request.DepartmentId,
@@ -48,8 +65,8 @@ public sealed class CheckBudgetAvailableQueryHandler : IRequestHandler<CheckBudg
             request.Year,
             allocatedAmount,
             spentAmount,
-            allocatedAmount - spentAmount,
-            spentAmount > allocatedAmount,
-            allocatedAmount > 0 && spentAmount >= (allocatedAmount * 0.9m)));
+            available,
+            isOver,
+            isNearLimit));
     }
 }

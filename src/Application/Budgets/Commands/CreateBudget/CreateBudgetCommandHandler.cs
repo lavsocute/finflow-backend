@@ -5,22 +5,28 @@ using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Departments;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Tenants;
 
 namespace FinFlow.Application.Budgets.Commands.CreateBudget;
 
 public sealed class CreateBudgetCommandHandler : ICommandHandler<CreateBudgetCommand, Result<BudgetDetailDto>>
 {
+    private const string DefaultBaseCurrency = "VND";
+
     private readonly IBudgetRepository _budgetRepository;
     private readonly IDepartmentRepository _departmentRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public CreateBudgetCommandHandler(
         IBudgetRepository budgetRepository,
         IDepartmentRepository departmentRepository,
+        ITenantRepository tenantRepository,
         IUnitOfWork unitOfWork)
     {
         _budgetRepository = budgetRepository;
         _departmentRepository = departmentRepository;
+        _tenantRepository = tenantRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -30,16 +36,25 @@ public sealed class CreateBudgetCommandHandler : ICommandHandler<CreateBudgetCom
         if (department is null || department.IdTenant != request.TenantId)
             return Result.Failure<BudgetDetailDto>(DepartmentErrors.NotFound);
 
-        var exists = await _budgetRepository.ExistsAsync(request.DepartmentId, request.Month, request.Year, cancellationToken);
+        var exists = await _budgetRepository.ExistsAsync(request.TenantId, request.DepartmentId, request.Month, request.Year, cancellationToken);
         if (exists)
             return Result.Failure<BudgetDetailDto>(BudgetErrors.DuplicateBudget);
+
+        // Snapshot tenant base currency at create time. The Budget then carries
+        // this value forever (immutable) so a future tenant currency change
+        // doesn't silently re-interpret historical allocations.
+        var tenant = await _tenantRepository.GetByIdAsync(request.TenantId, cancellationToken);
+        var baseCurrency = string.IsNullOrWhiteSpace(tenant?.Currency)
+            ? DefaultBaseCurrency
+            : tenant!.Currency;
 
         var createResult = Budget.Create(
             request.TenantId,
             request.DepartmentId,
             request.Month,
             request.Year,
-            request.Amount);
+            request.Amount,
+            baseCurrencyCode: baseCurrency);
 
         if (createResult.IsFailure)
             return Result.Failure<BudgetDetailDto>(createResult.Error);
@@ -48,9 +63,7 @@ public sealed class CreateBudgetCommandHandler : ICommandHandler<CreateBudgetCom
         _budgetRepository.Add(budget);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-            request.DepartmentId, request.Month, request.Year, cancellationToken);
-
+        // Brand-new budget — Spent and Committed are 0, no aggregation needed.
         return Result.Success(new BudgetDetailDto(
             budget.Id,
             budget.IdDepartment,
@@ -58,9 +71,9 @@ public sealed class CreateBudgetCommandHandler : ICommandHandler<CreateBudgetCom
             budget.Month,
             budget.Year,
             budget.AllocatedAmount,
-            spentAmount,
-            budget.AllocatedAmount - spentAmount,
-            spentAmount > budget.AllocatedAmount,
-            budget.AllocatedAmount > 0 && spentAmount >= (budget.AllocatedAmount * 0.9m)));
+            budget.SpentAmount,
+            budget.AvailableAmount,
+            budget.IsOverSpent,
+            budget.IsNearLimit));
     }
 }

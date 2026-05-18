@@ -64,17 +64,17 @@ internal sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymen
                 _expenseRepository.Update(expenseEntity);
 
                 var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-                    expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
+                    expenseEntity.IdTenant, expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
 
                 if (budget is not null)
                 {
                     var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                        expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
+                        expenseEntity.IdTenant, expenseEntity.IdDepartment, expenseEntity.Month, expenseEntity.Year, cancellationToken);
 
-                    var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, cancellationToken);
+                    var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, expenseEntity.IdTenant, cancellationToken);
                     if (budgetEntity is not null)
                     {
-                        budgetEntity.RecalculateSpent(spentAmount);
+                        budgetEntity.OverwriteSpent(spentAmount);
                         _budgetRepository.Update(budgetEntity);
                     }
                 }

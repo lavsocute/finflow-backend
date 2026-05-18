@@ -135,7 +135,7 @@ public class ReportingServiceTests
         var dept = await SeedDepartment(db, "Marketing");
         var cat = await SeedCategory(db, "Travel");
 
-        var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m).Value;
+        var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m, baseCurrencyCode: "VND").Value;
         db.Budgets.Add(budget);
         AddConfirmedExpense(db, dept, cat, 950_000m, 5, 2026);   // 95%
         await db.SaveChangesAsync();
@@ -159,7 +159,7 @@ public class ReportingServiceTests
         var dept = await SeedDepartment(db, "Sales");
         var cat = await SeedCategory(db, "Travel");
 
-        var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m).Value;
+        var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m, baseCurrencyCode: "VND").Value;
         db.Budgets.Add(budget);
         AddConfirmedExpense(db, dept, cat, 1_500_000m, 5, 2026);   // 150%
         await db.SaveChangesAsync();

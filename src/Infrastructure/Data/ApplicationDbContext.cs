@@ -299,7 +299,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
             e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<Budget>().HasQueryFilter(e =>
-            _currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id));
+            e.IsActive && (_currentTenant.IsSuperAdmin || ((Guid?)e.IdTenant == _currentTenant.Id)));
 
         builder.Entity<AuditLog>().HasQueryFilter(e =>
             _currentTenant.IsSuperAdmin || (e.IdTenant == _currentTenant.Id));

@@ -110,17 +110,17 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         _expenseRepository.Add(expenseResult.Value);
 
         var budgetSummary = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-            payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
+            payment.IdTenant, payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
 
         if (budgetSummary is not null)
         {
             var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
+                payment.IdTenant, payment.IdDepartment, documentDate.Month, documentDate.Year, cancellationToken);
 
-            var budgetToUpdate = await _budgetRepository.GetEntityByIdAsync(budgetSummary.Id, cancellationToken);
+            var budgetToUpdate = await _budgetRepository.GetEntityByIdAsync(budgetSummary.Id, payment.IdTenant, cancellationToken);
             if (budgetToUpdate is not null)
             {
-                budgetToUpdate.RecalculateSpent(spentAmount);
+                budgetToUpdate.OverwriteSpent(spentAmount);
                 _budgetRepository.Update(budgetToUpdate);
             }
         }
