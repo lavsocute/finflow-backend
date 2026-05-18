@@ -136,8 +136,12 @@ public class ReportingServiceTests
         var cat = await SeedCategory(db, "Travel");
 
         var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m, baseCurrencyCode: "VND").Value;
+        // After PR 2 the lifecycle pipeline maintains SpentAmount in-memory
+        // on the Budget entity. Tests must set it directly instead of relying
+        // on a cross-table aggregation (which we removed to fix bug B-1).
+        budget.OverwriteSpent(950_000m);   // 95%
         db.Budgets.Add(budget);
-        AddConfirmedExpense(db, dept, cat, 950_000m, 5, 2026);   // 95%
+        AddConfirmedExpense(db, dept, cat, 950_000m, 5, 2026);
         await db.SaveChangesAsync();
 
         var sut = new ReportingService(db);
@@ -160,8 +164,9 @@ public class ReportingServiceTests
         var cat = await SeedCategory(db, "Travel");
 
         var budget = Budget.Create(_tenantId, dept, 5, 2026, 1_000_000m, baseCurrencyCode: "VND").Value;
+        budget.OverwriteSpent(1_500_000m);   // 150%
         db.Budgets.Add(budget);
-        AddConfirmedExpense(db, dept, cat, 1_500_000m, 5, 2026);   // 150%
+        AddConfirmedExpense(db, dept, cat, 1_500_000m, 5, 2026);
         await db.SaveChangesAsync();
 
         var sut = new ReportingService(db);

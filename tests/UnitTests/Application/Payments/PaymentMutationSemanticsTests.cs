@@ -135,12 +135,12 @@ public sealed class PaymentMutationSemanticsTests
                 ExpenseRepository,
                 DocumentRepository,
                 CategoryRepository,
-                BudgetRepository,
+                new NoOpBudgetReservationService(),
                 CurrentTenant,
                 UnitOfWork);
 
         public RejectPaymentCommandHandler CreateRejectHandler() =>
-            new(PaymentRepository, CurrentTenant, UnitOfWork);
+            new(PaymentRepository, DocumentRepository, new NoOpBudgetReservationService(), CurrentTenant, UnitOfWork);
 
         public static MutationFixture Create()
         {
@@ -385,5 +385,15 @@ public sealed class PaymentMutationSemanticsTests
         public Task<IReadOnlyList<FinFlow.Domain.Employees.EmployeeReimbursementProfile>> GetByMembershipIdsAsync(IReadOnlyList<Guid> membershipIds, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FinFlow.Domain.Employees.EmployeeReimbursementProfile>>(Array.Empty<FinFlow.Domain.Employees.EmployeeReimbursementProfile>());
         public void Add(FinFlow.Domain.Employees.EmployeeReimbursementProfile profile) { }
         public void Update(FinFlow.Domain.Employees.EmployeeReimbursementProfile profile) { }
+    }
+
+    private sealed class NoOpBudgetReservationService : FinFlow.Application.Budgets.Services.IBudgetReservationService
+    {
+        public Task<Result> CommitAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, FinFlow.Domain.Enums.BudgetExceededTrigger t, CancellationToken ct) => Task.FromResult(Result.Success());
+        public Task<Result> CommitWithOverrideAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, FinFlow.Domain.Enums.BudgetExceededTrigger t, Guid u, string j, decimal o, CancellationToken ct) => Task.FromResult(Result.Success());
+        public Task<Result> ReleaseCommitmentAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, CancellationToken ct) => Task.FromResult(Result.Success());
+        public Task<Result> ConvertCommitmentToSpentAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, FinFlow.Domain.Enums.BudgetExceededTrigger t, CancellationToken ct) => Task.FromResult(Result.Success());
+        public Task<Result> ReverseSpentAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, CancellationToken ct) => Task.FromResult(Result.Success());
+        public Task<Result> ReapplySpentAsync(FinFlow.Application.Budgets.Services.BudgetMovement m, FinFlow.Domain.Enums.BudgetExceededTrigger t, CancellationToken ct) => Task.FromResult(Result.Success());
     }
 }

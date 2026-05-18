@@ -17,6 +17,15 @@ public sealed record CreateBudgetInput(Guid DepartmentId, int Month, int Year, d
 
 public sealed record UpdateBudgetInput(Guid BudgetId, decimal Amount);
 
+public sealed record SetBudgetEnforcementModeInput(Guid BudgetId, string Mode);
+
+public sealed record CarryOverBudgetsInput(
+    int FromMonth,
+    int FromYear,
+    int ToMonth,
+    int ToYear,
+    decimal CarryOverPercentage);
+
 public sealed record BudgetPayload(
     Guid Id,
     Guid DepartmentId,
@@ -74,6 +83,92 @@ public sealed class BudgetMutations
             throw ToGraphQlException(result.Error);
 
         return ToPayload(result.Value);
+    }
+
+    /// <summary>
+    /// Switch how strictly a budget is enforced when documents are approved or
+    /// payments are recorded. TenantAdmin only.
+    /// </summary>
+    [Authorize]
+    public async Task<BudgetPayload> SetBudgetEnforcementModeAsync(
+        SetBudgetEnforcementModeInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+        var role = EnsureRole(context);
+        if (role != RoleType.TenantAdmin)
+            throw ToGraphQlException(new DomainError("Budget.Forbidden", "Only TenantAdmin can change enforcement mode."));
+
+        if (!Enum.TryParse<BudgetEnforcementMode>(input.Mode, ignoreCase: true, out var parsedMode))
+            throw ToGraphQlException(new DomainError("Budget.InvalidEnforcementMode", $"Mode '{input.Mode}' is not supported."));
+
+        var result = await mediator.Send(
+            new FinFlow.Application.Budgets.Commands.SetBudgetEnforcementMode.SetBudgetEnforcementModeCommand(
+                scope.TenantId, input.BudgetId, parsedMode),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return ToPayload(result.Value);
+    }
+
+    /// <summary>
+    /// Archive a budget (soft-delete). Rejects when the budget still holds
+    /// committed amounts — caller must release those first.
+    /// </summary>
+    [Authorize]
+    public async Task<bool> ArchiveBudgetAsync(
+        Guid budgetId,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+        var role = EnsureRole(context);
+        if (role != RoleType.TenantAdmin)
+            throw ToGraphQlException(new DomainError("Budget.Forbidden", "Only TenantAdmin can archive budgets."));
+
+        var result = await mediator.Send(
+            new FinFlow.Application.Budgets.Commands.ArchiveBudget.ArchiveBudgetCommand(scope.TenantId, budgetId),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return true;
+    }
+
+    /// <summary>
+    /// End-of-month batch: copy current-period budgets into next period and
+    /// optionally roll forward unused capacity. Returns count of budgets created.
+    /// </summary>
+    [Authorize]
+    public async Task<int> CarryOverBudgetsAsync(
+        CarryOverBudgetsInput input,
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+        var role = EnsureRole(context);
+        if (role != RoleType.TenantAdmin)
+            throw ToGraphQlException(new DomainError("Budget.Forbidden", "Only TenantAdmin can carry over budgets."));
+
+        var result = await mediator.Send(
+            new FinFlow.Application.Budgets.Commands.CarryOverBudgets.CarryOverBudgetsCommand(
+                scope.TenantId,
+                input.FromMonth, input.FromYear,
+                input.ToMonth, input.ToYear,
+                input.CarryOverPercentage),
+            cancellationToken);
+
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+
+        return result.Value;
     }
 
     private static (Guid TenantId, Guid MembershipId) EnsureAuthorizedWorkspace(IResolverContext context)

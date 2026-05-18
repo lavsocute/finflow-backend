@@ -1,6 +1,5 @@
-using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Budgets.Services;
 using FinFlow.Domain.Abstractions;
-using FinFlow.Domain.Budgets;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Interfaces;
 using MediatR;
@@ -10,18 +9,18 @@ namespace FinFlow.Application.Expenses.Commands.RejectExpense;
 internal sealed class RejectExpenseCommandHandler : IRequestHandler<RejectExpenseCommand, Result<Unit>>
 {
     private readonly IExpenseRepository _expenseRepository;
-    private readonly IBudgetRepository _budgetRepository;
+    private readonly IBudgetReservationService _budgetReservation;
     private readonly ICurrentTenant _currentTenant;
     private readonly IUnitOfWork _unitOfWork;
 
     public RejectExpenseCommandHandler(
         IExpenseRepository expenseRepository,
-        IBudgetRepository budgetRepository,
+        IBudgetReservationService budgetReservation,
         ICurrentTenant currentTenant,
         IUnitOfWork unitOfWork)
     {
         _expenseRepository = expenseRepository;
-        _budgetRepository = budgetRepository;
+        _budgetReservation = budgetReservation;
         _currentTenant = currentTenant;
         _unitOfWork = unitOfWork;
     }
@@ -41,21 +40,19 @@ internal sealed class RejectExpenseCommandHandler : IRequestHandler<RejectExpens
 
         _expenseRepository.Update(expense);
 
-        var budget = await _budgetRepository.GetByDepartmentAndPeriodAsync(
-            expense.IdTenant, expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
-
-        if (budget != null)
-        {
-            var spentAmount = await _budgetRepository.CalculateSpentAmountAsync(
-                expense.IdTenant, expense.IdDepartment, expense.Month, expense.Year, cancellationToken);
-
-            var budgetEntity = await _budgetRepository.GetEntityByIdAsync(budget.Id, expense.IdTenant, cancellationToken);
-            if (budgetEntity != null)
-            {
-                budgetEntity.OverwriteSpent(spentAmount);
-                _budgetRepository.Update(budgetEntity);
-            }
-        }
+        var release = await _budgetReservation.ReverseSpentAsync(
+            new BudgetMovement(
+                TenantId: expense.IdTenant,
+                DepartmentId: expense.IdDepartment,
+                Month: expense.Month,
+                Year: expense.Year,
+                AmountInBaseCurrency: expense.AmountInBaseCurrency,
+                SourceEntityId: expense.Id,
+                SourceEntityType: "Expense",
+                Reason: $"Rejected: {request.Reason}"),
+            cancellationToken);
+        if (release.IsFailure)
+            return Result.Failure<Unit>(release.Error);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return Result.Success(Unit.Value);

@@ -64,6 +64,7 @@ public sealed class BudgetUtilizationPayload
     public int Month { get; init; }
     public int Year { get; init; }
     public decimal Allocated { get; init; }
+    public decimal Committed { get; init; }
     public decimal Spent { get; init; }
     public decimal Remaining { get; init; }
     public decimal UtilizationPercent { get; init; }
@@ -78,6 +79,7 @@ public sealed class BudgetUtilizationPayload
         Month = dto.Month,
         Year = dto.Year,
         Allocated = dto.Allocated,
+        Committed = dto.Committed,
         Spent = dto.Spent,
         Remaining = dto.Remaining,
         UtilizationPercent = dto.UtilizationPercent,

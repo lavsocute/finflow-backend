@@ -34,6 +34,11 @@ public static class DependencyInjection
         // with the document save path.
         services.AddScoped<IVendorLinkResolver, VendorLinkResolver>();
 
+        // Budget reservation pipeline. Both services are Scoped — they share
+        // the active DbContext + unit-of-work with the lifecycle handlers.
+        services.AddScoped<Budgets.Services.IBudgetGuard, Budgets.Services.BudgetGuard>();
+        services.AddScoped<Budgets.Services.IBudgetReservationService, Budgets.Services.BudgetReservationService>();
+
         return services;
     }
 }

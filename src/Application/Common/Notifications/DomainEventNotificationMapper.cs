@@ -51,6 +51,9 @@ internal sealed class DomainEventNotificationMapper : IDomainEventNotificationMa
             ExpenseRejectedDomainEvent e => await BuildExpenseRejected(e, tenantId.Value, cancellationToken),
             VendorAutoCreatedDomainEvent e => await BuildVendorAutoCreated(e, tenantId.Value, cancellationToken),
             DuplicateReceiptFlaggedDomainEvent e => await BuildDuplicateFlagged(e, tenantId.Value, cancellationToken),
+            BudgetExceededDomainEvent e => await BuildBudgetExceeded(e, tenantId.Value, cancellationToken),
+            BudgetWarningThresholdReachedDomainEvent e => await BuildBudgetWarning(e, tenantId.Value, cancellationToken),
+            BudgetOverrideUsedDomainEvent e => await BuildBudgetOverride(e, tenantId.Value, cancellationToken),
             _ => []
         };
     }
@@ -205,6 +208,106 @@ internal sealed class DomainEventNotificationMapper : IDomainEventNotificationMa
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
         return value.Length <= max ? value : value[..(max - 1)] + "…";
+    }
+
+    private async Task<IReadOnlyList<Notification>> BuildBudgetExceeded(
+        BudgetExceededDomainEvent e, Guid tenantId, CancellationToken ct)
+    {
+        var recipients = await ResolveAccountantsAndAdmins(tenantId, ct);
+        if (recipients.Count == 0) return [];
+
+        return recipients
+            .Select(membershipId => Notification.Create(
+                tenantId, membershipId,
+                type: "BUDGET_EXCEEDED",
+                title: "Ngân sách vượt mức",
+                body: $"Ngân sách phòng tháng {e.Month}/{e.Year} đã vượt {e.OverAmount:N0}. Trigger: {e.Trigger}.",
+                payloadJson: SerializePayload(new
+                {
+                    budgetId = e.BudgetId,
+                    departmentId = e.DepartmentId,
+                    month = e.Month,
+                    year = e.Year,
+                    allocated = e.AllocatedAmount,
+                    committed = e.CommittedAmount,
+                    spent = e.SpentAmount,
+                    overAmount = e.OverAmount,
+                    trigger = e.Trigger.ToString()
+                }),
+                severity: NotificationSeverity.Critical))
+            .Where(r => r.IsSuccess)
+            .Select(r => r.Value)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<Notification>> BuildBudgetWarning(
+        BudgetWarningThresholdReachedDomainEvent e, Guid tenantId, CancellationToken ct)
+    {
+        // Only notify managers + accountants for the warning thresholds —
+        // staff don't need this. Department-specific scoping via
+        // membership.DepartmentId.
+        var recipients = await ResolveDepartmentManagersAndAccountants(tenantId, e.DepartmentId, ct);
+        if (recipients.Count == 0) return [];
+
+        var severity = e.Threshold >= 95m ? NotificationSeverity.Warning : NotificationSeverity.Info;
+        return recipients
+            .Select(membershipId => Notification.Create(
+                tenantId, membershipId,
+                type: "BUDGET_WARNING",
+                title: $"Ngân sách đã dùng {e.UtilizationPercent:N1}%",
+                body: $"Phòng đã chạm ngưỡng {e.Threshold}% ngân sách tháng. Theo dõi để tránh vượt.",
+                payloadJson: SerializePayload(new
+                {
+                    budgetId = e.BudgetId,
+                    departmentId = e.DepartmentId,
+                    utilizationPercent = e.UtilizationPercent,
+                    threshold = e.Threshold
+                }),
+                severity: severity))
+            .Where(r => r.IsSuccess)
+            .Select(r => r.Value)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<Notification>> BuildBudgetOverride(
+        BudgetOverrideUsedDomainEvent e, Guid tenantId, CancellationToken ct)
+    {
+        // Override is sensitive — always escalate to tenant admins regardless of department.
+        var recipients = await ResolveTenantAdmins(tenantId, ct);
+        if (recipients.Count == 0) return [];
+
+        return recipients
+            .Select(membershipId => Notification.Create(
+                tenantId, membershipId,
+                type: "BUDGET_OVERRIDE_USED",
+                title: "Ngân sách bị override khi duyệt",
+                body: $"Manager forced approval vượt ngân sách {e.OverAmount:N0}. Lý do: {Truncate(e.Justification, 200)}",
+                payloadJson: SerializePayload(new
+                {
+                    budgetId = e.BudgetId,
+                    overrodeByMembershipId = e.OverrodeByMembershipId,
+                    justification = e.Justification,
+                    overAmount = e.OverAmount,
+                    sourceEntityId = e.SourceEntityId,
+                    sourceEntityType = e.SourceEntityType
+                }),
+                severity: NotificationSeverity.Critical))
+            .Where(r => r.IsSuccess)
+            .Select(r => r.Value)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<Guid>> ResolveDepartmentManagersAndAccountants(
+        Guid tenantId, Guid departmentId, CancellationToken ct)
+    {
+        var memberships = await MembershipRepo.GetByTenantIdAsync(tenantId, ct);
+        return memberships
+            .Where(m => m.IsActive && (
+                (m.Role == RoleType.Manager && m.DepartmentId == departmentId) ||
+                m.Role == RoleType.Accountant ||
+                m.Role == RoleType.TenantAdmin))
+            .Select(m => m.Id)
+            .ToList();
     }
 
     private static string SerializePayload(object payload) =>

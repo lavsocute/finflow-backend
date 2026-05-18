@@ -35,6 +35,7 @@ public sealed record BudgetUtilizationDto(
     int Month,
     int Year,
     decimal Allocated,
+    decimal Committed,
     decimal Spent,
     decimal Remaining,
     decimal UtilizationPercent,    // 0..n; > 100 means over-budget
