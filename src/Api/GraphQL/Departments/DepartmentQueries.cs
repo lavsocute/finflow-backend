@@ -3,6 +3,7 @@ using FinFlow.Application.Departments.Queries.GetDepartments;
 using FinFlow.Application.Departments.Queries.GetDepartmentTree;
 using FinFlow.Application.Departments.Queries.GetDepartmentMembers;
 using FinFlow.Domain.Abstractions;
+using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
 using MediatR;
@@ -20,11 +21,17 @@ public sealed class DepartmentQueries
         IResolverContext context,
         CancellationToken cancellationToken)
     {
-        var scope = EnsureAuthorizedWorkspace(context);
-        var result = await mediator.Send(new GetDepartmentsQuery(scope.TenantId), cancellationToken);
-        if (result.IsFailure)
-            throw ToGraphQlException(result.Error);
-        return result.Value.Select(DepartmentSummaryType.FromDto).ToList();
+        return await LoadDepartmentsAsync(mediator, context, cancellationToken);
+    }
+
+    [Authorize]
+    [GraphQLName("getDepartments")]
+    public Task<IReadOnlyList<DepartmentSummaryType>> GetDepartmentsLegacyAsync(
+        [Service] IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        return LoadDepartmentsAsync(mediator, context, cancellationToken);
     }
 
     [Authorize]
@@ -74,4 +81,16 @@ public sealed class DepartmentQueries
 
     private static GraphQLException ToGraphQlException(DomainError error) =>
         new(new HotChocolate.Error(error.Description, error.Code));
+
+    private static async Task<IReadOnlyList<DepartmentSummaryType>> LoadDepartmentsAsync(
+        IMediator mediator,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+        var result = await mediator.Send(new GetDepartmentsQuery(scope.TenantId), cancellationToken);
+        if (result.IsFailure)
+            throw ToGraphQlException(result.Error);
+        return result.Value.Select(DepartmentSummaryType.FromDto).ToList();
+    }
 }

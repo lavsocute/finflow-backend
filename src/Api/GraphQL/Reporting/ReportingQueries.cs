@@ -79,7 +79,8 @@ public sealed class ReportingQueries
         if (periodResult.IsFailure)
             throw ToGraphQlException(periodResult.Error);
 
-        var dtos = await reporting.GetTopVendorsAsync(tenantId, periodResult.Value, resolvedLimit, cancellationToken);
+        var scope = ResolveDepartmentScope(role, null, http);
+        var dtos = await reporting.GetTopVendorsAsync(tenantId, periodResult.Value, scope, null, resolvedLimit, cancellationToken);
         return dtos.Select(TopVendorPayload.From).ToList();
     }
 
