@@ -49,6 +49,22 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
             .OrderByDescending(x => x.SubmittedAt)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<ReviewedDocument>> GetReadyForApprovalByDepartmentAsync(Guid tenantId, Guid departmentId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.IdTenant == tenantId && x.IdDepartment == departmentId && x.Status == ReviewedDocumentStatus.ReadyForApproval && x.IsActive)
+            .OrderByDescending(x => x.SubmittedAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ReviewedDocument>> GetOwnedReadyForApprovalAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default) =>
+        await _dbContext.Set<ReviewedDocument>()
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(x => x.IdTenant == tenantId && x.MembershipId == membershipId && x.Status == ReviewedDocumentStatus.ReadyForApproval && x.IsActive)
+            .OrderByDescending(x => x.SubmittedAt)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<ReviewedDocument>> GetOwnedSubmittedAsync(Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .IgnoreQueryFilters()

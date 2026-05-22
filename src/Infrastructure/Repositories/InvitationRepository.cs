@@ -47,8 +47,8 @@ internal sealed class InvitationRepository : IInvitationRepository
                 !i.AcceptedAt.HasValue &&
                 !i.RevokedAt.HasValue &&
                 i.ExpiresAt > now)
-            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .OrderByDescending(i => i.ExpiresAt)
+            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .ToListAsync(cancellationToken);
     }
 
@@ -69,8 +69,8 @@ internal sealed class InvitationRepository : IInvitationRepository
         await _dbContext.Set<Invitation>()
             .AsNoTracking()
             .Where(i => i.IdTenant == idTenant)
-            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .OrderByDescending(i => i.CreatedAt)
+            .Select(i => new InvitationSummary(i.Id, i.Email, i.IdTenant, i.InvitedByMembershipId, i.Role, i.ExpiresAt, i.CreatedAt, i.AcceptedAt, i.RevokedAt, i.RevokedByMembershipId, i.IsActive))
             .ToListAsync(cancellationToken);
 
     public void Add(Invitation invitation) => _dbContext.Set<Invitation>().Add(invitation);
