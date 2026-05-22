@@ -116,6 +116,76 @@ public class ReportingServiceTests
     }
 
     [Fact]
+    public async Task GetOwnExpenseSummary_UsesMembershipStatusAndExactDateRange()
+    {
+        await using var db = CreateDb();
+        await SeedTenant(db, "VND");
+        var dept = await SeedDepartment(db, "Marketing");
+        var cat = await SeedCategory(db, "Travel");
+        var targetMembershipId = Guid.NewGuid();
+
+        AddConfirmedExpenseWithCurrency(
+            db,
+            dept,
+            cat,
+            nativeAmount: 100m,
+            baseAmount: 100m,
+            currency: "VND",
+            month: 5,
+            year: 2026,
+            createdByMembershipId: targetMembershipId,
+            expenseDate: new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc));
+
+        AddConfirmedExpenseWithCurrency(
+            db,
+            dept,
+            cat,
+            nativeAmount: 50m,
+            baseAmount: 50m,
+            currency: "VND",
+            month: 5,
+            year: 2026,
+            createdByMembershipId: targetMembershipId,
+            expenseDate: new DateTime(2026, 5, 10, 0, 0, 0, DateTimeKind.Utc));
+
+        AddConfirmedExpenseWithCurrency(
+            db,
+            dept,
+            cat,
+            nativeAmount: 999m,
+            baseAmount: 999m,
+            currency: "VND",
+            month: 5,
+            year: 2026,
+            createdByMembershipId: Guid.NewGuid(),
+            expenseDate: new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc));
+
+        var rejected = AddConfirmedExpenseWithCurrency(
+            db,
+            dept,
+            cat,
+            nativeAmount: 777m,
+            baseAmount: 777m,
+            currency: "VND",
+            month: 5,
+            year: 2026,
+            createdByMembershipId: targetMembershipId,
+            expenseDate: new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc));
+        rejected.Reject("policy");
+
+        await db.SaveChangesAsync();
+
+        var sut = new ReportingService(db);
+        var period = ReportingPeriod.Create(new DateOnly(2026, 5, 12), new DateOnly(2026, 5, 20)).Value;
+
+        var summary = await sut.GetOwnExpenseSummaryAsync(_tenantId, targetMembershipId, period, CancellationToken.None);
+
+        Assert.Equal(1, summary.ExpenseCount);
+        Assert.Equal(100m, summary.TotalAmountInBaseCurrency);
+        Assert.Equal("VND", summary.BaseCurrencyCode);
+    }
+
+    [Fact]
     public async Task GetBudgetUtilization_NoBudgets_ReturnsEmpty()
     {
         await using var db = CreateDb();
@@ -197,6 +267,58 @@ public class ReportingServiceTests
         Assert.Contains(points, p => p.ExpenseTotal == 0m);
     }
 
+    [Fact]
+    public async Task GetTopVendors_ScopedToDepartment_ExcludesOtherDepartments()
+    {
+        await using var db = CreateDb();
+        await SeedTenant(db, "VND");
+        var deptA = await SeedDepartment(db, "Marketing");
+        var deptB = await SeedDepartment(db, "Engineering");
+        var membershipA = Guid.NewGuid();
+        var vendorA = Vendor.Create(_tenantId, "0123456789", "Bach Hoa Xanh").Value;
+        var vendorB = Vendor.Create(_tenantId, "0123456790", "Winmart").Value;
+        db.Set<Vendor>().AddRange(vendorA, vendorB);
+
+        AddApprovedReviewedDocument(db, deptA, membershipA, vendorA, 1_500_000m, new DateOnly(2026, 5, 10));
+        AddApprovedReviewedDocument(db, deptB, Guid.NewGuid(), vendorB, 9_000_000m, new DateOnly(2026, 5, 11));
+        await db.SaveChangesAsync();
+
+        var sut = new ReportingService(db);
+        var period = ReportingPeriod.Create(new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)).Value;
+
+        var rows = await sut.GetTopVendorsAsync(_tenantId, period, deptA, null, 5, CancellationToken.None);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("Bach Hoa Xanh", row.VendorName);
+        Assert.Equal(1_500_000m, row.TotalAmountInBaseCurrency);
+    }
+
+    [Fact]
+    public async Task GetTopVendors_ScopedToMembership_ExcludesOtherOwners()
+    {
+        await using var db = CreateDb();
+        await SeedTenant(db, "VND");
+        var dept = await SeedDepartment(db, "Marketing");
+        var membershipA = Guid.NewGuid();
+        var membershipB = Guid.NewGuid();
+        var vendorA = Vendor.Create(_tenantId, "0123456789", "Bach Hoa Xanh").Value;
+        var vendorB = Vendor.Create(_tenantId, "0123456790", "Winmart").Value;
+        db.Set<Vendor>().AddRange(vendorA, vendorB);
+
+        AddApprovedReviewedDocument(db, dept, membershipA, vendorA, 1_500_000m, new DateOnly(2026, 5, 10));
+        AddApprovedReviewedDocument(db, dept, membershipB, vendorB, 9_000_000m, new DateOnly(2026, 5, 11));
+        await db.SaveChangesAsync();
+
+        var sut = new ReportingService(db);
+        var period = ReportingPeriod.Create(new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31)).Value;
+
+        var rows = await sut.GetTopVendorsAsync(_tenantId, period, null, membershipA, 5, CancellationToken.None);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("Bach Hoa Xanh", row.VendorName);
+        Assert.Equal(1_500_000m, row.TotalAmountInBaseCurrency);
+    }
+
     // ─── helpers ───
     private static ApplicationDbContext CreateDb()
     {
@@ -240,7 +362,7 @@ public class ReportingServiceTests
         int year)
         => AddConfirmedExpenseWithCurrency(db, deptId, catId, vndAmount, vndAmount, "VND", month, year);
 
-    private static void AddConfirmedExpenseWithCurrency(
+    private static Expense AddConfirmedExpenseWithCurrency(
         ApplicationDbContext db,
         Guid deptId,
         Guid catId,
@@ -248,7 +370,9 @@ public class ReportingServiceTests
         decimal baseAmount,
         string currency,
         int month,
-        int year)
+        int year,
+        Guid? createdByMembershipId = null,
+        DateTime? expenseDate = null)
     {
         var docId = Guid.NewGuid();
         var paymentId = Guid.NewGuid();
@@ -265,9 +389,47 @@ public class ReportingServiceTests
             baseCurrencyCode: "VND",
             month: month,
             year: year,
-            expenseDate: new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc),
-            createdByMembershipId: Guid.NewGuid()).Value;
+            expenseDate: expenseDate ?? new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc),
+            createdByMembershipId: createdByMembershipId ?? Guid.NewGuid()).Value;
         db.Expenses.Add(expense);
+        return expense;
+    }
+
+    private static ReviewedDocument AddApprovedReviewedDocument(
+        ApplicationDbContext db,
+        Guid departmentId,
+        Guid membershipId,
+        Vendor vendor,
+        decimal totalAmount,
+        DateOnly documentDate)
+    {
+        var document = ReviewedDocument.CreateSubmitted(
+            Guid.NewGuid(),
+            _tenantId,
+            departmentId,
+            membershipId,
+            "hoa-don.pdf",
+            "application/pdf",
+            vendor.Name,
+            $"REF-{Guid.NewGuid():N}"[..12],
+            documentDate,
+            "Meals",
+            vendor.TaxCode,
+            totalAmount,
+            0m,
+            totalAmount,
+            "Manual",
+            "staff@finflow.test",
+            "High",
+            DateTime.UtcNow,
+            [ReviewedDocumentLineItem.Create("Item", 1m, totalAmount, totalAmount)]).Value;
+
+        document.SetCurrencyContext("VND", "VND", 1m);
+        document.LinkVendor(vendor.Id);
+        document.RefreshVendorSnapshot(vendor.Name, vendor.TaxCode);
+        document.Approve();
+        db.Set<ReviewedDocument>().Add(document);
+        return document;
     }
 
     private sealed class StubTenant : ICurrentTenant

@@ -2,6 +2,8 @@ using FinFlow.Application.Bank;
 using FinFlow.Application.Bank.Formatters;
 using FinFlow.Application.Common.Audit;
 using FinFlow.Application.Tenant.Support;
+using FinFlow.Application.Chat.Interfaces;
+using FinFlow.Application.Chat.Services;
 using FinFlow.Application.Vendors.Services;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,7 @@ public static class DependencyInjection
         // Vendor auto-link resolver — Scoped because it shares the unit-of-work
         // with the document save path.
         services.AddScoped<IVendorLinkResolver, VendorLinkResolver>();
+        services.AddScoped<IChatPolicyEngine, ChatPolicyEngine>();
 
         // Budget reservation pipeline. Both services are Scoped — they share
         // the active DbContext + unit-of-work with the lifecycle handlers.
