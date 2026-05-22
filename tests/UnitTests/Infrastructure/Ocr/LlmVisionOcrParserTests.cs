@@ -83,4 +83,35 @@ public sealed class LlmVisionOcrParserTests
         Assert.Equal(0m, result.Value.TotalAmount);
         Assert.Equal(2, result.Value.LineItems.Count);
     }
+
+    [Fact]
+    public void Parse_NormalizesBusinessText_ForVendorReferenceAndLineItems()
+    {
+        const string json =
+            """
+            {"vendorName":"  BACH HOA XANH  ","reference":" inv / 2026 / 0042 ","documentDate":"2026-04-18","extractedInvoiceDueDate":null,"category":"  SOFTWARE   &   SAAS ","vendorTaxId":"TX-123","subtotal":1200.00,"vat":240.00,"totalAmount":1440.00,"lineItems":[{"itemName":"  CLOUD    COMPUTE   INSTANCE  ","quantity":1,"unitPrice":1200.00,"total":1200.00}]}
+            """;
+
+        var result = LlmVisionOcrParser.Parse(json, "groq");
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal("Bach Hoa Xanh", result.Value.VendorName);
+        Assert.Equal("INV/2026/0042", result.Value.Reference);
+        Assert.Equal("SOFTWARE & SAAS", result.Value.Category);
+        Assert.Equal("CLOUD COMPUTE INSTANCE", result.Value.LineItems[0].ItemName);
+    }
+
+    [Fact]
+    public void Parse_RepairsCommonUtf8Mojibake_InVendorName()
+    {
+        const string json =
+            """
+            {"vendorName":"BÃ¡ch HÃ³a Xanh","reference":"inv-2026-0042","documentDate":"2026-04-18","extractedInvoiceDueDate":null,"category":"Software","vendorTaxId":"TX-123","subtotal":1200.00,"vat":240.00,"totalAmount":1440.00,"lineItems":[{"itemName":"VAT","quantity":1,"unitPrice":240.00,"total":240.00}]}
+            """;
+
+        var result = LlmVisionOcrParser.Parse(json, "groq");
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal("Bách Hóa Xanh", result.Value.VendorName);
+    }
 }

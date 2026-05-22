@@ -163,6 +163,7 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         Assert.Equal("reviewer@finflow.test", result.Value.ReviewedByStaff);
         Assert.Equal("High precision", result.Value.ConfidenceLabel);
         Assert.Equal(2, result.Value.LineItems.Count);
+        Assert.Equal(1, result.Value.ProcessedPageCount);
         Assert.Equal("Cloud Compute Instance", result.Value.LineItems[0].ItemName);
         Assert.Equal(850.00m, result.Value.LineItems[0].Total);
         Assert.Equal("Support Plan", result.Value.LineItems[1].ItemName);
@@ -204,6 +205,50 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
         Assert.Equal(1, subscriptionQuotaGate.RecordedDecision.ApprovedUnitCount);
         Assert.Equal(subscriptionQuotaGate.PeriodStart, subscriptionQuotaGate.RecordedDecision.PeriodStart);
         Assert.Equal(subscriptionQuotaGate.PeriodEnd, subscriptionQuotaGate.RecordedDecision.PeriodEnd);
+    }
+
+    [Fact]
+    public async Task Handle_ReturnsExactProcessedPageCount_FromActualOcrUsage()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var ocrService = new StubOcrExtractionService(
+            Result.Success(CreateValidOcrResult(
+                [
+                    new OcrExtractionLineItem("Cloud Compute Instance", 1m, 1200.00m, 1200.00m),
+                    new OcrExtractionLineItem("Tax Adjustment", 1m, 240.00m, 240.00m)
+                ],
+                processedPageCount: 3)),
+            pageCount: 5);
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var subscriptionQuotaGate = new TrackingSubscriptionQuotaGate(tenantId, membershipId);
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            subscriptionQuotaGate,
+            new NoOpDocumentStorageProvider(),
+            new StubTenantRepositoryWithCurrency("VND"),
+            new StubExchangeRateService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new UploadDocumentForReviewCommand(
+                Guid.NewGuid(),
+                tenantId,
+                membershipId,
+                "reviewer@finflow.test",
+                "invoice.pdf",
+                "application/pdf",
+                [1, 2, 3]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(3, result.Value.ProcessedPageCount);
+        Assert.Equal(5, subscriptionQuotaGate.LastRequestedPageCount);
+        Assert.NotNull(subscriptionQuotaGate.RecordedDecision);
+        Assert.Equal(3, subscriptionQuotaGate.RecordedDecision!.ApprovedUnitCount);
     }
 
     [Fact]
@@ -727,8 +772,13 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
     private sealed class StubOcrExtractionService : IOcrExtractionService
     {
         private readonly Result<OcrExtractionResult> _result;
+        private readonly int _pageCount;
 
-        public StubOcrExtractionService(Result<OcrExtractionResult> result) => _result = result;
+        public StubOcrExtractionService(Result<OcrExtractionResult> result, int pageCount = 1)
+        {
+            _result = result;
+            _pageCount = pageCount;
+        }
 
         public bool WasCalled { get; private set; }
         public string? FileName { get; private set; }
@@ -754,9 +804,9 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
             CancellationToken cancellationToken)
         {
             if (string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(Result.Success(1));
+                return Task.FromResult(Result.Success(_pageCount));
 
-            return Task.FromResult(Result.Success(1));
+            return Task.FromResult(Result.Success(_pageCount));
         }
     }
 

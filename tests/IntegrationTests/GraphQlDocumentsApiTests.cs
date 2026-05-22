@@ -57,6 +57,7 @@ public sealed class GraphQlDocumentsApiTests
                 source
                 reviewedByStaff
                 confidenceLabel
+                processedPageCount
                 lineItems {
                   itemName
                   quantity
@@ -90,6 +91,7 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal("Software & SaaS", draft.GetProperty("category").GetString());
         Assert.Equal("staff.documents@finflow.test", draft.GetProperty("reviewedByStaff").GetString());
         Assert.Equal("High precision", draft.GetProperty("confidenceLabel").GetString());
+        Assert.Equal(1, draft.GetProperty("processedPageCount").GetInt32());
         Assert.Equal(3, draft.GetProperty("lineItems").GetArrayLength());
     }
 

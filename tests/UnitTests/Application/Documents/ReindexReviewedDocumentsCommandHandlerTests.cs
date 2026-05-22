@@ -1,7 +1,9 @@
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Documents.Commands.ReindexReviewedDocuments;
+using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Vendors;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -46,6 +48,59 @@ public sealed class ReindexReviewedDocumentsCommandHandlerTests
         Assert.Equal(1, result.Value.IndexedDocuments);
         Assert.Equal(1, result.Value.FailedDocuments);
         Assert.Equal(2, result.Value.TotalChunks);
+    }
+
+    [Fact]
+    public async Task Handle_RefreshesCanonicalVendorSnapshot_BeforeReindex()
+    {
+        var tenantId = Guid.NewGuid();
+        var vendorId = Guid.NewGuid();
+        var document = CreateReviewedDocument(tenantId);
+        document.LinkVendor(vendorId);
+
+        var repository = new Mock<IReviewedDocumentRepository>();
+        var indexer = new Mock<IReviewedDocumentChunkIndexer>();
+        var vendorRepository = new Mock<IVendorRepository>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var logger = new Mock<ILogger<ReindexReviewedDocumentsCommandHandler>>();
+
+        repository
+            .Setup(x => x.GetAllActiveByTenantAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([document]);
+
+        vendorRepository
+            .Setup(x => x.GetByIdAsync(vendorId, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VendorSummary(
+                vendorId,
+                tenantId,
+                "0123456789",
+                "Bách Hóa Xanh",
+                false,
+                null,
+                null,
+                DateTime.UtcNow,
+                DateTime.UtcNow));
+
+        indexer
+            .Setup(x => x.ReindexAsync(It.IsAny<ReviewedDocument>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(2);
+
+        unitOfWork.Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        var sut = new ReindexReviewedDocumentsCommandHandler(
+            repository.Object,
+            indexer.Object,
+            logger.Object,
+            vendorRepository.Object,
+            unitOfWork.Object);
+
+        var result = await sut.Handle(new ReindexReviewedDocumentsCommand(tenantId, null), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal("Bách Hóa Xanh", document.VendorName);
+        Assert.Equal("0123456789", document.VendorTaxId);
+        repository.Verify(x => x.Update(document), Times.Once);
+        unitOfWork.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static ReviewedDocument CreateReviewedDocument(Guid tenantId)

@@ -216,7 +216,8 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
             draft.CurrencyCode,
             draft.ExchangeRate,
             draft.BaseCurrencyCode,
-            decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero));
+            decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero),
+            quotaResult.Value.ApprovedUnitCount);
 
         return Result.Success(response);
     }

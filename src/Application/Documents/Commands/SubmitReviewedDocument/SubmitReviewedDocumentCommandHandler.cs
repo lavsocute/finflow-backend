@@ -28,6 +28,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
     private readonly IReviewedDocumentChunkIndexer _documentChunkIndexer;
     private readonly ITenantRepository _tenantRepository;
     private readonly IExchangeRateService _exchangeRateService;
+    private readonly IVendorRepository? _vendorRepository;
     private readonly ILogger<SubmitReviewedDocumentCommandHandler> _logger;
 
     private const int DuplicateSlidingWindowDays = 90;
@@ -42,7 +43,8 @@ public sealed class SubmitReviewedDocumentCommandHandler
         IReviewedDocumentChunkIndexer documentChunkIndexer,
         ITenantRepository tenantRepository,
         IExchangeRateService exchangeRateService,
-        ILogger<SubmitReviewedDocumentCommandHandler> logger)
+        ILogger<SubmitReviewedDocumentCommandHandler> logger,
+        IVendorRepository? vendorRepository = null)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
@@ -54,6 +56,7 @@ public sealed class SubmitReviewedDocumentCommandHandler
         _tenantRepository = tenantRepository;
         _exchangeRateService = exchangeRateService;
         _logger = logger;
+        _vendorRepository = vendorRepository;
     }
 
     public async Task<Result<ReviewedDocumentResponse>> Handle(SubmitReviewedDocumentCommand request, CancellationToken cancellationToken)
@@ -193,6 +196,17 @@ public sealed class SubmitReviewedDocumentCommandHandler
         if (linkResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(linkResult.Error);
         documentEntity.LinkVendor(linkResult.Value.VendorId);
+
+        if (linkResult.Value.VendorId.HasValue && _vendorRepository is not null)
+        {
+            var canonicalVendor = await _vendorRepository.GetByIdAsync(
+                linkResult.Value.VendorId.Value,
+                request.TenantId,
+                cancellationToken);
+
+            if (canonicalVendor is not null)
+                documentEntity.RefreshVendorSnapshot(canonicalVendor.Name, canonicalVendor.TaxCode);
+        }
 
         // Duplicate-receipt detection. Soft-warning only — submit proceeds even
         // when matches are found. Notification mapper fans out to accountants.

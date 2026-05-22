@@ -7,6 +7,7 @@ using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.TenantMemberships;
+using FinFlow.Domain.Vendors;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -17,7 +18,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
     [Fact]
     public async Task Handle_IndexesReviewedDocument_AfterSuccessfulSubmit()
     {
-        var sut = BuildSut(out var indexer, out _);
+        var sut = BuildSut(out var indexer, out _, out _);
 
         var result = await sut.Handler.Handle(CreateCommand(sut.TenantId, sut.MembershipId), CancellationToken.None);
 
@@ -28,7 +29,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
     [Fact]
     public async Task Handle_ReturnsSuccess_WhenAutoIndexFails()
     {
-        var sut = BuildSut(out var indexer, out _);
+        var sut = BuildSut(out var indexer, out _, out _);
         indexer
             .Setup(x => x.ReindexAsync(It.IsAny<ReviewedDocument>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("embedding failed"));
@@ -43,7 +44,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
     {
         // Behavior change: previously this scenario returned VendorErrors.NotFound;
         // now the resolver auto-creates the vendor and the submit succeeds.
-        var sut = BuildSut(out _, out var resolver);
+        var sut = BuildSut(out _, out var resolver, out _);
         resolver
             .Setup(x => x.ResolveAsync(It.IsAny<VendorLinkRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(VendorLinkResult.AutoCreated(Guid.NewGuid())));
@@ -60,7 +61,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
     [Fact]
     public async Task Handle_PassesEmptyTaxIdToResolver_WhichReturnsNotApplicable()
     {
-        var sut = BuildSut(out _, out var resolver);
+        var sut = BuildSut(out _, out var resolver, out _);
 
         var cmd = CreateCommand(sut.TenantId, sut.MembershipId, vendorTaxId: null);
         var result = await sut.Handler.Handle(cmd, CancellationToken.None);
@@ -71,9 +72,41 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Handle_UsesCanonicalVendorName_FromVendorMaster_WhenLinked()
+    {
+        var sut = BuildSut(out _, out var resolver, out var vendorRepository);
+        var vendorId = Guid.NewGuid();
+
+        resolver
+            .Setup(x => x.ResolveAsync(It.IsAny<VendorLinkRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(VendorLinkResult.Existing(vendorId)));
+
+        vendorRepository
+            .Setup(x => x.GetByIdAsync(vendorId, sut.TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VendorSummary(
+                vendorId,
+                sut.TenantId,
+                "0123456789",
+                "Bách Hóa Xanh",
+                false,
+                null,
+                null,
+                DateTime.UtcNow,
+                DateTime.UtcNow));
+
+        var result = await sut.Handler.Handle(
+            CreateCommand(sut.TenantId, sut.MembershipId, vendorTaxId: "0123456789"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal("Bách Hóa Xanh", result.Value.VendorName);
+    }
+
     private static (SubmitReviewedDocumentCommandHandler Handler, Guid TenantId, Guid MembershipId) BuildSut(
         out Mock<IReviewedDocumentChunkIndexer> indexerMock,
-        out Mock<IVendorLinkResolver> resolverMock)
+        out Mock<IVendorLinkResolver> resolverMock,
+        out Mock<IVendorRepository> vendorRepositoryMock)
     {
         var reviewedDocumentRepository = new Mock<IReviewedDocumentRepository>();
         var draftRepository = new Mock<IUploadedDocumentDraftRepository>();
@@ -81,6 +114,7 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
         var unitOfWork = new Mock<IUnitOfWork>();
         var indexer = new Mock<IReviewedDocumentChunkIndexer>();
         var resolver = new Mock<IVendorLinkResolver>();
+        var vendorRepository = new Mock<IVendorRepository>();
         var logger = new Mock<ILogger<SubmitReviewedDocumentCommandHandler>>();
         var detector = new Mock<IDuplicateReceiptDetector>();
 
@@ -118,10 +152,12 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
             indexer.Object,
             new FinFlow.UnitTests.TestStubs.StubTenantRepository(),
             new FinFlow.UnitTests.TestStubs.StubExchangeRateService(),
-            logger.Object);
+            logger.Object,
+            vendorRepository.Object);
 
         indexerMock = indexer;
         resolverMock = resolver;
+        vendorRepositoryMock = vendorRepository;
         return (handler, tenantId, membershipId);
     }
 
