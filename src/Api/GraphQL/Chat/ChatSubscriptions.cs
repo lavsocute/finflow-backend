@@ -39,7 +39,8 @@ public class ChatSubscriptions
                 MessageId: evt.MessageId,
                 DocumentCount: evt.DocumentCount,
                 TokenUsage: evt.TokenUsage,
-                CompleteAnswer: evt.CompleteAnswer);
+                CompleteAnswer: evt.CompleteAnswer,
+                AnswerSource: evt.AnswerSource);
         }
     }
 
@@ -60,4 +61,5 @@ public sealed record ChatStreamEventType(
     Guid? MessageId,
     int? DocumentCount,
     int? TokenUsage,
-    string? CompleteAnswer);
+    string? CompleteAnswer,
+    ChatAnswerSource? AnswerSource);

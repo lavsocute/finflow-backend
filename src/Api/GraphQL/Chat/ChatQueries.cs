@@ -19,6 +19,66 @@ public sealed class ChatQueries
         IResolverContext context,
         CancellationToken cancellationToken)
     {
+        return await LoadChatSessionsAsync(limit, chatService, currentTenant, context, cancellationToken);
+    }
+
+    [Authorize]
+    [GraphQLName("getChatSessions")]
+    public Task<IReadOnlyList<ChatSessionSummaryType>> GetChatSessionsLegacyAsync(
+        int limit,
+        IChatService chatService,
+        ICurrentTenant currentTenant,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        return LoadChatSessionsAsync(limit, chatService, currentTenant, context, cancellationToken);
+    }
+
+    [Authorize]
+    public async Task<IReadOnlyList<ChatMessageType>> GetChatHistoryAsync(
+        Guid sessionId,
+        IChatService chatService,
+        ICurrentTenant currentTenant,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        return await LoadChatHistoryAsync(sessionId, chatService, currentTenant, context, cancellationToken);
+    }
+
+    [Authorize]
+    [GraphQLName("getChatHistory")]
+    public Task<IReadOnlyList<ChatMessageType>> GetChatHistoryLegacyAsync(
+        Guid sessionId,
+        IChatService chatService,
+        ICurrentTenant currentTenant,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        return LoadChatHistoryAsync(sessionId, chatService, currentTenant, context, cancellationToken);
+    }
+
+    private static Guid? ResolveMembershipId(IResolverContext context, ICurrentTenant currentTenant)
+    {
+        if (currentTenant.MembershipId.HasValue)
+            return currentTenant.MembershipId.Value;
+
+        var httpContextAccessor = context.Service<IHttpContextAccessor>();
+        var user = httpContextAccessor.HttpContext?.User;
+        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
+
+        if (Guid.TryParse(membershipIdClaim, out var membershipId))
+            return membershipId;
+
+        return null;
+    }
+
+    private static async Task<IReadOnlyList<ChatSessionSummaryType>> LoadChatSessionsAsync(
+        int limit,
+        IChatService chatService,
+        ICurrentTenant currentTenant,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
         var membershipId = ResolveMembershipId(context, currentTenant);
         if (!membershipId.HasValue)
             throw new GraphQLException(new HotChocolate.Error("User is not authenticated", "Account.Unauthorized"));
@@ -34,8 +94,7 @@ public sealed class ChatQueries
         }).ToList();
     }
 
-    [Authorize]
-    public async Task<IReadOnlyList<ChatMessageType>> GetChatHistoryAsync(
+    private static async Task<IReadOnlyList<ChatMessageType>> LoadChatHistoryAsync(
         Guid sessionId,
         IChatService chatService,
         ICurrentTenant currentTenant,
@@ -58,20 +117,5 @@ public sealed class ChatQueries
             TokenCount = m.TokenCount,
             CreatedAt = m.CreatedAt
         }).ToList();
-    }
-
-    private static Guid? ResolveMembershipId(IResolverContext context, ICurrentTenant currentTenant)
-    {
-        if (currentTenant.MembershipId.HasValue)
-            return currentTenant.MembershipId.Value;
-
-        var httpContextAccessor = context.Service<IHttpContextAccessor>();
-        var user = httpContextAccessor.HttpContext?.User;
-        var membershipIdClaim = user?.FindFirst("MembershipId")?.Value;
-
-        if (Guid.TryParse(membershipIdClaim, out var membershipId))
-            return membershipId;
-
-        return null;
     }
 }

@@ -60,6 +60,7 @@ public class ChatMutations
             result.MessageId,
             result.DocumentCount,
             result.TokenUsage,
+            result.AnswerSource,
             result.Citations?.Select(c => new ChatCitationType(c.ChunkNumber, c.ChunkId, c.DocumentId, c.ChunkType, c.Preview)).ToList()
                 ?? new List<ChatCitationType>());
     }
@@ -95,6 +96,7 @@ public sealed record ChatResponseType(
     Guid MessageId,
     int DocumentCount,
     int TokenUsage,
+    ChatAnswerSource AnswerSource,
     IReadOnlyList<ChatCitationType> Citations
 );
 

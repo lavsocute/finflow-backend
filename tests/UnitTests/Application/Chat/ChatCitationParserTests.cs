@@ -74,4 +74,15 @@ public sealed class ChatCitationParserTests
 
         Assert.True(citations[0].Preview.Length <= 103); // 100 + "..."
     }
+
+    [Fact]
+    public void StripMarkers_RemovesChunkLabels_AndNormalizesSpacing()
+    {
+        var answer = "Tổng chi là 5.000.000 VND [chunk-1]. Nhà cung cấp lớn nhất là A [chunk-2], và xu hướng tăng [chunk-3].";
+
+        var cleaned = ChatCitationParser.StripMarkers(answer);
+
+        Assert.DoesNotContain("[chunk-", cleaned, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Tổng chi là 5.000.000 VND. Nhà cung cấp lớn nhất là A, và xu hướng tăng.", cleaned);
+    }
 }

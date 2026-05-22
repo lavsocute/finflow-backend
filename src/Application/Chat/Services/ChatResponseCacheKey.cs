@@ -29,17 +29,43 @@ public static class ChatResponseCacheKey
 
     public static string Build(
         Guid tenantId,
+        Guid membershipId,
         string role,
         Guid? departmentId,
         Guid? ownerFilter,
         IReadOnlyCollection<DocumentChunkType> allowedTypes,
-        string query)
+        string query,
+        string promptVersion)
     {
         var typesStr = string.Join(",", allowedTypes.OrderBy(t => t.ToString(), StringComparer.Ordinal).Select(t => t.ToString()));
-        var keyInput = $"{role}|{departmentId}|{ownerFilter}|{typesStr}|{query.Trim()}";
+        var normalized = NormalizeQueryStructure(query);
+        var wordCount = GetWordCount(query);
+        // Include membershipId to prevent cross-user cache poisoning
+        // Include normalized query structure + word count to prevent collision from semantically different queries
+        var keyInput = $"{promptVersion}|{membershipId}|{role}|{departmentId}|{ownerFilter}|{typesStr}|{wordCount}|{normalized}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyInput));
         var hex = Convert.ToHexString(hash);
         return $"{Prefix}{tenantId}:{hex}";
+    }
+
+    /// <summary>
+    /// Normalize query by stripping content words but preserving structural pattern.
+    /// This prevents "show expenses" and "show expenses this month" from colliding.
+    /// </summary>
+    private static string NormalizeQueryStructure(string query)
+    {
+        var trimmed = query.Trim().ToLowerInvariant();
+        var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return string.Empty;
+        // Keep first and last word as anchors, mark middle section size
+        if (words.Length == 1) return words[0];
+        if (words.Length == 2) return $"{words[0]}|_|{words[1]}";
+        return $"{words[0]}|{words.Length - 2} words|{words[^1]}";
+    }
+
+    private static int GetWordCount(string query)
+    {
+        return query.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
     }
 
     /// <summary>
@@ -51,6 +77,9 @@ public static class ChatResponseCacheKey
     public static bool IsCacheable(string query)
     {
         if (string.IsNullOrWhiteSpace(query)) return false;
+        var wordCount = GetWordCount(query);
+        // Reject single-word or very short queries from caching
+        if (wordCount < 3) return false;
         var lower = query.ToLowerInvariant();
         return !TimeRelativeMarkers.Any(marker => lower.Contains(marker));
     }

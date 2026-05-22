@@ -137,7 +137,24 @@ public sealed class ReviewedDocumentChunkIndexerTests
         vectorStore.Verify(x => x.UpsertChunksAsync(It.IsAny<IEnumerable<DocumentChunk>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static ReviewedDocument CreateReviewedDocument()
+    [Fact]
+    public void BuildExpenseContent_UsesNormalizedVendorReferenceAndSearchKeys()
+    {
+        var document = CreateReviewedDocument(
+            vendorName: "  BACH HOA XANH  ",
+            reference: " inv / 2026 / 0042 ");
+
+        var content = ReviewedDocumentChunkIndexer.BuildExpenseContent(document);
+
+        Assert.Contains("Merchant: Bach Hoa Xanh", content, StringComparison.Ordinal);
+        Assert.Contains("Reference: INV/2026/0042", content, StringComparison.Ordinal);
+        Assert.Contains("Merchant search key: BACHHOAXANH", content, StringComparison.Ordinal);
+        Assert.Contains("Reference search key: INV20260042", content, StringComparison.Ordinal);
+    }
+
+    private static ReviewedDocument CreateReviewedDocument(
+        string vendorName = "Acme Supplies",
+        string reference = "INV-001")
     {
         var tenantId = Guid.NewGuid();
         var departmentId = Guid.NewGuid();
@@ -151,8 +168,8 @@ public sealed class ReviewedDocumentChunkIndexerTests
             membershipId,
             "receipt.pdf",
             "application/pdf",
-            "Acme Supplies",
-            "INV-001",
+            vendorName,
+            reference,
             new DateOnly(2026, 5, 10),
             "Equipment",
             "TAX-001",

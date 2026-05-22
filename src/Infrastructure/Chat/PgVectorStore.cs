@@ -90,10 +90,19 @@ public class PgVectorStore : IVectorStore
     {
         if (tenantId == Guid.Empty)
             throw new ArgumentException("tenantId is required.", nameof(tenantId));
+        if (allowedTypes is not { Count: > 0 })
+            throw new ArgumentException("allowedTypes cannot be empty when provided.", nameof(allowedTypes));
         if (string.IsNullOrWhiteSpace(query))
             return [];
         if (topK <= 0)
             return [];
+
+        // Defense-in-depth: plainto_tsquery accepts boolean operators (|, *, (), &, &&, ||, !, NOT, AND, OR)
+        // which could manipulate tsquery behavior. NpgsqlParameter binding prevents SQL injection,
+        // but these operators can still cause unexpected query semantics or parse errors.
+        // Reject queries containing these characters to ensure predictable search behavior.
+        if (ContainsTsQueryBooleanOperators(query))
+            throw new ArgumentException("Query contains disallowed characters for text search.", nameof(query));
 
         var allowedTypeStrings = allowedTypes is { Count: > 0 }
             ? allowedTypes.Select(x => x.ToString()).ToArray()
@@ -178,7 +187,8 @@ public class PgVectorStore : IVectorStore
         float[] queryEmbedding,
         Guid tenantId,
         IReadOnlyCollection<DocumentChunkType>? allowedTypes,
-        int topK)
+        int topK,
+        string? query = null)
     {
         ArgumentNullException.ThrowIfNull(queryEmbedding);
         ArgumentNullException.ThrowIfNull(allowedTypes);
@@ -191,5 +201,23 @@ public class PgVectorStore : IVectorStore
 
         if (topK <= 0)
             throw new ArgumentOutOfRangeException(nameof(topK), topK, "topK must be greater than zero.");
+
+        // FIX #4: Add upper bound to prevent DoS via excessive memory allocation
+        if (topK > 1000)
+            throw new ArgumentOutOfRangeException(nameof(topK), topK, "topK must not exceed 1000.");
+
+        // FIX #4: Add query length limit to prevent DoS via oversized query string
+        if (!string.IsNullOrWhiteSpace(query) && query.Length > 10000)
+            throw new ArgumentException("Query must not exceed 10000 characters.", nameof(query));
+    }
+
+    // Defense-in-depth: rejects tsquery boolean operators that could manipulate search behavior
+    private static bool ContainsTsQueryBooleanOperators(string query)
+    {
+        return query.Contains('|') || query.Contains('*') || query.Contains('(') ||
+               query.Contains(')') || query.Contains('&') || query.Contains('!') ||
+               query.Contains("NOT", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("AND", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("OR", StringComparison.OrdinalIgnoreCase);
     }
 }

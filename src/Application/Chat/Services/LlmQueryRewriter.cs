@@ -13,11 +13,12 @@ namespace FinFlow.Application.Chat.Services;
 /// Design choices:
 /// - 2-second timeout. On failure or timeout, returns original query (fail-open).
 /// - Reuses the same provider (Groq) but with a smaller cheaper model.
-/// - Output is sanitized via <see cref="ChatPromptSanitizer"/> at call site.
+/// - Output is sanitized via <see cref="ChatPromptSanitizer"/> before return.
 /// </summary>
 public sealed class LlmQueryRewriter : IQueryRewriter
 {
     private const int RewriteTimeoutSeconds = 2;
+    private const int MaxRewrittenQueryLength = 500;
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -88,11 +89,33 @@ public sealed class LlmQueryRewriter : IQueryRewriter
                 message.TryGetProperty("content", out var contentEl) &&
                 contentEl.ValueKind == JsonValueKind.String)
             {
-                var rewritten = contentEl.GetString()?.Trim();
-                if (!string.IsNullOrWhiteSpace(rewritten))
+                var rawRewritten = contentEl.GetString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(rawRewritten))
                 {
+                    // Apply sanitization to defend against LLM-generated injection attempts
+                    var rewritten = ChatPromptSanitizer.Sanitize(rawRewritten);
+
+                    // Enforce length limit to prevent oversized LLM outputs
+                    if (rewritten.Length > MaxRewrittenQueryLength)
+                    {
+                        _logger.LogWarning(
+                            "Query rewriter output exceeded {MaxLength} chars ({ActualLength}); truncating.",
+                            MaxRewrittenQueryLength, rewritten.Length);
+                        rewritten = rewritten[..MaxRewrittenQueryLength];
+                    }
+
+                    // Validate rewritten query doesn't bypass intent: reject if it removes
+                    // original intent markers (e.g., original had expense keywords but rewritten doesn't)
+                    if (!QueryIntentValidator.IsCompatible(originalQuery, rewritten))
+                    {
+                        _logger.LogWarning(
+                            "Query rewriter output intent mismatch; falling back to original query. Original: '{Original}', Rewritten: '{Rewritten}'",
+                            originalQuery, rewritten);
+                        return originalQuery;
+                    }
+
                     _logger.LogDebug("Query rewritten: '{Original}' -> '{Rewritten}'", originalQuery, rewritten);
-                    return rewritten!;
+                    return rewritten;
                 }
             }
         }
