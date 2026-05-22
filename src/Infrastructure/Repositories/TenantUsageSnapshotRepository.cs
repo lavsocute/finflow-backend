@@ -55,7 +55,7 @@ internal sealed class TenantUsageSnapshotRepository : ITenantUsageSnapshotReposi
         var insertedRows = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
             INSERT INTO tenant_usage_snapshot
-                (id, id_tenant, period_start, period_end, ocr_pages_used, chatbot_messages_used, storage_used_bytes, is_active)
+                ("Id", id_tenant, period_start, period_end, ocr_pages_used, chatbot_messages_used, storage_used_bytes, is_active)
             VALUES
                 ({snapshot.Id}, {snapshot.IdTenant}, {snapshot.PeriodStart}, {snapshot.PeriodEnd}, {snapshot.OcrPagesUsed}, {snapshot.ChatbotMessagesUsed}, {snapshot.StorageUsedBytes}, {snapshot.IsActive})
             ON CONFLICT (id_tenant, period_start, period_end) DO NOTHING
@@ -63,10 +63,12 @@ internal sealed class TenantUsageSnapshotRepository : ITenantUsageSnapshotReposi
             cancellationToken);
 
         if (insertedRows > 0)
-        {
-            _dbContext.Attach(snapshot);
-            return snapshot;
-        }
+            return await GetByTenantAndPeriodAsync(
+                       snapshot.IdTenant,
+                       snapshot.PeriodStart,
+                       snapshot.PeriodEnd,
+                       cancellationToken)
+                   ?? throw new InvalidOperationException("Tenant usage snapshot was inserted but could not be reloaded.");
 
         return await GetByTenantAndPeriodAsync(
                    snapshot.IdTenant,
