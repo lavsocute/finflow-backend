@@ -212,6 +212,8 @@ public static class DependencyInjection
         services.AddScoped<IReviewedDocumentChunkIndexer, ReviewedDocumentChunkIndexer>();
         services.AddScoped<IRerankService, RerankService>();
         services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
+        services.AddScoped<IChatIntentRouter, ChatIntentRouter>();
+        services.AddScoped<IChatReportingService, ChatReportingService>();
         services.AddScoped<IChatOutputFilter, ChatOutputFilter>();
         services.AddScoped<IContentModerator, RegexContentModerator>();
         services.AddScoped<IQueryRewriter, NoOpQueryRewriter>();

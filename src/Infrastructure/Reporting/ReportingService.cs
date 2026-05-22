@@ -19,6 +19,33 @@ internal sealed class ReportingService : IReportingService
 
     public ReportingService(ApplicationDbContext dbContext) => _dbContext = dbContext;
 
+    public async Task<OwnExpenseSummaryDto> GetOwnExpenseSummaryAsync(
+        Guid tenantId,
+        Guid membershipId,
+        ReportingPeriod period,
+        CancellationToken cancellationToken = default)
+    {
+        var baseCurrency = await GetBaseCurrencyAsync(tenantId, cancellationToken);
+        var fromInclusive = period.From.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var toExclusive = period.To.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var summary = await _dbContext.Expenses
+            .AsNoTracking()
+            .Where(e => e.IdTenant == tenantId
+                && e.CreatedByMembershipId == membershipId
+                && e.Status == ExpenseStatus.Confirmed
+                && e.ExpenseDate >= fromInclusive
+                && e.ExpenseDate < toExclusive)
+            .GroupBy(_ => 1)
+            .Select(g => new OwnExpenseSummaryDto(
+                g.Sum(e => e.AmountInBaseCurrency),
+                baseCurrency,
+                g.Count()))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return summary ?? new OwnExpenseSummaryDto(0m, baseCurrency, 0);
+    }
+
     public async Task<ExpenseSummaryDto> GetExpenseSummaryAsync(
         Guid tenantId,
         ReportingPeriod period,
@@ -200,6 +227,8 @@ internal sealed class ReportingService : IReportingService
     public async Task<IReadOnlyList<TopVendorDto>> GetTopVendorsAsync(
         Guid tenantId,
         ReportingPeriod period,
+        Guid? departmentScope,
+        Guid? ownerMembershipScope,
         int limit,
         CancellationToken cancellationToken = default)
     {
@@ -216,6 +245,8 @@ internal sealed class ReportingService : IReportingService
                 && d.IdVendor != null
                 && d.DocumentDate >= fromDate
                 && d.DocumentDate <= toDate)
+            .Where(d => !departmentScope.HasValue || d.IdDepartment == departmentScope.Value)
+            .Where(d => !ownerMembershipScope.HasValue || d.MembershipId == ownerMembershipScope.Value)
             .GroupBy(d => d.IdVendor!.Value)
             .Select(g => new
             {
