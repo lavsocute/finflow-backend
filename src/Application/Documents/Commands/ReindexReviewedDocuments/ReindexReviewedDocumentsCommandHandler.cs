@@ -2,6 +2,7 @@ using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
+using FinFlow.Domain.Vendors;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -12,16 +13,22 @@ public sealed class ReindexReviewedDocumentsCommandHandler
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
     private readonly IReviewedDocumentChunkIndexer _documentChunkIndexer;
+    private readonly IVendorRepository? _vendorRepository;
+    private readonly IUnitOfWork? _unitOfWork;
     private readonly ILogger<ReindexReviewedDocumentsCommandHandler> _logger;
 
     public ReindexReviewedDocumentsCommandHandler(
         IReviewedDocumentRepository reviewedDocumentRepository,
         IReviewedDocumentChunkIndexer documentChunkIndexer,
-        ILogger<ReindexReviewedDocumentsCommandHandler> logger)
+        ILogger<ReindexReviewedDocumentsCommandHandler> logger,
+        IVendorRepository? vendorRepository = null,
+        IUnitOfWork? unitOfWork = null)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
         _documentChunkIndexer = documentChunkIndexer;
         _logger = logger;
+        _vendorRepository = vendorRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Result<ReindexReviewedDocumentsResult>> Handle(ReindexReviewedDocumentsCommand request, CancellationToken cancellationToken)
@@ -53,6 +60,7 @@ public sealed class ReindexReviewedDocumentsCommandHandler
         {
             try
             {
+                await CanonicalizeVendorSnapshotAsync(document, cancellationToken);
                 totalChunks += await _documentChunkIndexer.ReindexAsync(document, cancellationToken);
                 indexedDocuments++;
             }
@@ -72,5 +80,25 @@ public sealed class ReindexReviewedDocumentsCommandHandler
             indexedDocuments,
             failedDocuments,
             totalChunks));
+    }
+
+    private async Task CanonicalizeVendorSnapshotAsync(ReviewedDocument document, CancellationToken cancellationToken)
+    {
+        if (!document.IdVendor.HasValue || _vendorRepository is null || _unitOfWork is null)
+            return;
+
+        var canonicalVendor = await _vendorRepository.GetByIdAsync(document.IdVendor.Value, document.IdTenant, cancellationToken);
+        if (canonicalVendor is null)
+            return;
+
+        var currentName = document.VendorName?.Trim() ?? string.Empty;
+        var currentTaxId = document.VendorTaxId?.Trim() ?? string.Empty;
+        if (string.Equals(currentName, canonicalVendor.Name, StringComparison.Ordinal) &&
+            string.Equals(currentTaxId, canonicalVendor.TaxCode, StringComparison.Ordinal))
+            return;
+
+        document.RefreshVendorSnapshot(canonicalVendor.Name, canonicalVendor.TaxCode);
+        _reviewedDocumentRepository.Update(document);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

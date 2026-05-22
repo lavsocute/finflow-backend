@@ -16,11 +16,11 @@ public static class LlmVisionOcrParser
             using var document = JsonDocument.Parse(normalizedContent);
             var root = document.RootElement;
 
-            var vendorName = GetRequiredString(root, "vendorName");
-            var reference = GetRequiredString(root, "reference");
+            var vendorName = DocumentTextNormalizer.NormalizeVendorName(GetRequiredString(root, "vendorName"));
+            var reference = DocumentTextNormalizer.NormalizeReference(GetRequiredString(root, "reference"));
             var documentDate = GetRequiredDate(root, "documentDate");
             var extractedInvoiceDueDate = GetOptionalDate(root, "extractedInvoiceDueDate");
-            var category = GetOptionalString(root, "category");
+            var category = DocumentTextNormalizer.NormalizeCategory(GetOptionalString(root, "category") ?? string.Empty);
             var vendorTaxId = NormalizeVendorTaxId(GetOptionalString(root, "vendorTaxId"));
             var subtotal = GetRequiredDecimal(root, "subtotal");
             var vat = GetRequiredDecimal(root, "vat");
@@ -34,7 +34,7 @@ public static class LlmVisionOcrParser
             foreach (var item in lineItemsElement.EnumerateArray())
             {
                 lineItems.Add(new OcrExtractionLineItem(
-                    GetRequiredString(item, "itemName"),
+                    DocumentTextNormalizer.NormalizeLineItemName(GetRequiredString(item, "itemName")),
                     GetRequiredDecimal(item, "quantity"),
                     GetRequiredDecimal(item, "unitPrice"),
                     GetRequiredDecimal(item, "total")));

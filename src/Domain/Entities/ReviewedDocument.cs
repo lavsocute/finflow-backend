@@ -459,6 +459,19 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         UpdatedAt = DateTime.UtcNow;
     }
 
+    public void RefreshVendorSnapshot(string vendorName, string? vendorTaxId)
+    {
+        var normalizedVendorName = vendorName?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(normalizedVendorName))
+            VendorName = normalizedVendorName;
+
+        VendorTaxId = string.IsNullOrWhiteSpace(vendorTaxId)
+            ? null
+            : vendorTaxId.Trim();
+
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     /// <summary>
     /// Set the dedup hash used by duplicate-receipt detection. Caller computes
     /// it via <c>DocumentDedupHasher</c>; this method only stores it. Pass
