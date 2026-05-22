@@ -24,8 +24,7 @@ public sealed class TenantSettingsMutations
     {
         var (tenantId, _) = EnsureAuthorizedAdmin(context);
 
-        var settings = await repository.GetByTenantIdForUpdateAsync(tenantId, cancellationToken)
-            ?? throw ToGraphQlException(TenantSettingsErrors.NotFound);
+        var settings = await TenantSettingsQueries.EnsureTenantSettingsAsync(repository, unitOfWork, tenantId, cancellationToken);
 
         var result = settings.UpdateBranding(
             input.LogoUrl, input.FaviconUrl, input.PrimaryColor,
@@ -47,8 +46,7 @@ public sealed class TenantSettingsMutations
     {
         var (tenantId, _) = EnsureAuthorizedAdmin(context);
 
-        var settings = await repository.GetByTenantIdForUpdateAsync(tenantId, cancellationToken)
-            ?? throw ToGraphQlException(TenantSettingsErrors.NotFound);
+        var settings = await TenantSettingsQueries.EnsureTenantSettingsAsync(repository, unitOfWork, tenantId, cancellationToken);
 
         var result = settings.UpdateApprovalPolicy(
             input.AutoApproveThreshold, input.EscalationThreshold,
@@ -71,8 +69,7 @@ public sealed class TenantSettingsMutations
     {
         var (tenantId, _) = EnsureAuthorizedAdmin(context);
 
-        var settings = await repository.GetByTenantIdForUpdateAsync(tenantId, cancellationToken)
-            ?? throw ToGraphQlException(TenantSettingsErrors.NotFound);
+        var settings = await TenantSettingsQueries.EnsureTenantSettingsAsync(repository, unitOfWork, tenantId, cancellationToken);
 
         var result = settings.UpdateBudgetPolicy(
             input.DefaultEnforcementMode, input.DefaultCarryOverPercent,
@@ -94,8 +91,7 @@ public sealed class TenantSettingsMutations
     {
         var (tenantId, _) = EnsureAuthorizedAdmin(context);
 
-        var settings = await repository.GetByTenantIdForUpdateAsync(tenantId, cancellationToken)
-            ?? throw ToGraphQlException(TenantSettingsErrors.NotFound);
+        var settings = await TenantSettingsQueries.EnsureTenantSettingsAsync(repository, unitOfWork, tenantId, cancellationToken);
 
         var result = settings.UpdateReimbursementPolicy(
             input.MaxClaimAmount, input.ReceiptRequiredAbove);
@@ -116,8 +112,7 @@ public sealed class TenantSettingsMutations
     {
         var (tenantId, _) = EnsureAuthorizedAdmin(context);
 
-        var settings = await repository.GetByTenantIdForUpdateAsync(tenantId, cancellationToken)
-            ?? throw ToGraphQlException(TenantSettingsErrors.NotFound);
+        var settings = await TenantSettingsQueries.EnsureTenantSettingsAsync(repository, unitOfWork, tenantId, cancellationToken);
 
         var result = settings.UpdateNotificationPreferences(
             input.EmailDigestEnabled, input.EmailDigestFrequency);
