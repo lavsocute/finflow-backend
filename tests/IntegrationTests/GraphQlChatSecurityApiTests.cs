@@ -1,5 +1,6 @@
 using FinFlow.Application.Subscriptions;
 using FinFlow.Domain.Enums;
+using FinFlow.Domain.Expenses;
 
 namespace FinFlow.IntegrationTests;
 
@@ -48,6 +49,66 @@ public sealed class GraphQlChatSecurityApiTests
         Assert.NotNull(result.Data);
         Assert.Equal(0, result.Data!.DocumentCount);
         Assert.Contains("not enough authorized context", result.Data.Answer, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Chat_AggregateQuestion_DoesNotLeak_OtherStaffTotals()
+    {
+        await using var factory = new GraphQlApiTestFactory();
+
+        var tenantId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await factory.SeedTenantSubscriptionAsync(tenantId, PlanTier.Pro);
+
+        var staffA = await factory.CreateMembershipAsync(RoleType.Staff, tenantId, departmentId);
+        var staffB = await factory.CreateMembershipAsync(RoleType.Staff, tenantId, departmentId);
+
+        await factory.SeedAsync(db =>
+        {
+            db.Add(Expense.Create(
+                tenantId,
+                departmentId,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "Own staff expense",
+                125000m,
+                "VND",
+                125000m,
+                "VND",
+                now.Month,
+                now.Year,
+                new DateTime(now.Year, now.Month, Math.Min(now.Day, 28), 0, 0, 0, DateTimeKind.Utc),
+                staffA.MembershipId).Value);
+
+            db.Add(Expense.Create(
+                tenantId,
+                departmentId,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "Other staff expense",
+                900000m,
+                "VND",
+                900000m,
+                "VND",
+                now.Month,
+                now.Year,
+                new DateTime(now.Year, now.Month, Math.Min(now.Day, 28), 0, 0, 0, DateTimeKind.Utc),
+                staffB.MembershipId).Value);
+        });
+
+        using var client = factory.CreateClient();
+        var result = await factory.ExecuteChatAsync(client, staffA, "Tháng này tôi đã tiêu bao nhiêu?");
+
+        Assert.Empty(result.Errors);
+        Assert.NotNull(result.Data);
+        Assert.Equal(1, result.Data!.DocumentCount);
+        Assert.Contains("125000", result.Data.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("900000", result.Data.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("1025000", result.Data.Answer, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -10,24 +10,28 @@ using System.Text.Json;
 
 namespace FinFlow.Infrastructure.Chat;
 
-public class GroqChatOptions
+public class GroqEmbeddingOptions
 {
     public string ApiKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public string EmbeddingModel { get; set; } = "llama-3.1-8b-instruct";
+    public int ExpectedDimensions { get; set; } = 2048;
 }
 
 public class GroqEmbeddingService : IEmbeddingService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<GroqEmbeddingService> _logger;
+    private readonly int _expectedDimensions;
 
     public GroqEmbeddingService(
         HttpClient httpClient,
-        ILogger<GroqEmbeddingService> logger)
+        ILogger<GroqEmbeddingService> logger,
+        Microsoft.Extensions.Options.IOptions<GroqEmbeddingOptions>? options = null)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _expectedDimensions = options?.Value.ExpectedDimensions ?? 2048;
     }
 
     public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
@@ -50,7 +54,15 @@ public class GroqEmbeddingService : IEmbeddingService
             if (json?.Data == null || json.Data.Count == 0)
                 throw new InvalidOperationException("No embedding returned from Groq");
 
-            return json.Data[0].Embedding;
+            var embedding = json.Data[0].Embedding;
+
+            if (embedding.Length != _expectedDimensions)
+            {
+                throw new InvalidOperationException(
+                    $"Embedding dimension mismatch. Expected {_expectedDimensions} but provider returned {embedding.Length}.");
+            }
+
+            return embedding;
         }
         catch (Exception ex)
         {

@@ -54,6 +54,11 @@ public class OpenRouterEmbeddingService : IEmbeddingService
 
             return embedding;
         }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "OpenRouter embedding request timed out after {TimeoutSeconds}s", _options.RequestTimeoutSeconds);
+            throw new InvalidOperationException("AI search is temporarily unavailable because the embedding request timed out. Please try again.");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate embedding via OpenRouter");

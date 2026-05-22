@@ -1,6 +1,7 @@
 using System.Text;
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Common.Abstractions;
+using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Entities;
 
@@ -9,6 +10,7 @@ namespace FinFlow.Application.Chat.Services;
 public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 {
     private static readonly string[] InstructionLabels = ["SYSTEM:", "ASSISTANT:", "USER:", "DEVELOPER:", "TOOL:"];
+    private const int ExpectedEmbeddingDimensions = 2048;
 
     private readonly IChunkingService _chunkingService;
     private readonly IVectorStore _vectorStore;
@@ -101,12 +103,17 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 
     internal static string BuildExpenseContent(ReviewedDocument document)
     {
+        var vendorName = DocumentTextNormalizer.NormalizeVendorName(document.VendorName);
+        var reference = DocumentTextNormalizer.NormalizeReference(document.Reference);
+        var category = DocumentTextNormalizer.NormalizeCategory(document.Category);
         var builder = new StringBuilder();
         builder.AppendLine("Expense record");
-        builder.AppendLine($"Merchant: {NormalizeForEvidence(document.VendorName)}");
-        builder.AppendLine($"Reference: {NormalizeForEvidence(document.Reference)}");
+        builder.AppendLine($"Merchant: {NormalizeForEvidence(vendorName)}");
+        builder.AppendLine($"Merchant search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
+        builder.AppendLine($"Reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Expense date: {document.DocumentDate:yyyy-MM-dd}");
-        builder.AppendLine($"Category: {NormalizeForEvidence(document.Category)}");
+        builder.AppendLine($"Category: {NormalizeForEvidence(category)}");
         builder.AppendLine($"DepartmentId: {document.IdDepartment}");
         builder.AppendLine($"Subtotal: {document.Subtotal:0.##}");
         builder.AppendLine($"VAT: {document.Vat:0.##}");
@@ -120,7 +127,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             foreach (var lineItem in document.LineItems)
             {
                 builder.AppendLine(
-                    $"- {NormalizeForEvidence(lineItem.ItemName)}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
+                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
             }
         }
 
@@ -129,12 +136,16 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 
     internal static string BuildReceiptContent(ReviewedDocument document)
     {
+        var vendorName = DocumentTextNormalizer.NormalizeVendorName(document.VendorName);
+        var reference = DocumentTextNormalizer.NormalizeReference(document.Reference);
         var builder = new StringBuilder();
         builder.AppendLine("Receipt record");
         builder.AppendLine($"Original file name: {NormalizeForEvidence(document.OriginalFileName)}");
         builder.AppendLine($"Content type: {NormalizeForEvidence(document.ContentType)}");
-        builder.AppendLine($"Merchant: {NormalizeForEvidence(document.VendorName)}");
-        builder.AppendLine($"Reference: {NormalizeForEvidence(document.Reference)}");
+        builder.AppendLine($"Merchant: {NormalizeForEvidence(vendorName)}");
+        builder.AppendLine($"Merchant search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
+        builder.AppendLine($"Reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Document date: {document.DocumentDate:yyyy-MM-dd}");
         builder.AppendLine($"Vendor tax id: {NormalizeForEvidence(document.VendorTaxId ?? "n/a")}");
         builder.AppendLine($"Source: {NormalizeForEvidence(document.Source)}");
@@ -147,7 +158,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             foreach (var lineItem in document.LineItems)
             {
                 builder.AppendLine(
-                    $"- {NormalizeForEvidence(lineItem.ItemName)}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
+                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
             }
         }
 
@@ -160,13 +171,17 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
     /// </summary>
     internal static string BuildLineItemContent(ReviewedDocument document, ReviewedDocumentLineItem lineItem)
     {
+        var vendorName = DocumentTextNormalizer.NormalizeVendorName(document.VendorName);
+        var reference = DocumentTextNormalizer.NormalizeReference(document.Reference);
         var builder = new StringBuilder();
         builder.AppendLine("Line item");
-        builder.AppendLine($"Vendor: {NormalizeForEvidence(document.VendorName)}");
-        builder.AppendLine($"Document reference: {NormalizeForEvidence(document.Reference)}");
+        builder.AppendLine($"Vendor: {NormalizeForEvidence(vendorName)}");
+        builder.AppendLine($"Vendor search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
+        builder.AppendLine($"Document reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Document reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Document date: {document.DocumentDate:yyyy-MM-dd}");
-        builder.AppendLine($"Category: {NormalizeForEvidence(document.Category)}");
-        builder.AppendLine($"Item name: {NormalizeForEvidence(lineItem.ItemName)}");
+        builder.AppendLine($"Category: {NormalizeForEvidence(DocumentTextNormalizer.NormalizeCategory(document.Category))}");
+        builder.AppendLine($"Item name: {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}");
         builder.AppendLine($"Quantity: {lineItem.Quantity:0.##}");
         builder.AppendLine($"Unit price: {lineItem.UnitPrice:0.##}");
         if (lineItem.DiscountAmount > 0)
@@ -215,12 +230,15 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
                 throw new InvalidOperationException("Generated chunk content hash is required.");
             if (ContainsInstructionLikeLabel(chunk.Content))
                 throw new InvalidOperationException("Generated chunk content still contains instruction-like labels.");
+            if (chunk.Embedding == null || chunk.Embedding.Length != ExpectedEmbeddingDimensions)
+                throw new InvalidOperationException(
+                    $"Embedding dimension mismatch for chunk {chunk.Id}. Expected {ExpectedEmbeddingDimensions} but got {(chunk.Embedding?.Length ?? 0)}.");
         }
     }
 
     private static string NormalizeForEvidence(string value)
     {
-        var normalized = value?.Trim() ?? string.Empty;
+        var normalized = DocumentTextNormalizer.NormalizeEvidenceValue(value);
 
         foreach (var label in InstructionLabels)
         {

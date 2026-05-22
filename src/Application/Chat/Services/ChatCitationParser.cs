@@ -13,6 +13,9 @@ public static partial class ChatCitationParser
     [GeneratedRegex(@"\[chunk-(\d+)\]", RegexOptions.IgnoreCase)]
     private static partial Regex ChunkMarkerRegex();
 
+    [GeneratedRegex(@"\s{2,}", RegexOptions.IgnoreCase)]
+    private static partial Regex MultiWhitespaceRegex();
+
     public static IReadOnlyList<ChatCitation> Parse(string response, IReadOnlyList<DocumentChunk> chunks)
     {
         if (string.IsNullOrEmpty(response) || chunks.Count == 0)
@@ -41,5 +44,16 @@ public static partial class ChatCitationParser
         }
 
         return citations;
+    }
+
+    public static string StripMarkers(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+            return response;
+
+        var stripped = ChunkMarkerRegex().Replace(response, string.Empty);
+        stripped = Regex.Replace(stripped, @"\s+([.,;:!?])", "$1");
+        stripped = MultiWhitespaceRegex().Replace(stripped, " ");
+        return stripped.Trim();
     }
 }

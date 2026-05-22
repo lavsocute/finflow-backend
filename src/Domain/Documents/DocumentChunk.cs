@@ -55,4 +55,26 @@ public class DocumentChunk : Entity, IMultiTenant
             CreatedAt = DateTime.UtcNow
         };
     }
+
+    /// <summary>
+    /// Creates a new DocumentChunk with sanitized Content, preserving all other properties.
+    /// Used to harden document chunks against prompt injection before RAG insertion.
+    /// </summary>
+    public static DocumentChunk WithSanitizedContent(DocumentChunk original, string sanitizedContent)
+    {
+        return new DocumentChunk
+        {
+            Id = original.Id,
+            IdTenant = original.IdTenant,
+            OwnerMembershipId = original.OwnerMembershipId,
+            DocumentId = original.DocumentId,
+            DepartmentId = original.DepartmentId,
+            Content = sanitizedContent,
+            ContentHash = original.ContentHash,
+            ChunkIndex = original.ChunkIndex,
+            Embedding = original.Embedding,
+            Type = original.Type,
+            CreatedAt = original.CreatedAt
+        };
+    }
 }

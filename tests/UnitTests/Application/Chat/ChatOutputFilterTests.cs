@@ -40,12 +40,10 @@ public sealed class ChatOutputFilterTests
     [Fact]
     public void Sanitize_RedactsTaxId()
     {
-        // 10-digit number could match Phone or TaxId — both are PII;
-        // accept either categorization as long as redaction happened.
         var result = _filter.Sanitize("Vendor tax id 0123456789 was registered.");
 
         Assert.True(result.RedactionCount >= 1);
-        Assert.True(result.RedactionTypes.Contains("TaxId") || result.RedactionTypes.Contains("Phone"));
+        Assert.Contains("TaxId", result.RedactionTypes);
         Assert.DoesNotContain("0123456789", result.SanitizedResponse);
     }
 
@@ -76,6 +74,36 @@ public sealed class ChatOutputFilterTests
         Assert.True(result.RedactionCount >= 2);
         Assert.Contains("Email", result.RedactionTypes);
         Assert.Contains("Phone", result.RedactionTypes);
+    }
+
+    [Fact]
+    public void Sanitize_PreservesNumericReferenceCode_WhenMarkedAsBusinessIdentifier()
+    {
+        var result = _filter.Sanitize("Hóa đơn có mã 2109013966 đang chờ duyệt.");
+
+        Assert.Equal(0, result.RedactionCount);
+        Assert.DoesNotContain("[REDACTED", result.SanitizedResponse);
+        Assert.Contains("2109013966", result.SanitizedResponse);
+    }
+
+    [Fact]
+    public void Sanitize_PreservesLongReferenceCode_WhenMarkedAsReference()
+    {
+        var result = _filter.Sanitize("Reference 123456789012 belongs to invoice INV-01.");
+
+        Assert.Equal(0, result.RedactionCount);
+        Assert.DoesNotContain("[REDACTED", result.SanitizedResponse);
+        Assert.Contains("123456789012", result.SanitizedResponse);
+    }
+
+    [Fact]
+    public void Sanitize_DoesNotRedactBareNumericBusinessText_WithoutSensitiveContext()
+    {
+        var result = _filter.Sanitize("Mã tham chiếu 0123456789 được đối soát thành công.");
+
+        Assert.Equal(0, result.RedactionCount);
+        Assert.DoesNotContain("[REDACTED", result.SanitizedResponse);
+        Assert.Contains("0123456789", result.SanitizedResponse);
     }
 
     [Fact]
