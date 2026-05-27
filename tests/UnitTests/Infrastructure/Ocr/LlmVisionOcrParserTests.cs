@@ -67,6 +67,24 @@ public sealed class LlmVisionOcrParserTests
     }
 
     [Fact]
+    public void Parse_ReturnsTaxLines_WhenLlmExtractsVatRateAndAmount()
+    {
+        const string json =
+            """
+            {"vendorName":"Acme Cloud Ltd.","reference":"INV-2026-0042","documentDate":"2026-04-18","extractedInvoiceDueDate":"2026-05-02","category":"Software & SaaS","vendorTaxId":"TX-123","subtotal":1200.00,"vat":120.00,"totalAmount":1320.00,"taxLines":[{"taxType":"VAT","rate":10.00,"taxableAmount":1200.00,"taxAmount":120.00}],"lineItems":[{"itemName":"Cloud Compute Instance","quantity":1,"unitPrice":1200.00,"total":1200.00}]}
+            """;
+
+        var result = LlmVisionOcrParser.Parse(json, "groq");
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        var taxLine = Assert.Single(result.Value.TaxLines);
+        Assert.Equal("VAT", taxLine.TaxType);
+        Assert.Equal(10.00m, taxLine.Rate);
+        Assert.Equal(1200.00m, taxLine.TaxableAmount);
+        Assert.Equal(120.00m, taxLine.TaxAmount);
+    }
+
+    [Fact]
     public void Parse_Leaves_ExtractedInvoiceDueDate_Null_WhenMissing_AndUsesCategoryFallback()
     {
         const string json =

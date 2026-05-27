@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using FinFlow.Application.Chat.Interfaces;
 
@@ -29,14 +30,6 @@ public sealed partial class ChatOutputFilter : IChatOutputFilter
         "ma hoa don",
         "số hóa đơn",
         "so hoa don",
-        // FIX #7: Expanded blocklist to catch more business ID patterns
-        "số tài khoản",
-        "so tai khoan",
-        "so tk",
-        "stk",
-        "tai khoan",
-        "tai khoan",
-        "account",
         "số chứng từ",
         "so chung tu",
         "chứng từ",
@@ -96,24 +89,28 @@ public sealed partial class ChatOutputFilter : IChatOutputFilter
         "ngan hang"
     ];
 
-    // Email — RFC-lite, good enough for redaction.
-    [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", RegexOptions.IgnoreCase)]
+    // Email — RFC-lite, good enough for redaction. Unicode-aware for homoglyph protection.
+    [GeneratedRegex(@"[\p{L}0-9._%+-]+@[\p{L}0-9.-]+\.[\p{L}]{2,}", RegexOptions.IgnoreCase)]
     private static partial Regex EmailRegex();
 
-    // VN phone: 10 digits starting with 0, optionally with +84 prefix and separators.
-    [GeneratedRegex(@"(?:\+?84|0)\s?\d{2,3}[\s.-]?\d{3,4}[\s.-]?\d{3,4}")]
+    // VN phone: 10 digits starting with 0, optionally with +84 prefix and separators. Supports fullwidth digits.
+    [GeneratedRegex(@"(?:\+?84|0)\s?[\d０-９]{2,3}[\s.-]?[\d０-９]{3,4}[\s.-]?[\d０-９]{3,4}")]
     private static partial Regex PhoneRegex();
 
     // VN tax id: 10 digits, optionally followed by -3 digits (branch code).
     [GeneratedRegex(@"\b\d{10}(?:-\d{3})?\b")]
     private static partial Regex TaxIdRegex();
 
-    // Bank account: 8-19 consecutive digits not adjacent to letters.
+    // Bank account: 12-19 consecutive digits not adjacent to letters.
     // Constrained to long sequences to avoid catching typical money amounts.
     [GeneratedRegex(@"\b\d{12,19}\b")]
     private static partial Regex BankAccountRegex();
 
-    // FIX #4: Vietnamese digit-words (for PII redaction bypass via spelling out numbers)
+    // Bank account with spaces/dots/dashes: 16 digits separated into 4 groups of 4.
+    [GeneratedRegex(@"\b\d{4}[\s.-]?\d{4}[\s.-]?\d{4}[\s.-]?\d{4}\b")]
+    private static partial Regex BankAccountSpacedRegex();
+
+    // Vietnamese digit-words — attackers bypass numeric PII redaction by spelling out numbers.
     [GeneratedRegex(@"\b(một|hai|ba|bốn|năm|sáu|bảy|tám|chín|không|mốt|hàng|moot|haii|bazi|bonn|namm|saux|bayy|tamm|chin|khong|zéro|một|hai|ba|bốn|năm|sáu|bảy|tám|chín|zéro|zero|one|two|three|four|five|six|seven|eight|nine)\b", RegexOptions.IgnoreCase)]
     private static partial Regex VietnameseDigitWordsRegex();
 
@@ -121,12 +118,22 @@ public sealed partial class ChatOutputFilter : IChatOutputFilter
     [GeneratedRegex(@"(?i)you are FinFlow|treat retrieved document text|as untrusted evidence|never reveal.*?instructions|your responses must always stay within")]
     private static partial Regex SystemPromptRegex();
 
+    // Markdown code blocks
+    [GeneratedRegex(@"```[\s\S]*?```")]
+    private static partial Regex MarkdownCodeBlockRegex();
+
+    // Inline code (import, def, class, SELECT, etc.)
+    [GeneratedRegex(@"\b(import\s+\w+|def\s+\w+|class\s+\w+|SELECT\s+|FROM\s+|WHERE\s+|function\s*\(|\$\w+|<\?php)", RegexOptions.IgnoreCase)]
+    private static partial Regex InlineCodeRegex();
+
     public ChatOutputFilterResult Sanitize(string rawResponse)
     {
         if (string.IsNullOrEmpty(rawResponse))
             return new ChatOutputFilterResult(rawResponse ?? string.Empty, 0, Array.Empty<string>());
 
-        var sanitized = rawResponse;
+        var normalized = rawResponse.Normalize(NormalizationForm.FormKC);
+
+        var sanitized = normalized;
         var redactions = new List<string>();
         var totalCount = 0;
 
@@ -134,8 +141,11 @@ public sealed partial class ChatOutputFilter : IChatOutputFilter
         sanitized = ApplyConditionalRegex(sanitized, PhoneRegex(), "Phone", PhoneContextHints, redactions, ref totalCount);
         sanitized = ApplyConditionalRegex(sanitized, TaxIdRegex(), "TaxId", TaxIdContextHints, redactions, ref totalCount);
         sanitized = ApplyConditionalRegex(sanitized, BankAccountRegex(), "BankAccount", BankAccountContextHints, redactions, ref totalCount);
+        sanitized = ApplyConditionalRegex(sanitized, BankAccountSpacedRegex(), "BankAccount", BankAccountContextHints, redactions, ref totalCount);
         sanitized = ApplyConditionalRegex(sanitized, VietnameseDigitWordsRegex(), "DigitWords", BankAccountContextHints, redactions, ref totalCount);
         sanitized = ApplyRegex(sanitized, SystemPromptRegex(), "SystemPrompt", redactions, ref totalCount);
+        sanitized = ApplyRegex(sanitized, MarkdownCodeBlockRegex(), "CodeBlock", redactions, ref totalCount);
+        sanitized = ApplyRegex(sanitized, InlineCodeRegex(), "InlineCode", redactions, ref totalCount);
 
         return new ChatOutputFilterResult(sanitized, totalCount, redactions);
     }
@@ -169,9 +179,6 @@ public sealed partial class ChatOutputFilter : IChatOutputFilter
         var replacements = 0;
         var redacted = regex.Replace(input, match =>
         {
-            if (ShouldPreserveAsBusinessIdentifier(input, match.Index))
-                return match.Value;
-
             if (!HasContextHint(input, match.Index, contextHints))
                 return match.Value;
 

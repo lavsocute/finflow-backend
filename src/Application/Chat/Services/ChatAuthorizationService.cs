@@ -6,6 +6,9 @@ using FinFlow.Domain.TenantMemberships;
 
 namespace FinFlow.Application.Chat.Services;
 
+/// <summary>
+/// Builds authorization profiles and access scopes for chat requests based on tenant membership.
+/// </summary>
 public sealed class ChatAuthorizationService : IChatAuthorizationService
 {
     private const string MissingDepartmentBoundaryMessage = "Chat access denied: your membership is missing a required department boundary for this chat scope.";

@@ -10,30 +10,33 @@ namespace FinFlow.Application.Chat.Services;
 /// NOTE: this is intentionally simple and biased toward false-positive.
 /// Phase-2 should swap to Llama Guard or similar model-based classifier.
 /// </summary>
-public sealed partial class RegexContentModerator : IContentModerator
+public sealed class RegexContentModerator : IContentModerator
 {
-    [GeneratedRegex(@"(?i)\b(kill|murder|stab|shoot|bomb|behead|destroy)\s+(you|him|her|them|all)\b")]
-    private static partial Regex ThreatRegex();
+    private static readonly Regex ThreatRegex = new Regex(
+        @"(?i)\b(kill|murder|stab|shoot|bomb|behead|destroy)\s+(you|him|her|them|all)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    [GeneratedRegex(@"(?i)\b(porn|xxx|nude|naked|sex(?:ual)?\s+(?:content|act)|child\s+(?:porn|abuse))\b")]
-    private static partial Regex NsfwRegex();
+    private static readonly Regex NsfwRegex = new Regex(
+        @"(?i)\b(porn|xxx|nude|naked|sex(?:ual)?\s+(?:content|act)|child\s+(?:porn|abuse))\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    [GeneratedRegex(@"(?i)\b(retard|nigger|chink|spic|kike|faggot|tranny)\b")]
-    private static partial Regex HateRegex();
+    private static readonly Regex HateRegex = new Regex(
+        @"(?i)\b(retard|nigger|chink|spic|kike|faggot|tranny)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // Vietnamese profanity / threat indicators (subset).
-    [GeneratedRegex(@"(?i)(giết\s+(mày|nó|chúng)|đập\s+chết|đâm\s+chết|làm\s+nhục)")]
-    private static partial Regex VietnameseThreatRegex();
+    private static readonly Regex VietnameseThreatRegex = new Regex(
+        @"(?i)(giết\s+(mày|nó|chúng)|đập\s+chết|đâm\s+chết|làm\s+nhục)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public string? Moderate(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
             return null;
 
-        if (ThreatRegex().IsMatch(query)) return "threat";
-        if (VietnameseThreatRegex().IsMatch(query)) return "threat";
-        if (NsfwRegex().IsMatch(query)) return "nsfw";
-        if (HateRegex().IsMatch(query)) return "hate";
+        if (ThreatRegex.IsMatch(query)) return "threat";
+        if (VietnameseThreatRegex.IsMatch(query)) return "threat";
+        if (NsfwRegex.IsMatch(query)) return "nsfw";
+        if (HateRegex.IsMatch(query)) return "hate";
 
         return null;
     }

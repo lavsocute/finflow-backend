@@ -53,13 +53,7 @@ internal sealed class TenantUsageSnapshotRepository : ITenantUsageSnapshotReposi
         }
 
         var insertedRows = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-            INSERT INTO tenant_usage_snapshot
-                ("Id", id_tenant, period_start, period_end, ocr_pages_used, chatbot_messages_used, storage_used_bytes, is_active)
-            VALUES
-                ({snapshot.Id}, {snapshot.IdTenant}, {snapshot.PeriodStart}, {snapshot.PeriodEnd}, {snapshot.OcrPagesUsed}, {snapshot.ChatbotMessagesUsed}, {snapshot.StorageUsedBytes}, {snapshot.IsActive})
-            ON CONFLICT (id_tenant, period_start, period_end) DO NOTHING
-            """,
+            CreateInsertCommand(snapshot),
             cancellationToken);
 
         if (insertedRows > 0)
@@ -81,4 +75,13 @@ internal sealed class TenantUsageSnapshotRepository : ITenantUsageSnapshotReposi
     public void Add(TenantUsageSnapshot snapshot) => _dbContext.Set<TenantUsageSnapshot>().Add(snapshot);
 
     public void Update(TenantUsageSnapshot snapshot) => _dbContext.Set<TenantUsageSnapshot>().Update(snapshot);
+
+    internal static FormattableString CreateInsertCommand(TenantUsageSnapshot snapshot) =>
+        $"""
+        INSERT INTO tenant_usage_snapshot
+            ("Id", id_tenant, period_start, period_end, ocr_pages_used, chatbot_messages_used, storage_used_bytes, is_active)
+        VALUES
+            ({snapshot.Id}, {snapshot.IdTenant}, {snapshot.PeriodStart}, {snapshot.PeriodEnd}, {snapshot.OcrPagesUsed}, {snapshot.ChatbotMessagesUsed}, {snapshot.StorageUsedBytes}, {snapshot.IsActive})
+        ON CONFLICT (id_tenant, period_start, period_end) DO NOTHING
+        """;
 }

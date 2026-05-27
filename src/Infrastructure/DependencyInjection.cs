@@ -2,6 +2,9 @@ using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.Authorization;
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Chat.Services;
+using FinFlow.Application.Budgets.Services;
+using FinFlow.Application.Departments.Services;
+using FinFlow.Application.Vendors.Services;
 using FinFlow.Infrastructure.Chat;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Accounts;
@@ -21,14 +24,17 @@ using FinFlow.Domain.Tenants;
 using FinFlow.Domain.Expenses;
 using FinFlow.Domain.Vendors;
 using FinFlow.Infrastructure.Auth.Email;
+using FinFlow.Infrastructure.Budgets;
 using FinFlow.Infrastructure.Caching;
 using FinFlow.Infrastructure.Documents;
+using FinFlow.Infrastructure.Departments;
 using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Groq;
 using FinFlow.Infrastructure.Ocr.OpenRouter;
 using FinFlow.Infrastructure.Ocr.Pdf;
 using FinFlow.Infrastructure.Repositories;
 using FinFlow.Infrastructure.Subscriptions;
+using FinFlow.Infrastructure.Vendors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -68,7 +74,9 @@ public static class DependencyInjection
 
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
+        services.AddScoped<IDepartmentWorkspaceReadService, DepartmentWorkspaceReadService>();
         services.AddScoped<IBudgetRepository, BudgetRepository>();
+        services.AddScoped<IBudgetWorkspaceReadService, BudgetWorkspaceReadService>();
         services.AddScoped<IAccountRepository, AccountRepository>();
         services.AddScoped<IEmailChallengeRepository, EmailChallengeRepository>();
         services.AddScoped<ITenantMembershipRepository, TenantMembershipRepository>();
@@ -77,6 +85,7 @@ public static class DependencyInjection
         services.AddScoped<ITenantApprovalRequestRepository, TenantApprovalRequestRepository>();
         services.AddScoped<ITenantSubscriptionRepository, TenantSubscriptionRepository>();
         services.AddScoped<IVendorRepository, VendorRepository>();
+        services.AddScoped<IVendorWorkspaceReadService, VendorWorkspaceReadService>();
         services.AddScoped<ICategoryRepository, CategoryRepository>();
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<IPaymentRefundRepository, PaymentRefundRepository>();
@@ -136,6 +145,8 @@ public static class DependencyInjection
             }
         });
         services.Configure<OpenRouterEmbeddingOptions>(configuration.GetSection("Embedding:OpenRouter"));
+        services.Configure<Application.Chat.Services.ChatRateLimitOptions>(
+            configuration.GetSection(Application.Chat.Services.ChatRateLimitOptions.SectionName));
         services.AddHttpClient<OpenRouterEmbeddingService>((sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<OpenRouterEmbeddingOptions>>().Value;
@@ -163,6 +174,35 @@ public static class DependencyInjection
             var options = sp.GetRequiredService<IOptions<Application.Chat.Services.GroqChatOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(60);
+
+            var apiKey = ResolveChatApiKey(options.BaseUrl, options.ApiKey);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+        });
+        services.AddHttpClient<Application.Chat.Services.GroqLlmChatService>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Application.Chat.Services.GroqChatOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            var apiKey = ResolveChatApiKey(options.BaseUrl, options.ApiKey);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+        });
+
+        // LLM Entity Extractor - uses same Chat config section
+        services.Configure<Application.Chat.Services.LlmEntityExtractorOptions>(configuration.GetSection("Chat"));
+        services.AddHttpClient<Application.Chat.Interfaces.ILlmEntityExtractor, Application.Chat.Services.LlmEntityExtractor>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<Application.Chat.Services.LlmEntityExtractorOptions>>().Value;
+            client.BaseAddress = new Uri(string.IsNullOrWhiteSpace(options.BaseUrl) ? "https://api.groq.com/openai/v1" : options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
 
             var apiKey = ResolveChatApiKey(options.BaseUrl, options.ApiKey);
             if (!string.IsNullOrWhiteSpace(apiKey))
@@ -211,8 +251,10 @@ public static class DependencyInjection
         services.AddScoped<IChunkingService, ChunkingService>();
         services.AddScoped<IReviewedDocumentChunkIndexer, ReviewedDocumentChunkIndexer>();
         services.AddScoped<IRerankService, RerankService>();
+        services.AddScoped<IRateLimitService, RateLimitService>();
         services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
         services.AddScoped<IChatIntentRouter, ChatIntentRouter>();
+        services.AddScoped<IChatIntentPlanner, EnterpriseChatIntentPlanner>();
         services.AddScoped<IChatReportingService, ChatReportingService>();
         services.AddScoped<IChatOutputFilter, ChatOutputFilter>();
         services.AddScoped<IContentModerator, RegexContentModerator>();
@@ -222,6 +264,9 @@ public static class DependencyInjection
         services.AddScoped<Application.Reporting.IReportingService, Reporting.ReportingService>();
         services.AddScoped<IVectorStore, PgVectorStore>();
         services.AddScoped<IChatService>(sp => sp.GetRequiredService<Application.Chat.Services.ChatService>());
+        services.AddScoped<ILlmChatService>(sp => sp.GetRequiredService<GroqLlmChatService>());
+        services.AddScoped<IMultiIntentDetector, MultiIntentDetector>();
+        services.AddScoped<IContextualChatPlanner, LlmContextualChatPlanner>();
 
         // Background job: periodically updates DB-stored subscription status to match
         // lazy-computed effective status. Keeps queries/dashboards fast.

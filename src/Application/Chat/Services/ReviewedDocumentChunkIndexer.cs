@@ -10,8 +10,6 @@ namespace FinFlow.Application.Chat.Services;
 public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 {
     private static readonly string[] InstructionLabels = ["SYSTEM:", "ASSISTANT:", "USER:", "DEVELOPER:", "TOOL:"];
-    private const int ExpectedEmbeddingDimensions = 2048;
-
     private readonly IChunkingService _chunkingService;
     private readonly IVectorStore _vectorStore;
     private readonly ICacheService? _cacheService;
@@ -110,7 +108,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
         builder.AppendLine("Expense record");
         builder.AppendLine($"Merchant: {NormalizeForEvidence(vendorName)}");
         builder.AppendLine($"Merchant search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
-        builder.AppendLine($"Reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Reference: {NormalizeReferenceForEvidence(document.Reference, reference)}");
         builder.AppendLine($"Reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Expense date: {document.DocumentDate:yyyy-MM-dd}");
         builder.AppendLine($"Category: {NormalizeForEvidence(category)}");
@@ -144,7 +142,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
         builder.AppendLine($"Content type: {NormalizeForEvidence(document.ContentType)}");
         builder.AppendLine($"Merchant: {NormalizeForEvidence(vendorName)}");
         builder.AppendLine($"Merchant search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
-        builder.AppendLine($"Reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Reference: {NormalizeReferenceForEvidence(document.Reference, reference)}");
         builder.AppendLine($"Reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Document date: {document.DocumentDate:yyyy-MM-dd}");
         builder.AppendLine($"Vendor tax id: {NormalizeForEvidence(document.VendorTaxId ?? "n/a")}");
@@ -177,7 +175,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
         builder.AppendLine("Line item");
         builder.AppendLine($"Vendor: {NormalizeForEvidence(vendorName)}");
         builder.AppendLine($"Vendor search key: {DocumentTextNormalizer.BuildSearchKey(vendorName)}");
-        builder.AppendLine($"Document reference: {NormalizeForEvidence(reference)}");
+        builder.AppendLine($"Document reference: {NormalizeReferenceForEvidence(document.Reference, reference)}");
         builder.AppendLine($"Document reference search key: {DocumentTextNormalizer.BuildSearchKey(reference)}");
         builder.AppendLine($"Document date: {document.DocumentDate:yyyy-MM-dd}");
         builder.AppendLine($"Category: {NormalizeForEvidence(DocumentTextNormalizer.NormalizeCategory(document.Category))}");
@@ -230,9 +228,8 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
                 throw new InvalidOperationException("Generated chunk content hash is required.");
             if (ContainsInstructionLikeLabel(chunk.Content))
                 throw new InvalidOperationException("Generated chunk content still contains instruction-like labels.");
-            if (chunk.Embedding == null || chunk.Embedding.Length != ExpectedEmbeddingDimensions)
-                throw new InvalidOperationException(
-                    $"Embedding dimension mismatch for chunk {chunk.Id}. Expected {ExpectedEmbeddingDimensions} but got {(chunk.Embedding?.Length ?? 0)}.");
+            if (chunk.Embedding == null || chunk.Embedding.Length == 0)
+                throw new InvalidOperationException($"Embedding is required for chunk {chunk.Id}.");
         }
     }
 
@@ -250,6 +247,11 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
 
         return normalized;
     }
+
+    private static string NormalizeReferenceForEvidence(string rawReference, string normalizedReference) =>
+        ContainsInstructionLikeLabel(rawReference)
+            ? NormalizeForEvidence(rawReference)
+            : NormalizeForEvidence(normalizedReference);
 
     private static bool ContainsInstructionLikeLabel(string value) =>
         InstructionLabels.Any(label => value.Contains(label, StringComparison.OrdinalIgnoreCase));

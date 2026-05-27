@@ -9,7 +9,9 @@ using FinFlow.Domain.Entities;
 using FinFlow.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Net.Http.Json;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -20,14 +22,19 @@ public class GroqChatOptions
     public string ApiKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public string ChatModel { get; set; } = "llama-3.3-70b-versatile";
+    public string IntentPlannerModel { get; set; } = "openai/gpt-oss-20b";
 }
 
+/// <summary>
+/// Main chat service that handles user queries via RAG, reporting, and general execution modes.
+/// </summary>
 public sealed class ChatService : IChatService
 {
     private const string ResponsePresentationVersion = PromptBuilder.PromptVersion + "|" + ChatRagBusinessFormatter.FormatVersion;
-    private const string AuthorizedNoContextMessage = "Tôi chưa tìm thấy đủ thông tin phù hợp trong các tài liệu bạn được phép truy cập để trả lời câu hỏi này.";
+    private const string AuthorizedNoContextMessage = "Tôi chưa tìm thấy đủ thông tin phù hợp trong các tài liệu bạn được phép truy cập để trả lời câu hỏi này. (not enough authorized context)";
     private const string GreetingMessage = "Xin chào! Tôi là FinFlow. Tôi có thể hỗ trợ bạn về chi phí, ngân sách, chứng từ, báo cáo và phân tích chi tiêu. Bạn có thể hỏi như: \"Tháng này tôi đã tiêu bao nhiêu?\", \"Cho tôi xem chứng từ gần đây\", hoặc \"Phòng ban tôi đã chi bao nhiêu?\"";
     private const string LowSignalClarificationMessage = "Bạn có thể hỏi cụ thể hơn không? Ví dụ: \"Tháng này tôi đã tiêu bao nhiêu?\", \"Cho tôi xem chứng từ gần đây\", hoặc \"Viết lại câu này cho lịch sự hơn\".";
+    private const string AmbiguityClarificationMessage = "Bạn có thể nói rõ hơn được không? Ví dụ: \"Những ai đã duyệt chứng từ tháng này?\", \"Cho tôi xem chi phí phòng ban tuần này\", hoặc \"Ai đã duyệt phiếu chi #12345\".";
     private const string ScopeClarificationMessage = "Bạn muốn xem trong phạm vi nào: của bạn, phòng ban của bạn, hay toàn công ty?";
     private const string ScopeDeniedMessage = "Tôi không thể hỗ trợ yêu cầu này vì quyền hiện tại chỉ cho phép xem dữ liệu trong phạm vi được phép của bạn.";
     private const string ForbiddenScopeMessage = "Chat access denied: the requested chat scope is outside your scope and allowed department or ownership boundary.";
@@ -35,9 +42,6 @@ public sealed class ChatService : IChatService
     private const string OutOfScopeChunkMessage = "Chat retrieval returned out-of-scope document chunks.";
     private const int MaxQueryLength = 4000;
     private const int MaxHistoryMessages = 20;
-    private const int RateLimitSeconds = 2;
-    private const int TenantRateLimitWindowSeconds = 60;
-    private const int TenantRateLimitMaxRequests = 60;
 
     private readonly IChatRepository _chatRepository;
     private readonly IChatAuthorizationService _chatAuthorizationService;
@@ -56,10 +60,19 @@ public sealed class ChatService : IChatService
     private readonly IChatOutputFilter? _outputFilter;
     private readonly IContentModerator? _contentModerator;
     private readonly IQueryRewriter? _queryRewriter;
+    private readonly IHybridResolutionRouter _hybridResolutionRouter;
+    private readonly IContextSummarizationService _contextSummarizationService;
+    private readonly IConversationStateManager _conversationStateManager;
+    private readonly ILlmEntityExtractor _llmEntityExtractor;
+    private readonly IMultiIntentDetector? _multiIntentDetector;
     private readonly HttpClient _httpClient;
     private readonly GroqChatOptions _options;
     private readonly ILogger<ChatService> _logger;
     private readonly Uri _chatCompletionsUri;
+    private readonly IRateLimitService _rateLimitService;
+    private readonly IChatResponseCacheKeyBuilder _cacheKeyBuilder;
+    private readonly IContextualChatPlanner _contextualChatPlanner;
+    private readonly IChatIntentPlanner _intentPlanner;
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -82,11 +95,21 @@ public sealed class ChatService : IChatService
         HttpClient httpClient,
         IOptions<GroqChatOptions> options,
         ILogger<ChatService> logger,
+        IContextualChatPlanner? contextualChatPlanner = null,
+        IChatIntentPlanner? intentPlanner = null,
         IAuditLogRepository? auditLogRepository = null,
         IChatOutputFilter? outputFilter = null,
         IContentModerator? contentModerator = null,
         IQueryRewriter? queryRewriter = null,
-        IChatPolicyEngine? chatPolicyEngine = null)
+        IChatPolicyEngine? chatPolicyEngine = null,
+        IHybridResolutionRouter? hybridResolutionRouter = null,
+        IContextSummarizationService? contextSummarizationService = null,
+        IConversationStateManager? conversationStateManager = null,
+        IRateLimitService? rateLimitService = null,
+        IChatResponseCacheKeyBuilder? cacheKeyBuilder = null,
+        ILoggerFactory? loggerFactory = null,
+        ILlmEntityExtractor? llmEntityExtractor = null,
+        IMultiIntentDetector? multiIntentDetector = null)
     {
         _chatRepository = chatRepository;
         _chatAuthorizationService = chatAuthorizationService;
@@ -109,17 +132,46 @@ public sealed class ChatService : IChatService
         _options = options.Value;
         _logger = logger;
         _chatCompletionsUri = BuildChatCompletionsUri(_options.BaseUrl);
+        _rateLimitService = rateLimitService ?? new RateLimitService(cacheService, loggerFactory?.CreateLogger<RateLimitService>() ?? NullLogger<RateLimitService>.Instance);
+        _cacheKeyBuilder = cacheKeyBuilder ?? new ChatResponseCacheKeyBuilder();
+        _contextualChatPlanner = contextualChatPlanner ?? new NoOpContextualChatPlanner();
+        _intentPlanner = intentPlanner ?? new RouterBackedChatIntentPlanner(intentRouter);
+        _multiIntentDetector = multiIntentDetector;
+        loggerFactory ??= NullLoggerFactory.Instance;
+        var contextResolverLogger = loggerFactory.CreateLogger<ContextResolver>();
+        var summarizationLogger = loggerFactory.CreateLogger<ContextSummarizationService>();
+        var stateManagerLogger = loggerFactory.CreateLogger<ConversationStateManager>();
+        var textNormalizerLogger = loggerFactory.CreateLogger<TextNormalizer>();
+        var textNormalizer = new TextNormalizer();
+        _llmEntityExtractor = llmEntityExtractor ?? NullLlmEntityExtractor.Instance;
+        _hybridResolutionRouter = hybridResolutionRouter ?? new HybridResolutionRouter(new ContextResolver(new ConfidenceScorer(), _llmEntityExtractor, contextResolverLogger, textNormalizer), new ConfidenceScorer(), _cacheService, textNormalizer);
+        _contextSummarizationService = contextSummarizationService ?? new ContextSummarizationService(summarizationLogger, _httpClient, options);
+        _conversationStateManager = conversationStateManager ?? new ConversationStateManager(_cacheService, stateManagerLogger);
     }
 
     public async Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
     {
         var prepared = await PrepareExecutionAsync(request, streamed: false, ct);
+
+        // Handle multi-intent queries by splitting and processing each intent separately
+        if (_multiIntentDetector is not null &&
+            !prepared.ContextualPlanApplied &&
+            ShouldRunMultiIntentDetection(prepared.EffectiveQuery))
+        {
+            var subQueries = await _multiIntentDetector.DetectAndSplitAsync(prepared.EffectiveQuery, ct);
+            if (subQueries.Count > 1)
+            {
+                return await HandleMultiIntentQueryAsync(prepared, subQueries, ct);
+            }
+        }
+
         var policyMessage = ResolvePolicyMessage(prepared.PolicyDecision);
 
         if (policyMessage is not null)
         {
             var session = await ResolveSessionAsync(prepared.Request, ct);
             var policyAssistantMessage = await PersistConversationAsync(prepared.Request, session, policyMessage, ct);
+            await RecordPendingClarificationAsync(session.SessionId, prepared, policyMessage, ct);
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, null, ct);
 
             return new ChatResponse(
@@ -128,7 +180,7 @@ public sealed class ChatService : IChatService
                 policyAssistantMessage.Id,
                 0,
                 0,
-                ChatAnswerSource.Reporting,
+                ChatAnswerSource.General,
                 null);
         }
 
@@ -151,7 +203,7 @@ public sealed class ChatService : IChatService
         if (prepared.Intent.Mode == ChatExecutionMode.General)
         {
             var session = await ResolveSessionAsync(prepared.Request, ct);
-            var general = await ExecuteGeneralAsync(prepared.Request.Query, prepared.Intent, session.SessionId, ct);
+            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct);
             var generalAssistantMessage = await PersistConversationAsync(prepared.Request, session, general.Answer, ct);
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, general.TokenUsage, ct);
 
@@ -168,8 +220,19 @@ public sealed class ChatService : IChatService
         if (prepared.Intent.Mode == ChatExecutionMode.Reporting)
         {
             var session = await ResolveSessionAsync(prepared.Request, ct);
-            var reporting = await ExecuteReportingAsync(prepared.AuthorizationProfile, prepared.Request.Query, prepared.Intent, ct);
-            var reportingAssistantMessage = await PersistConversationAsync(prepared.Request, session, reporting.Answer, ct);
+            var reporting = await ExecuteReportingAsync(
+                prepared.AuthorizationProfile,
+                prepared.EffectiveQuery,
+                prepared.Intent,
+                prepared.ReportingFrom,
+                prepared.ReportingTo,
+                ct);
+            var reportingAssistantMessage = await PersistConversationAsync(
+                prepared.Request,
+                session,
+                reporting.Answer,
+                ct,
+                BuildTurnState(prepared, ChatAnswerSource.Reporting));
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, null, ct);
 
             return new ChatResponse(
@@ -184,9 +247,9 @@ public sealed class ChatService : IChatService
 
         var ragContext = await PrepareRagExecutionAsync(prepared.Request, ct);
 
-        if (ChatResponseCacheKey.IsCacheable(prepared.Request.Query))
+        if (_cacheKeyBuilder.IsCacheable(prepared.Request.Query))
         {
-                var cacheKey = ChatResponseCacheKey.Build(
+                var cacheKey = _cacheKeyBuilder.Build(
                     prepared.Request.TenantId,
                     prepared.Request.MembershipId,
                     ragContext.AccessScope.Role.ToString(),
@@ -218,7 +281,8 @@ public sealed class ChatService : IChatService
                     prepared.Request,
                     session,
                     ChatCitationParser.StripMarkers(cachedResponse.Answer),
-                    ct);
+                    ct,
+                    BuildTurnState(prepared, ChatAnswerSource.Rag));
 
                 var cachedCitations = cachedResponse.Citations
                     .Select(c => new ChatCitation(c.ChunkNumber, c.ChunkId, c.DocumentId, c.ChunkType, c.Preview))
@@ -255,7 +319,10 @@ public sealed class ChatService : IChatService
         }
         else
         {
-            var formatted = ChatRagBusinessFormatter.TryFormat(prepared.Request.Query, ragContext.TopChunks);
+            var formatted = ChatRagBusinessFormatter.TryFormat(
+                prepared.EffectiveQuery,
+                ragContext.TopChunks,
+                prepared.Intent.ReportingTask);
             if (formatted is not null)
             {
                 promptVersion = ChatRagBusinessFormatter.FormatVersion;
@@ -282,7 +349,7 @@ public sealed class ChatService : IChatService
             }
             else
             {
-                var prompt = await BuildRagPromptAsync(prepared.Request.Query, ragContext, ct);
+                var prompt = await BuildRagPromptAsync(prepared.EffectiveQuery, ragContext, ct);
                 promptVersion = prompt.Version;
                 (assistantResponse, totalTokens) = await CallOpenRouterAsync(prompt, ct);
 
@@ -313,7 +380,8 @@ public sealed class ChatService : IChatService
             prepared.Request,
             ragContext.Session,
             displayAssistantResponse,
-            ct);
+            ct,
+            BuildTurnState(prepared, ChatAnswerSource.Rag));
 
         if (_auditLogRepository is not null)
         {
@@ -347,9 +415,9 @@ public sealed class ChatService : IChatService
 
         await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, totalTokens, ct);
 
-        if (ChatResponseCacheKey.IsCacheable(prepared.Request.Query) && ragContext.TopChunks.Count > 0)
+        if (_cacheKeyBuilder.IsCacheable(prepared.Request.Query) && ragContext.TopChunks.Count > 0)
         {
-            var cacheKey = ChatResponseCacheKey.Build(
+            var cacheKey = _cacheKeyBuilder.Build(
                 prepared.Request.TenantId,
                 prepared.Request.MembershipId,
                 ragContext.AccessScope.Role.ToString(),
@@ -437,6 +505,32 @@ public sealed class ChatService : IChatService
 
         if (profile.TenantId != request.TenantId)
             throw new InvalidOperationException("Chat access denied: tenant scope mismatch.");
+    }
+
+    private static bool ShouldRunMultiIntentDetection(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return false;
+
+        var questionMarkCount = query.Count(c => c == '?');
+        if (questionMarkCount > 1)
+            return true;
+
+        return query.Contains('\n') ||
+            query.Contains(';') ||
+            query.Contains("；", StringComparison.Ordinal);
+    }
+
+    private static void EnsureRequestedDepartmentWithinProfile(ChatRequest request, ChatAuthorizationProfile profile)
+    {
+        if (!request.DepartmentId.HasValue || profile.CanAccessAllTenantData)
+            return;
+
+        if (profile.DepartmentId == request.DepartmentId.Value ||
+            profile.AllowedDepartmentIds.Contains(request.DepartmentId.Value))
+            return;
+
+        throw new InvalidOperationException(ForbiddenScopeMessage);
     }
 
     private static Guid? ResolveDepartmentFilter(Guid? requestedDepartmentId, ChatAccessScope scope)
@@ -558,6 +652,7 @@ public sealed class ChatService : IChatService
                 session,
                 policyMessage,
                 ct);
+            await RecordPendingClarificationAsync(session.SessionId, prepared, policyMessage, ct);
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, null, ct);
 
             yield return new ChatStreamEvent(
@@ -567,7 +662,7 @@ public sealed class ChatService : IChatService
                 DocumentCount: 0,
                 TokenUsage: 0,
                 CompleteAnswer: policyMessage,
-                AnswerSource: ChatAnswerSource.Reporting);
+                AnswerSource: ChatAnswerSource.General);
             yield break;
         }
 
@@ -595,7 +690,7 @@ public sealed class ChatService : IChatService
 
         if (prepared.Intent.Mode == ChatExecutionMode.General)
         {
-            var general = await ExecuteGeneralAsync(prepared.Request.Query, prepared.Intent, session.SessionId, ct);
+            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct);
             yield return new ChatStreamEvent(ChatStreamEventKind.Token, TokenChunk: general.Answer);
 
             var generalAssistantMessage = await PersistConversationAsync(
@@ -618,7 +713,13 @@ public sealed class ChatService : IChatService
 
         if (prepared.Intent.Mode == ChatExecutionMode.Reporting)
         {
-            var reporting = await ExecuteReportingAsync(prepared.AuthorizationProfile, prepared.Request.Query, prepared.Intent, ct);
+            var reporting = await ExecuteReportingAsync(
+                prepared.AuthorizationProfile,
+                prepared.EffectiveQuery,
+                prepared.Intent,
+                prepared.ReportingFrom,
+                prepared.ReportingTo,
+                ct);
 
             yield return new ChatStreamEvent(ChatStreamEventKind.Token, TokenChunk: reporting.Answer);
 
@@ -626,7 +727,8 @@ public sealed class ChatService : IChatService
                 prepared.Request,
                 session,
                 reporting.Answer,
-                ct);
+                ct,
+                BuildTurnState(prepared, ChatAnswerSource.Reporting));
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, null, ct);
 
             yield return new ChatStreamEvent(
@@ -642,7 +744,10 @@ public sealed class ChatService : IChatService
 
         var ragContext = await PrepareRagExecutionAsync(prepared.Request, ct, session);
         var formatted = ragContext.TopChunks.Count > 0
-            ? ChatRagBusinessFormatter.TryFormat(prepared.Request.Query, ragContext.TopChunks)
+            ? ChatRagBusinessFormatter.TryFormat(
+                prepared.EffectiveQuery,
+                ragContext.TopChunks,
+                prepared.Intent.ReportingTask)
             : null;
         var fullResponseBuilder = new StringBuilder();
         var streamFilter = _outputFilter is not null ? new StreamingOutputFilter(_outputFilter) : null;
@@ -679,7 +784,7 @@ public sealed class ChatService : IChatService
         }
         else
         {
-            var prompt = await BuildRagPromptAsync(prepared.Request.Query, ragContext, ct);
+            var prompt = await BuildRagPromptAsync(prepared.EffectiveQuery, ragContext, ct);
             promptVersion = prompt.Version;
 
             await foreach (var chunk in CallOpenRouterStreamAsync(prompt, ct))
@@ -729,7 +834,8 @@ public sealed class ChatService : IChatService
             prepared.Request,
             session,
             assistantResponse,
-            ct);
+            ct,
+            BuildTurnState(prepared, ChatAnswerSource.Rag));
 
         if (_auditLogRepository is not null)
         {
@@ -791,8 +897,8 @@ public sealed class ChatService : IChatService
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
-            var error = await response.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException($"Groq stream returned {response.StatusCode}: {error}");
+            _logger.LogWarning("Groq API returned error status {StatusCode}", response.StatusCode);
+            throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.");
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -839,7 +945,7 @@ public sealed class ChatService : IChatService
                 continue;
             }
 
-            // Fix #6: yield token AND usage if both present in the same SSE frame.
+            // Yield both token and usage when both are present in the same SSE frame.
             if (tokenText is not null)
                 yield return new ChatStreamEvent(ChatStreamEventKind.Token, TokenChunk: tokenText);
             if (usageTokens.HasValue)
@@ -852,7 +958,7 @@ public sealed class ChatService : IChatService
         var session = await _chatRepository.GetSessionByIdAndMembershipAsync(sessionId, membershipId, ct)
             ?? throw new InvalidOperationException("Chat access denied: session was not found for the current membership.");
 
-        // FIX #6: Add tenant check to prevent cross-tenant session access
+        // Add tenant check to prevent cross-tenant session access.
         if (session.IdTenant != _currentTenant.Id)
             throw new InvalidOperationException("Chat access denied: session was not found for the current membership.");
 
@@ -889,30 +995,85 @@ public sealed class ChatService : IChatService
 
         var jsonContent = JsonSerializer.Serialize(requestBody, SerializerOptions);
 
-        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
         try
         {
-            var response = await _httpClient.PostAsync(_chatCompletionsUri, content, ct);
-            var responseText = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogInformation("Groq response status: {Status}, responseLength: {ResponseLength}", response.StatusCode, responseText.Length);
+            const int maxAttempts = 3;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                using var response = await _httpClient.PostAsync(_chatCompletionsUri, content, ct);
+                var responseText = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogInformation("Groq response status: {Status}, responseLength: {ResponseLength}", response.StatusCode, responseText.Length);
 
-            if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException($"Groq returned {response.StatusCode}: {responseText}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < maxAttempts)
+                    {
+                        var delay = ResolveRetryDelay(response, responseText, attempt);
+                        _logger.LogWarning(
+                            "Groq API returned TooManyRequests; retrying attempt {Attempt}/{MaxAttempts} after {DelayMs} ms.",
+                            attempt + 1,
+                            maxAttempts,
+                            delay.TotalMilliseconds);
+                        await Task.Delay(delay, ct);
+                        continue;
+                    }
 
-            var json = JsonSerializer.Deserialize<OpenRouterChatResponse>(responseText, SerializerOptions);
+                    _logger.LogWarning("Groq API returned error status {StatusCode}", response.StatusCode);
+                    throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.");
+                }
 
-            if (json?.Choices == null || json.Choices.Count == 0)
-                throw new InvalidOperationException("No response from Groq");
+                var json = JsonSerializer.Deserialize<OpenRouterChatResponse>(responseText, SerializerOptions);
 
-            // Use provider-reported token count (accurate) instead of length-based heuristic.
-            return (json.Choices[0].Message.Content, json.Usage?.TotalTokens);
+                if (json?.Choices == null || json.Choices.Count == 0)
+                    throw new InvalidOperationException("No response from Groq");
+
+                // Use provider-reported token count (accurate) instead of length-based heuristic.
+                return (json.Choices[0].Message.Content, json.Usage?.TotalTokens);
+            }
+
+            throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.");
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
             _logger.LogError(ex, "Failed to get response from Groq");
-            throw;
+            throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.", ex);
         }
+    }
+
+    private static TimeSpan ResolveRetryDelay(HttpResponseMessage response, string responseText, int attempt)
+    {
+        if (response.Headers.RetryAfter?.Delta is { } retryAfterDelta)
+            return ClampRetryDelay(retryAfterDelta);
+
+        var marker = "try again in ";
+        var index = responseText.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index >= 0)
+        {
+            var start = index + marker.Length;
+            var end = responseText.IndexOf('s', start);
+            if (end > start &&
+                double.TryParse(
+                    responseText[start..end],
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var seconds))
+            {
+                return ClampRetryDelay(TimeSpan.FromSeconds(seconds));
+            }
+        }
+
+        return TimeSpan.FromMilliseconds(250 * attempt);
+    }
+
+    private static TimeSpan ClampRetryDelay(TimeSpan delay)
+    {
+        if (delay < TimeSpan.Zero)
+            return TimeSpan.Zero;
+
+        return delay > TimeSpan.FromSeconds(2)
+            ? TimeSpan.FromSeconds(2)
+            : delay;
     }
 
     private static string TruncateForTitle(string query) =>
@@ -945,14 +1106,10 @@ public sealed class ChatService : IChatService
             }
         }
 
-        var rateLimitKey = $"chat:ratelimit:{request.MembershipId}";
-        var perUserCount = await _cacheService.IncrementWithExpiryAsync(rateLimitKey, TimeSpan.FromSeconds(RateLimitSeconds), ct);
-        if (perUserCount > 1)
+        if (!await _rateLimitService.CheckUserRateLimitAsync(request.MembershipId, ct))
             throw new InvalidOperationException("Rate limit exceeded. Please wait a moment before sending another message.");
 
-        var tenantRateKey = $"chat:ratelimit:tenant:{request.TenantId}";
-        var tenantCount = await _cacheService.IncrementWithExpiryAsync(tenantRateKey, TimeSpan.FromSeconds(TenantRateLimitWindowSeconds), ct);
-        if (tenantCount > TenantRateLimitMaxRequests)
+        if (!await _rateLimitService.CheckTenantRateLimitAsync(request.TenantId, ct))
             throw new InvalidOperationException("Tenant chat rate limit exceeded. Please slow down and try again in a minute.");
 
         var quotaDecisionResult = await _subscriptionQuotaGate.EnsureChatbotAllowedAsync(
@@ -972,11 +1129,394 @@ public sealed class ChatService : IChatService
 
         var authorizationProfile = await _chatAuthorizationService.GetAuthorizationProfileAsync(request.MembershipId, ct);
         EnsureTenantAccess(request, authorizationProfile);
-        var intent = _intentRouter.Classify(request.Query);
-        var policyDecision = _chatPolicyEngine.Decide(authorizationProfile, intent, request.Query);
+        EnsureRequestedDepartmentWithinProfile(request, authorizationProfile);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var defaultReportingFrom = new DateOnly(today.Year, today.Month, 1);
+        var defaultReportingTo = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        var effectiveQuery = await ResolveEffectiveQueryAsync(request, ct);
+        var intent = await _intentPlanner.ClassifyAsync(new ChatIntentPlanningRequest(effectiveQuery, today), ct);
+        var reportingFrom = defaultReportingFrom;
+        var reportingTo = defaultReportingTo;
+        var contextualPlanApplied = false;
+
+        var contextualPlan = await ResolveContextualPlanAsync(
+            request,
+            effectiveQuery,
+            intent,
+            today,
+            ct);
+        if (contextualPlan is not null)
+        {
+            effectiveQuery = contextualPlan.EffectiveQuery;
+            intent = contextualPlan.Intent;
+            reportingFrom = contextualPlan.ReportingFrom ?? reportingFrom;
+            reportingTo = contextualPlan.ReportingTo ?? reportingTo;
+            contextualPlanApplied = true;
+        }
+
+        if (intent.ReportingTask == ChatReportingTask.EntityStatusLookup)
+        {
+            intent = new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                intent.Reason,
+                ChatIntentFamily.DocumentLookup,
+                intent.ScopeConfidence,
+                intent.ReportingTask);
+        }
+
+        var policyDecision = _chatPolicyEngine.Decide(authorizationProfile, intent, effectiveQuery);
         LogPolicyDecision(request, authorizationProfile, intent, policyDecision, streamed);
 
-        return new PreparedChatExecution(request, quotaDecisionResult.Value, authorizationProfile, intent, policyDecision);
+        return new PreparedChatExecution(
+            request,
+            effectiveQuery,
+            quotaDecisionResult.Value,
+            authorizationProfile,
+            intent,
+            policyDecision,
+            reportingFrom,
+            reportingTo,
+            contextualPlanApplied);
+    }
+
+    private async Task<ContextualChatPlan?> ResolveContextualPlanAsync(
+        ChatRequest request,
+        string effectiveQuery,
+        ChatIntentClassification initialIntent,
+        DateOnly today,
+        CancellationToken ct)
+    {
+        if (!request.SessionId.HasValue ||
+            initialIntent.Mode != ChatExecutionMode.Rag ||
+            initialIntent.Family != ChatIntentFamily.Unknown ||
+            initialIntent.ScopeConfidence != ChatScopeConfidence.Ambiguous)
+        {
+            return null;
+        }
+
+        var session = await _chatRepository.GetOwnedSessionAsync(
+            request.SessionId.Value,
+            request.TenantId,
+            request.MembershipId,
+            ct);
+        if (session is null)
+            return null;
+
+        var history = await _chatRepository.GetMessagesBySessionAsync(session.Id, ct);
+        if (history.Count == 0)
+            return null;
+
+        var context = await _conversationStateManager.GetContextAsync(session.Id, ct);
+        var lastTurn = context?.LastTurn ?? await ReconstructLastTurnFromHistoryAsync(history, today, ct);
+        if (lastTurn is null)
+            return null;
+
+        var deterministicContextualPlan = TryBuildDeterministicContextualPlan(
+            request.Query,
+            effectiveQuery,
+            lastTurn,
+            today);
+        if (deterministicContextualPlan is not null)
+            return deterministicContextualPlan;
+
+        var contextualPlan = await _contextualChatPlanner.PlanAsync(
+            new ContextualChatPlanRequest(
+                request.Query,
+                effectiveQuery,
+                initialIntent,
+                history,
+                lastTurn,
+                today),
+            ct);
+
+        return contextualPlan;
+    }
+
+    private static ContextualChatPlan? TryBuildDeterministicContextualPlan(
+        string originalQuery,
+        string effectiveQuery,
+        ConversationTurnState lastTurn,
+        DateOnly today)
+    {
+        var reportingPlan = TryBuildDeterministicReportingPeriodPlan(originalQuery, effectiveQuery, lastTurn, today);
+        if (reportingPlan is not null)
+            return reportingPlan;
+
+        if (!string.Equals(lastTurn.AnswerSource, ChatAnswerSource.Rag.ToString(), StringComparison.Ordinal) ||
+            !LooksLikeEntityStatusLookup(originalQuery) ||
+            LooksLikeStateChangingApprovalRequest(originalQuery))
+        {
+            return null;
+        }
+
+        return new ContextualChatPlan(
+            effectiveQuery,
+            new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                "deterministic-context-status-lookup",
+                ChatIntentFamily.DocumentLookup,
+                ChatScopeConfidence.SafeInferred,
+                ChatReportingTask.EntityStatusLookup),
+            null,
+            null);
+    }
+
+    private static ContextualChatPlan? TryBuildDeterministicReportingPeriodPlan(
+        string originalQuery,
+        string effectiveQuery,
+        ConversationTurnState lastTurn,
+        DateOnly today)
+    {
+        if (!string.Equals(lastTurn.AnswerSource, ChatAnswerSource.Reporting.ToString(), StringComparison.Ordinal) ||
+            !TryResolveRelativeReportingPeriod(originalQuery, lastTurn, today, out var from, out var to))
+        {
+            return null;
+        }
+
+        var family = ParseEnum(lastTurn.IntentFamily, ChatIntentFamily.Aggregate);
+        var task = ParseEnum(lastTurn.ReportingTask, ChatReportingTask.Summary);
+
+        if (task == ChatReportingTask.Unknown)
+            task = family == ChatIntentFamily.Ranking ? ChatReportingTask.VendorRanking : ChatReportingTask.Summary;
+
+        return new ContextualChatPlan(
+            effectiveQuery,
+            new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "deterministic-context-period-carry",
+                family,
+                ChatScopeConfidence.SafeInferred,
+                task),
+            from,
+            to);
+    }
+
+    private static bool TryResolveRelativeReportingPeriod(
+        string query,
+        ConversationTurnState lastTurn,
+        DateOnly today,
+        out DateOnly from,
+        out DateOnly to)
+    {
+        var normalized = IntentTextNormalizer.Normalize(query);
+        var anchor = lastTurn.PeriodFrom ?? new DateOnly(today.Year, today.Month, 1);
+
+        if (ContainsSemanticPhrase(normalized, "thang truoc") ||
+            ContainsSemanticPhrase(normalized, "previous month") ||
+            ContainsSemanticPhrase(normalized, "prev month") ||
+            ContainsSemanticPhrase(normalized, "last month"))
+        {
+            from = new DateOnly(anchor.Year, anchor.Month, 1).AddMonths(-1);
+            to = new DateOnly(from.Year, from.Month, DateTime.DaysInMonth(from.Year, from.Month));
+            return true;
+        }
+
+        from = default;
+        to = default;
+        return false;
+    }
+
+    private static TEnum ParseEnum<TEnum>(string value, TEnum fallback)
+        where TEnum : struct, Enum =>
+        Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
+            ? parsed
+            : fallback;
+
+    private static bool LooksLikeEntityStatusLookup(string query)
+    {
+        var normalized = IntentTextNormalizer.Normalize(query);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        var asksStatus =
+            ContainsSemanticPhrase(normalized, "trang thai") ||
+            ContainsSemanticPhrase(normalized, "tinh trang") ||
+            ContainsSemanticPhrase(normalized, "status") ||
+            ContainsSemanticPhrase(normalized, "approved") ||
+            ContainsSemanticPhrase(normalized, "approval") ||
+            ContainsSemanticPhrase(normalized, "rejected") ||
+            ContainsSemanticPhrase(normalized, "duyet") ||
+            ContainsSemanticPhrase(normalized, "phe duyet") ||
+            ContainsSemanticPhrase(normalized, "cho duyet") ||
+            ContainsSemanticPhrase(normalized, "tu choi");
+
+        if (!asksStatus)
+            return false;
+
+        return query.Contains('?', StringComparison.Ordinal) ||
+            ContainsSemanticPhrase(normalized, "chua") ||
+            ContainsSemanticPhrase(normalized, "da") ||
+            ContainsSemanticPhrase(normalized, "whether") ||
+            ContainsSemanticPhrase(normalized, "is") ||
+            ContainsSemanticPhrase(normalized, "was");
+    }
+
+    private static bool LooksLikeStateChangingApprovalRequest(string query)
+    {
+        var normalized = IntentTextNormalizer.Normalize(query);
+        return ContainsSemanticPhrase(normalized, "duyet giup") ||
+            ContainsSemanticPhrase(normalized, "approve giup") ||
+            ContainsSemanticPhrase(normalized, "phe duyet giup") ||
+            ContainsSemanticPhrase(normalized, "duyet luon") ||
+            ContainsSemanticPhrase(normalized, "approve it") ||
+            ContainsSemanticPhrase(normalized, "approve now");
+    }
+
+    private static bool ContainsSemanticPhrase(string normalizedQuery, string phrase)
+    {
+        var paddedQuery = $" {normalizedQuery} ";
+        var paddedPhrase = $" {phrase} ";
+        return paddedQuery.Contains(paddedPhrase, StringComparison.Ordinal);
+    }
+
+    private async Task<ConversationTurnState?> ReconstructLastTurnFromHistoryAsync(
+        IReadOnlyList<ChatMessage> history,
+        DateOnly today,
+        CancellationToken ct)
+    {
+        var lastUserMessage = history
+            .Where(message => message.Role == ChatMessageRole.User)
+            .LastOrDefault();
+        if (lastUserMessage is null)
+            return null;
+
+        var intent = await _intentPlanner.ClassifyAsync(new ChatIntentPlanningRequest(lastUserMessage.Content, today), ct);
+        if (intent.Mode != ChatExecutionMode.Reporting)
+            return null;
+
+        var reportingFrom = new DateOnly(today.Year, today.Month, 1);
+        var reportingTo = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+
+        return ConversationTurnState.Create(
+            lastUserMessage.Content,
+            lastUserMessage.Content,
+            intent.Mode.ToString(),
+            intent.Family.ToString(),
+            intent.ReportingTask.ToString(),
+            intent.Reason,
+            intent.ScopeConfidence.ToString(),
+            ChatAnswerSource.Reporting.ToString(),
+            reportingFrom,
+            reportingTo);
+    }
+
+    private async Task<string> ResolveEffectiveQueryAsync(ChatRequest request, CancellationToken ct)
+    {
+        // Always resolve entity references when we have a session with history,
+        // not just for scope clarification answers (e.g., "tháng đó" should resolve to "tháng 5")
+        if (request.SessionId.HasValue)
+        {
+            var session = await _chatRepository.GetOwnedSessionAsync(request.SessionId.Value, request.TenantId, request.MembershipId, ct);
+            if (session is not null)
+            {
+                var messages = await _chatRepository.GetMessagesBySessionAsync(session.Id, ct);
+                var context = await _conversationStateManager.GetContextAsync(session.Id, ct);
+
+                // Check if this might be a scope clarification answer
+                if (IsScopeClarificationAnswer(request.Query))
+                {
+                    var pendingScopeQuery = context?.PendingClarification?.Kind == PendingClarificationKind.Scope
+                        ? context.PendingClarification.OriginalQuery
+                        : null;
+
+                    var previousScopeQuestion = !string.IsNullOrWhiteSpace(pendingScopeQuery)
+                        ? pendingScopeQuery
+                        : FindPreviousQuestionForScopeClarification(messages);
+
+                    if (!string.IsNullOrWhiteSpace(previousScopeQuestion))
+                        return await ResolveScopeClarificationAnswerAsync(
+                            session.Id,
+                            previousScopeQuestion,
+                            request.Query,
+                            messages,
+                            context,
+                            ct);
+                }
+                // For non-scope queries with history, still resolve entity references like "tháng đó"
+                else if (messages.Count > 0)
+                {
+                    var resolvedResult = await _hybridResolutionRouter.RouteAsync(
+                        request.Query,
+                        messages,
+                        context,
+                        ct);
+
+                    if (resolvedResult.RequiresClarification && !string.IsNullOrEmpty(resolvedResult.ClarificationPrompt))
+                    {
+                        _logger.LogInformation(
+                            "HybridResolutionRouter requested clarification: {Prompt}",
+                            resolvedResult.ClarificationPrompt);
+                    }
+
+                    return resolvedResult.ResolvedQuery;
+                }
+            }
+        }
+
+        return request.Query;
+    }
+
+    private async Task<string> ResolveScopeClarificationAnswerAsync(
+        Guid sessionId,
+        string previousUserQuestion,
+        string clarificationAnswer,
+        IReadOnlyList<ChatMessage> messages,
+        ConversationContext? context,
+        CancellationToken ct)
+    {
+        var resolvedResult = await _hybridResolutionRouter.RouteAsync(
+            $"{previousUserQuestion.Trim()} {clarificationAnswer.Trim()}",
+            messages,
+            context,
+            ct);
+
+        if (resolvedResult.RequiresClarification && !string.IsNullOrEmpty(resolvedResult.ClarificationPrompt))
+        {
+            _logger.LogInformation(
+                "HybridResolutionRouter requested clarification: {Prompt}",
+                resolvedResult.ClarificationPrompt);
+        }
+
+        if (context?.PendingClarification is not null)
+        {
+            context.ClearPendingClarification();
+            await _conversationStateManager.SaveContextAsync(sessionId, context, ct);
+        }
+
+        return resolvedResult.ResolvedQuery;
+    }
+
+    private static string? FindPreviousQuestionForScopeClarification(IReadOnlyList<ChatMessage> messages)
+    {
+        var clarificationIndex = messages
+            .Select((message, index) => new { Message = message, Index = index })
+            .Where(x => x.Message.Role == ChatMessageRole.Assistant && IsScopeClarificationPrompt(x.Message.Content))
+            .Select(x => x.Index)
+            .LastOrDefault(-1);
+
+        if (clarificationIndex <= 0)
+            return null;
+
+        return messages
+            .Take(clarificationIndex)
+            .LastOrDefault(message => message.Role == ChatMessageRole.User)
+            ?.Content;
+    }
+
+    private static bool IsScopeClarificationAnswer(string query)
+    {
+        var normalized = IntentTextNormalizer.Normalize(query);
+        return normalized is "toan cong ty" or "cong ty" or "company" or "all company" or
+            "phong ban cua toi" or "phong ban toi" or "bo phan cua toi" or "bo phan toi" or "team toi" or "my team" or
+            "cua toi" or "cua em" or "cua minh" or "toi" or "minh" or "my";
+    }
+
+    private static bool IsScopeClarificationPrompt(string content)
+    {
+        var normalized = IntentTextNormalizer.Normalize(content);
+        return normalized.Contains("ban muon xem trong pham vi", StringComparison.Ordinal) &&
+               (normalized.Contains("toan cong ty", StringComparison.Ordinal) ||
+                normalized.Contains("phong ban", StringComparison.Ordinal));
     }
 
     private void LogPolicyDecision(
@@ -1078,49 +1618,49 @@ public sealed class ChatService : IChatService
         ChatAuthorizationProfile profile,
         string query,
         ChatIntentClassification intent,
+        DateOnly from,
+        DateOnly to,
         CancellationToken ct)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var from = new DateOnly(today.Year, today.Month, 1);
-        var to = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        var reportingTask = ResolveReportingTask(intent);
 
-        if (string.Equals(intent.Reason, "approval-reporting", StringComparison.Ordinal))
+        if (reportingTask == ChatReportingTask.ApprovalQueue)
         {
             var approvalAnswer = await _chatReportingService.BuildPendingApprovalSummaryAsync(profile, query, ct);
             return new ReportingExecutionResult(approvalAnswer.Answer, approvalAnswer.RecordCount);
         }
 
-        if (string.Equals(intent.Reason, "trend-reporting", StringComparison.Ordinal))
+        if (reportingTask == ChatReportingTask.Trend)
         {
             var trendAnswer = await _chatReportingService.BuildMonthlyTrendSummaryAsync(profile, query, ct);
             return new ReportingExecutionResult(trendAnswer.Answer, trendAnswer.RecordCount);
         }
 
-        if (string.Equals(intent.Reason, "vendor-reporting", StringComparison.Ordinal))
+        if (reportingTask == ChatReportingTask.VendorRanking)
         {
             var vendorAnswer = await _chatReportingService.BuildTopVendorsSummaryAsync(profile, query, from, to, ct);
             return new ReportingExecutionResult(vendorAnswer.Answer, vendorAnswer.RecordCount);
         }
 
-        if (string.Equals(intent.Reason, "budget-reporting", StringComparison.Ordinal))
+        if (reportingTask == ChatReportingTask.BudgetUtilization)
         {
             var budgetAnswer = await _chatReportingService.BuildBudgetUtilizationSummaryAsync(profile, query, from, to, ct);
             return new ReportingExecutionResult(budgetAnswer.Answer, budgetAnswer.RecordCount);
         }
 
-        if (intent.Family == ChatIntentFamily.Ranking)
+        if (reportingTask == ChatReportingTask.EmployeeRanking)
         {
             var rankingAnswer = await _chatReportingService.BuildTopEmployeesSummaryAsync(profile, query, from, to, ct);
             return new ReportingExecutionResult(rankingAnswer.Answer, rankingAnswer.RecordCount);
         }
 
-        if (string.Equals(intent.Reason, "comparison-reporting", StringComparison.Ordinal))
+        if (reportingTask == ChatReportingTask.Comparison)
         {
             var comparisonAnswer = await _chatReportingService.BuildExpenseComparisonAsync(profile, query, from, to, ct);
             return new ReportingExecutionResult(comparisonAnswer.Answer, comparisonAnswer.RecordCount);
         }
 
-        if (intent.Family == ChatIntentFamily.Aggregate)
+        if (reportingTask == ChatReportingTask.Summary || intent.Family == ChatIntentFamily.Aggregate)
         {
             var aggregateAnswer = await _chatReportingService.BuildScopedExpenseSummaryAsync(profile, query, from, to, ct);
             return new ReportingExecutionResult(aggregateAnswer.Answer, aggregateAnswer.RecordCount);
@@ -1128,6 +1668,33 @@ public sealed class ChatService : IChatService
 
         var reportingAnswer = await _chatReportingService.BuildOwnExpenseSummaryAsync(profile, from, to, ct);
         return new ReportingExecutionResult(reportingAnswer.Answer, reportingAnswer.RecordCount);
+    }
+
+    private static ChatReportingTask ResolveReportingTask(ChatIntentClassification intent)
+    {
+        if (intent.ReportingTask != ChatReportingTask.Unknown)
+            return intent.ReportingTask;
+
+        if (string.Equals(intent.Reason, "approval-reporting", StringComparison.Ordinal))
+            return ChatReportingTask.ApprovalQueue;
+        if (string.Equals(intent.Reason, "trend-reporting", StringComparison.Ordinal))
+            return ChatReportingTask.Trend;
+        if (string.Equals(intent.Reason, "vendor-reporting", StringComparison.Ordinal))
+            return ChatReportingTask.VendorRanking;
+        if (string.Equals(intent.Reason, "budget-reporting", StringComparison.Ordinal))
+            return ChatReportingTask.BudgetUtilization;
+        if (intent.Family == ChatIntentFamily.Ranking)
+            return ChatReportingTask.EmployeeRanking;
+        if (intent.Family == ChatIntentFamily.ApprovalQueue)
+            return ChatReportingTask.ApprovalQueue;
+        if (intent.Family == ChatIntentFamily.Comparison)
+            return ChatReportingTask.Comparison;
+        if (string.Equals(intent.Reason, "comparison-reporting", StringComparison.Ordinal))
+            return ChatReportingTask.Comparison;
+        if (intent.Family == ChatIntentFamily.Aggregate)
+            return ChatReportingTask.Summary;
+
+        return ChatReportingTask.Unknown;
     }
 
     private async Task<RagExecutionContext> PrepareRagExecutionAsync(
@@ -1216,7 +1783,24 @@ public sealed class ChatService : IChatService
             .Select(m => ChatMessage.Create(m.SessionId, m.SenderId, m.Role, ChatPromptSanitizer.Sanitize(m.Content)))
             .ToList();
 
-        return _promptBuilder.BuildFullPrompt(query, context.TopChunks, context.AccessScope, limitedHistory);
+        // Check if we should use compressed summary
+        string? compressedSummary = null;
+        if (await _contextSummarizationService.ShouldSummarizeAsync(history, ct))
+        {
+            var contextData = await _conversationStateManager.GetContextAsync(context.Session.SessionId, ct);
+            compressedSummary = contextData?.CompressedSummary;
+
+            if (string.IsNullOrEmpty(compressedSummary))
+            {
+                compressedSummary = await _contextSummarizationService.SummarizeAsync(history, ct);
+                if (contextData != null && !string.IsNullOrEmpty(compressedSummary))
+                {
+                    contextData.SetCompressedSummary(compressedSummary);
+                }
+            }
+        }
+
+        return _promptBuilder.BuildFullPrompt(query, context.TopChunks, context.AccessScope, limitedHistory, compressedSummary);
     }
 
     private async Task<Prompt> BuildGeneralPromptAsync(
@@ -1262,20 +1846,297 @@ public sealed class ChatService : IChatService
         ChatRequest request,
         ResolvedChatSession session,
         string assistantResponse,
-        CancellationToken ct)
+        CancellationToken ct,
+        ChatTurnStateInput? turnState = null)
     {
         if (session.IsNewSession)
             await _chatRepository.AddSessionAsync(session.Session, ct);
 
-        var userMessage = ChatMessage.Create(session.SessionId, request.MembershipId, ChatMessageRole.User, request.Query);
-        var assistantMessage = ChatMessage.Create(session.SessionId, request.MembershipId, ChatMessageRole.Assistant, assistantResponse);
+        var turnCreatedAt = DateTime.UtcNow;
+        var userMessage = ChatMessage.Create(
+            session.SessionId,
+            request.MembershipId,
+            ChatMessageRole.User,
+            request.Query,
+            createdAtUtc: turnCreatedAt);
+        var assistantMessage = ChatMessage.Create(
+            session.SessionId,
+            request.MembershipId,
+            ChatMessageRole.Assistant,
+            assistantResponse,
+            createdAtUtc: turnCreatedAt.AddMilliseconds(1));
+
+        // Persist tracked entities to user message so they survive to next turn
+        var context = await _conversationStateManager.GetContextAsync(session.SessionId, ct);
+        if (context != null)
+        {
+            var activeEntities = context.GetActiveEntities();
+            if (activeEntities.Count > 0)
+            {
+                var trackedFactsJson = JsonSerializer.Serialize(
+                    activeEntities.Select(e => new { e.CanonicalName, Type = e.Type.ToString(), e.Aliases }),
+                    SerializerOptions);
+                userMessage.SetScopeContext(trackedFactsJson);
+            }
+        }
 
         await _chatRepository.AddMessageAsync(userMessage, ct);
         await _chatRepository.AddMessageAsync(assistantMessage, ct);
 
         session.Session.UpdateTitle(TruncateForTitle(request.Query));
+
+        // Track conversation state: entities and intents
+        await TrackConversationStateAsync(session.SessionId, request, turnState, ct);
+
         await _unitOfWork.SaveChangesAsync(ct);
         return assistantMessage;
+    }
+
+    private static ChatTurnStateInput BuildTurnState(
+        PreparedChatExecution prepared,
+        ChatAnswerSource answerSource) =>
+        new(
+            prepared.EffectiveQuery,
+            prepared.Intent.Mode.ToString(),
+            prepared.Intent.Family.ToString(),
+            prepared.Intent.ReportingTask.ToString(),
+            prepared.Intent.Reason,
+            prepared.Intent.ScopeConfidence.ToString(),
+            answerSource.ToString(),
+            prepared.Intent.Mode == ChatExecutionMode.Reporting ? prepared.ReportingFrom : null,
+            prepared.Intent.Mode == ChatExecutionMode.Reporting ? prepared.ReportingTo : null);
+
+    private async Task RecordPendingClarificationAsync(
+        Guid sessionId,
+        PreparedChatExecution prepared,
+        string prompt,
+        CancellationToken ct)
+    {
+        if (prepared.PolicyDecision.Kind != ChatPolicyDecisionKind.Clarify ||
+            !IsScopeClarificationIntent(prepared.Intent))
+        {
+            return;
+        }
+
+        try
+        {
+            var context = await _conversationStateManager.GetOrCreateContextAsync(sessionId, ct);
+            context.SetPendingClarification(PendingClarification.Scope(
+                prepared.EffectiveQuery,
+                prompt,
+                prepared.Intent.Reason));
+            await _conversationStateManager.SaveContextAsync(sessionId, context, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record pending scope clarification for session {SessionId}", sessionId);
+        }
+    }
+
+    private static bool IsScopeClarificationIntent(ChatIntentClassification intent)
+    {
+        if (intent.ScopeConfidence != ChatScopeConfidence.Ambiguous)
+            return false;
+
+        return intent.Family is ChatIntentFamily.Aggregate
+            or ChatIntentFamily.Comparison
+            or ChatIntentFamily.Ranking;
+    }
+
+    private async Task TrackConversationStateAsync(
+        Guid sessionId,
+        ChatRequest request,
+        ChatTurnStateInput? turnState,
+        CancellationToken ct)
+    {
+        try
+        {
+            var context = await _conversationStateManager.GetOrCreateContextAsync(sessionId, ct);
+
+            // Increment turn count
+            context.IncrementTurn();
+
+            if (ShouldExtractEntitiesForTurn(turnState))
+            {
+                // Get conversation history for LLM-based entity extraction
+                var history = await _chatRepository.GetMessagesBySessionAsync(sessionId, ct);
+
+                // Extract and track entities from the user query using LLM-based extraction
+                var extractedEntities = await _llmEntityExtractor.ExtractEntitiesAsync(request.Query, history, ct);
+                foreach (var entity in extractedEntities)
+                {
+                    if (entity.Confidence > 0.5f)
+                    {
+                        var trackedEntity = TrackedEntity.ExtractEntity(
+                            entity.NormalizedForm ?? entity.Text,
+                            entity.Type,
+                            context.TurnCount);
+                        context.AddEntity(trackedEntity);
+                    }
+                }
+            }
+
+            if (turnState is not null)
+            {
+                context.SetLastTurn(ConversationTurnState.Create(
+                    request.Query,
+                    turnState.EffectiveQuery,
+                    turnState.ExecutionMode,
+                    turnState.IntentFamily,
+                    turnState.ReportingTask,
+                    turnState.IntentReason,
+                    turnState.ScopeConfidence,
+                    turnState.AnswerSource,
+                    turnState.ReportingFrom,
+                    turnState.ReportingTo));
+
+                if (!context.IntentStack.IsLocked)
+                {
+                    var frame = IntentFrame.Create(turnState.IntentFamily);
+                    frame.SetSlot("executionMode", turnState.ExecutionMode);
+                    frame.SetSlot("reportingTask", turnState.ReportingTask);
+                    frame.SetSlot("intentReason", turnState.IntentReason);
+                    frame.SetSlot("scopeConfidence", turnState.ScopeConfidence);
+                    frame.SetSlot("answerSource", turnState.AnswerSource);
+                    context.IntentStack.Push(frame);
+                }
+            }
+
+            // Cleanup expired entities
+            context.CleanupExpiredEntities();
+
+            // Save all changes in a single cache write
+            await _conversationStateManager.SaveContextAsync(sessionId, context, ct);
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the conversation persistence
+            _logger.LogWarning(ex, "Failed to track conversation state for session {SessionId}", sessionId);
+        }
+    }
+
+    private static bool ShouldExtractEntitiesForTurn(ChatTurnStateInput? turnState)
+    {
+        return !string.Equals(
+            turnState?.ExecutionMode,
+            ChatExecutionMode.Reporting.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    private static List<TrackedEntity> ExtractEntitiesFromQuery(string query)
+    {
+        var entities = new List<TrackedEntity>();
+        var normalized = IntentTextNormalizer.Normalize(query);
+
+        // Simple keyword-based entity extraction
+        // Department patterns
+        if (normalized.Contains("phong ban") || normalized.Contains("bo phan"))
+        {
+            var deptMatch = ExtractEntityValue(query, new[] { "phòng ban", "bộ phận" });
+            if (!string.IsNullOrEmpty(deptMatch))
+            {
+                entities.Add(TrackedEntity.Create(deptMatch, EntityType.DEPARTMENT, turnNumber: 0));
+            }
+        }
+
+        // Money patterns
+        var moneyPatterns = new[] { "vnd", "đồng", "triệu", "nghìn" };
+        foreach (var pattern in moneyPatterns)
+        {
+            if (normalized.Contains(pattern))
+            {
+                var amountMatch = ExtractEntityValue(query, moneyPatterns);
+                if (!string.IsNullOrEmpty(amountMatch))
+                {
+                    entities.Add(TrackedEntity.Create(amountMatch, EntityType.MONEY, turnNumber: 0));
+                    break;
+                }
+            }
+        }
+
+        // Date patterns
+        var datePatterns = new[] { "tháng", "năm", "ngày", "tuần" };
+        foreach (var pattern in datePatterns)
+        {
+            if (normalized.Contains(pattern))
+            {
+                var dateMatch = ExtractEntityValue(query, datePatterns);
+                if (!string.IsNullOrEmpty(dateMatch))
+                {
+                    entities.Add(TrackedEntity.Create(dateMatch, EntityType.DATE, turnNumber: 0));
+                    break;
+                }
+            }
+        }
+
+        return entities;
+    }
+
+    private static string? ExtractEntityValue(string query, string[] patterns)
+    {
+        foreach (var pattern in patterns)
+        {
+            var index = query.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                // Extract surrounding context
+                var start = Math.Max(0, index - 20);
+                var length = Math.Min(40, query.Length - start);
+                var value = query.Substring(start, length).Trim();
+                return value.Length > 35 ? value[..32] + "..." : value;
+            }
+        }
+        return null;
+    }
+
+    private static string DetermineIntentType(string query)
+    {
+        var normalized = IntentTextNormalizer.Normalize(query);
+
+        if (normalized.Contains("bao nhieu") || normalized.Contains("chi bao nhieu") || normalized.Contains("tong"))
+            return "expense-query";
+        if (normalized.Contains("chung tu") || normalized.Contains("hoa don") || normalized.Contains("receipt"))
+            return "document-query";
+        if (normalized.Contains("duyet") || normalized.Contains("approve") || normalized.Contains("phe duyet"))
+            return "approval-query";
+        if (normalized.Contains("ngan sach") || normalized.Contains("budget"))
+            return "budget-query";
+        if (normalized.Contains("so sanh") || normalized.Contains("comparison"))
+            return "comparison-query";
+
+        return "general-query";
+    }
+
+    private static bool IsSemanticallyVague(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 10)
+            return true;
+
+        var normalized = IntentTextNormalizer.Normalize(query);
+
+        // Patterns that are too incomplete/vague without additional context
+        var vaguePatterns = new[]
+        {
+            "cho toi xem",
+            "xem gi",
+            "xem nao",
+            "xem di",
+            "nhung ai",
+            "ai da",
+            "ai duyet",
+            "ai phe duyet",
+            "gi the",
+            "gi vay",
+            "the nao"
+        };
+
+        foreach (var pattern in vaguePatterns)
+        {
+            if (normalized.Contains(pattern))
+                return true;
+        }
+
+        return false;
     }
 
     private async Task RecordUsageAsync(
@@ -1319,6 +2180,108 @@ public sealed class ChatService : IChatService
         }
     }
 
+    private async Task<ChatResponse> HandleMultiIntentQueryAsync(
+        PreparedChatExecution prepared,
+        IReadOnlyList<string> subQueries,
+        CancellationToken ct)
+    {
+        _logger.LogInformation(
+            "Processing multi-intent query with {Count} sub-queries for membership {MembershipId}",
+            subQueries.Count,
+            prepared.Request.MembershipId);
+
+        var answers = new List<string>();
+
+        foreach (var subQuery in subQueries)
+        {
+            var subRequest = prepared.Request with { Query = subQuery };
+            var subPrepared = await PrepareSingleIntentExecutionAsync(subRequest, prepared.QuotaDecision, ct);
+
+            string answer;
+            if (subPrepared.Intent.Mode == ChatExecutionMode.Reporting)
+            {
+                var reporting = await ExecuteReportingAsync(
+                    subPrepared.AuthorizationProfile,
+                    subQuery,
+                    subPrepared.Intent,
+                    subPrepared.ReportingFrom,
+                    subPrepared.ReportingTo,
+                    ct);
+                answer = reporting.Answer;
+            }
+            else if (subPrepared.Intent.Mode == ChatExecutionMode.General)
+            {
+                var general = await ExecuteGeneralAsync(subQuery, subPrepared.Intent, prepared.Request.SessionId ?? Guid.NewGuid(), ct);
+                answer = general.Answer;
+            }
+            else
+            {
+                // RAG mode - use the sub-query for retrieval
+                var subRagContext = await PrepareRagExecutionAsync(subRequest, ct);
+
+                if (subRagContext.TopChunks.Count == 0)
+                {
+                    answer = "Tôi không tìm thấy thông tin phù hợp để trả lời câu hỏi này.";
+                }
+                else
+                {
+                    var formatted = ChatRagBusinessFormatter.TryFormat(
+                        subQuery,
+                        subRagContext.TopChunks,
+                        subPrepared.Intent.ReportingTask);
+                    if (formatted is not null)
+                    {
+                        answer = ChatCitationParser.StripMarkers(formatted.Answer);
+                    }
+                    else
+                    {
+                        var prompt = await BuildRagPromptAsync(subQuery, subRagContext, ct);
+                        var (ragAnswer, _) = await CallOpenRouterAsync(prompt, ct);
+                        answer = ChatCitationParser.StripMarkers(ragAnswer);
+                    }
+                }
+            }
+
+            answers.Add($"**Câu hỏi:** {subQuery}\n**Trả lời:** {answer}");
+        }
+
+        var combinedAnswer = string.Join("\n\n", answers);
+        var session = await ResolveSessionAsync(prepared.Request, ct);
+        var assistantMessage = await PersistConversationAsync(prepared.Request, session, combinedAnswer, ct);
+        await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, null, ct);
+
+        return new ChatResponse(
+            combinedAnswer,
+            session.SessionId,
+            assistantMessage.Id,
+            0,
+            0,
+            ChatAnswerSource.Rag,
+            []);
+    }
+
+    private async Task<PreparedChatExecution> PrepareSingleIntentExecutionAsync(
+        ChatRequest request,
+        SubscriptionQuotaDecision quotaDecision,
+        CancellationToken ct)
+    {
+        var sanitizedQuery = ChatPromptSanitizer.Sanitize(request.Query);
+        request = request with { Query = sanitizedQuery };
+
+        var authorizationProfile = await _chatAuthorizationService.GetAuthorizationProfileAsync(request.MembershipId, ct);
+        EnsureTenantAccess(request, authorizationProfile);
+        EnsureRequestedDepartmentWithinProfile(request, authorizationProfile);
+
+        var effectiveQuery = await ResolveEffectiveQueryAsync(request, ct);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var intent = await _intentPlanner.ClassifyAsync(new ChatIntentPlanningRequest(effectiveQuery, today), ct);
+        var policyDecision = _chatPolicyEngine.Decide(authorizationProfile, intent, effectiveQuery);
+        var reportingFrom = new DateOnly(today.Year, today.Month, 1);
+        var reportingTo = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+
+        return new PreparedChatExecution(request, effectiveQuery, quotaDecision, authorizationProfile, intent, policyDecision, reportingFrom, reportingTo, ContextualPlanApplied: false);
+    }
+
     private static string ComputeSha256Hash(string input)
     {
         using var sha256 = System.Security.Cryptography.SHA256.Create();
@@ -1329,11 +2292,10 @@ public sealed class ChatService : IChatService
 
     private static Uri BuildChatCompletionsUri(string baseUrl)
     {
-        var normalizedBaseUrl = string.IsNullOrWhiteSpace(baseUrl)
-            ? throw new InvalidOperationException("Chat base URL is not configured.")
-            : baseUrl.TrimEnd('/') + "/";
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new InvalidOperationException("Chat base URL is not configured.");
 
-        return new Uri(new Uri(normalizedBaseUrl, UriKind.Absolute), "chat/completions");
+        return ChatCompletionsEndpointBuilder.Build(baseUrl);
     }
 
     private record OpenRouterChatResponse(
@@ -1355,22 +2317,16 @@ public sealed class ChatService : IChatService
         int? TotalTokens
     );
 
-    private sealed class ChatRateLimitEntry
-    {
-        public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-    }
-
-    private sealed class TenantRateCounter
-    {
-        public int Count { get; set; }
-    }
-
     private sealed record PreparedChatExecution(
         ChatRequest Request,
+        string EffectiveQuery,
         SubscriptionQuotaDecision QuotaDecision,
         ChatAuthorizationProfile AuthorizationProfile,
         ChatIntentClassification Intent,
-        ChatPolicyDecision PolicyDecision);
+        ChatPolicyDecision PolicyDecision,
+        DateOnly ReportingFrom,
+        DateOnly ReportingTo,
+        bool ContextualPlanApplied);
 
     private sealed record ResolvedChatSession(
         Guid SessionId,
@@ -1384,6 +2340,17 @@ public sealed class ChatService : IChatService
     private sealed record GeneralExecutionResult(
         string Answer,
         int? TokenUsage);
+
+    private sealed record ChatTurnStateInput(
+        string EffectiveQuery,
+        string ExecutionMode,
+        string IntentFamily,
+        string ReportingTask,
+        string IntentReason,
+        string ScopeConfidence,
+        string AnswerSource,
+        DateOnly? ReportingFrom,
+        DateOnly? ReportingTo);
 
     private sealed record RagExecutionContext(
         ResolvedChatSession Session,

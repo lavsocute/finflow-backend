@@ -15,7 +15,8 @@ public sealed record OcrExtractionResult(
     IReadOnlyList<OcrExtractionLineItem> LineItems,
     int ProcessedPageCount,
     string? CurrencyCode = null,
-    IReadOnlyList<string> Warnings = null!
+    IReadOnlyList<string> Warnings = null!,
+    IReadOnlyList<OcrExtractionTaxLine> TaxLines = null!
 )
 {
     public static OcrExtractionResult Create(
@@ -33,7 +34,8 @@ public sealed record OcrExtractionResult(
         IReadOnlyList<OcrExtractionLineItem> lineItems,
         int processedPageCount,
         bool wasTruncated = false,
-        string? currencyCode = null)
+        string? currencyCode = null,
+        IReadOnlyList<OcrExtractionTaxLine>? taxLines = null)
     {
         var warnings = new List<string>();
         if (wasTruncated)
@@ -54,6 +56,7 @@ public sealed record OcrExtractionResult(
             lineItems,
             processedPageCount,
             currencyCode,
-            warnings);
+            warnings,
+            taxLines ?? []);
     }
 }

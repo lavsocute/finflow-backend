@@ -17,6 +17,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         FinancialBreakdownMismatch: ReviewedDocumentErrors.FinancialBreakdownMismatch);
 
     private readonly List<ReviewedDocumentLineItem> _lineItems = [];
+    private readonly List<ReviewedDocumentTaxLine> _taxLines = [];
 
     private ReviewedDocument(
         Guid id,
@@ -39,7 +40,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         string reviewedByStaff,
         string confidenceLabel,
         DateTime submittedAtUtc,
-        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems,
+        IReadOnlyCollection<ReviewedDocumentTaxLine> taxLines)
     {
         Id = id;
         IdTenant = idTenant;
@@ -66,6 +68,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         CreatedAt = submittedAtUtc;
         UpdatedAt = submittedAtUtc;
         _lineItems.AddRange(lineItems);
+        _taxLines.AddRange(taxLines);
     }
 
     private ReviewedDocument() { }
@@ -137,6 +140,7 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
     public uint Version { get; private set; }
     public bool IsActive { get; private set; } = true;
     public IReadOnlyCollection<ReviewedDocumentLineItem> LineItems => _lineItems.AsReadOnly();
+    public IReadOnlyCollection<ReviewedDocumentTaxLine> TaxLines => _taxLines.AsReadOnly();
 
     public static Result<ReviewedDocument> CreateSubmitted(
         Guid documentId,
@@ -157,7 +161,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         string reviewedByStaff,
         string confidenceLabel,
         DateTime submittedAtUtc,
-        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems,
+        IReadOnlyCollection<ReviewedDocumentTaxLine>? taxLines = null)
         => CreateSubmitted(
             documentId,
             idTenant,
@@ -179,7 +184,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
             reviewedByStaff,
             confidenceLabel,
             submittedAtUtc,
-            lineItems);
+            lineItems,
+            taxLines);
 
     public static Result<ReviewedDocument> CreateSubmitted(
         Guid documentId,
@@ -202,7 +208,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         string reviewedByStaff,
         string confidenceLabel,
         DateTime submittedAtUtc,
-        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems,
+        IReadOnlyCollection<ReviewedDocumentTaxLine>? taxLines = null)
     {
         if (documentId == Guid.Empty)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DocumentIdRequired);
@@ -275,6 +282,10 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         if (breakdown.IsFailure)
             return Result.Failure<ReviewedDocument>(breakdown.Error);
 
+        var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
+        if (normalizedTaxLines.IsFailure)
+            return Result.Failure<ReviewedDocument>(normalizedTaxLines.Error);
+
         return Result.Success(new ReviewedDocument(
             documentId,
             idTenant,
@@ -296,7 +307,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
             reviewedByStaff.Trim(),
             string.IsNullOrWhiteSpace(confidenceLabel) ? "Staff corrected" : confidenceLabel.Trim(),
             submittedAtUtc,
-            lineItems));
+            lineItems,
+            normalizedTaxLines.Value));
     }
 
     public Result Approve(Guid? approvedByMembershipId = null)
@@ -398,7 +410,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         decimal vat,
         decimal totalAmount,
         string confidenceLabel,
-        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems)
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems,
+        IReadOnlyCollection<ReviewedDocumentTaxLine>? taxLines = null)
     {
         if (Status != ReviewedDocumentStatus.Draft)
             return Result.Failure(ReviewedDocumentErrors.CannotUpdateInCurrentState);
@@ -428,6 +441,10 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         if (breakdown.IsFailure)
             return breakdown;
 
+        var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
+        if (normalizedTaxLines.IsFailure)
+            return normalizedTaxLines;
+
         VendorName = vendorName.Trim();
         Reference = reference.Trim();
         DocumentDate = documentDate;
@@ -443,6 +460,8 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
 
         _lineItems.Clear();
         _lineItems.AddRange(lineItems);
+        _taxLines.Clear();
+        _taxLines.AddRange(normalizedTaxLines.Value);
 
         return Result.Success();
     }
@@ -502,5 +521,33 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
             DedupHash: DedupHash,
             SubmitterMembershipId: MembershipId,
             ConflictingDocumentIds: conflictingDocumentIds));
+    }
+
+    private static Result<IReadOnlyCollection<ReviewedDocumentTaxLine>> NormalizeTaxLines(
+        IReadOnlyCollection<ReviewedDocumentTaxLine>? taxLines,
+        decimal taxableAmount,
+        decimal vat)
+    {
+        if (taxLines is null || taxLines.Count == 0)
+            return Result.Success<IReadOnlyCollection<ReviewedDocumentTaxLine>>(CreateFallbackTaxLines(taxableAmount, vat));
+
+        var taxAmount = taxLines.Sum(x => x.TaxAmount);
+        if (!FinancialInvariants.EqualsWithinTolerance(
+                FinancialInvariants.RoundMoney(taxAmount),
+                FinancialInvariants.RoundMoney(vat)))
+            return Result.Failure<IReadOnlyCollection<ReviewedDocumentTaxLine>>(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+
+        return Result.Success<IReadOnlyCollection<ReviewedDocumentTaxLine>>(taxLines.ToList());
+    }
+
+    private static IReadOnlyCollection<ReviewedDocumentTaxLine> CreateFallbackTaxLines(decimal taxableAmount, decimal vat)
+    {
+        if (vat <= 0)
+            return [];
+
+        return
+        [
+            ReviewedDocumentTaxLine.Create("VAT", null, taxableAmount, vat).Value
+        ];
     }
 }

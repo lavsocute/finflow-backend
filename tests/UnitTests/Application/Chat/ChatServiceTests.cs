@@ -103,8 +103,15 @@ public class ChatServiceTests
 
     private ChatService CreateService(
         IChatIntentRouter? intentRouter = null,
+        IChatIntentPlanner? intentPlanner = null,
         IChatReportingService? reportingService = null,
-        IChatPolicyEngine? policyEngine = null) => new ChatService(
+        IChatPolicyEngine? policyEngine = null,
+        IContextualChatPlanner? contextualChatPlanner = null,
+        IHybridResolutionRouter? hybridResolutionRouter = null,
+        IConversationStateManager? conversationStateManager = null,
+        IMultiIntentDetector? multiIntentDetector = null,
+        ILlmEntityExtractor? llmEntityExtractor = null,
+        HttpClient? httpClient = null) => new ChatService(
         _chatRepositoryMock.Object,
         _chatAuthServiceMock.Object,
         _subscriptionQuotaGateMock.Object,
@@ -117,10 +124,16 @@ public class ChatServiceTests
         _currentTenantMock.Object,
         _unitOfWorkMock.Object,
         _cacheServiceMock.Object,
-        _httpClient,
+        httpClient ?? _httpClient,
         _options,
         _loggerMock.Object,
-        chatPolicyEngine: policyEngine);
+        contextualChatPlanner: contextualChatPlanner,
+        intentPlanner: intentPlanner,
+        chatPolicyEngine: policyEngine,
+        hybridResolutionRouter: hybridResolutionRouter,
+        conversationStateManager: conversationStateManager,
+        llmEntityExtractor: llmEntityExtractor,
+        multiIntentDetector: multiIntentDetector);
 
     private void SetupHappyPath(
         Guid tenantId,
@@ -175,7 +188,7 @@ public class ChatServiceTests
             .ReturnsAsync(rerankedResults ?? []);
 
         _promptBuilderMock
-            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string?>()))
             .Returns(new Prompt("system", "user", []));
 
         _chatRepositoryMock
@@ -348,7 +361,7 @@ public class ChatServiceTests
 
         var prompt = new Prompt("You are a helpful assistant.", "Hello", new List<ChatMessage>());
         _promptBuilderMock
-            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string?>()))
             .Returns(prompt);
 
         var accessScope = new ChatAccessScope(
@@ -465,7 +478,7 @@ public class ChatServiceTests
             .ReturnsAsync(new List<(DocumentChunk Chunk, float Score)>());
 
         _promptBuilderMock
-            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Setup(x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string?>()))
             .Returns(new Prompt("system", "user", new List<ChatMessage>()));
 
         _chatRepositoryMock
@@ -615,7 +628,8 @@ public class ChatServiceTests
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<DocumentChunk>>(),
                 It.IsAny<ChatAccessScope>(),
-                It.IsAny<IReadOnlyList<ChatMessage>>()),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
             Times.Never);
 
         _chatRepositoryMock.Verify(
@@ -889,7 +903,8 @@ public class ChatServiceTests
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<DocumentChunk>>(),
                 It.IsAny<ChatAccessScope>(),
-                It.IsAny<IReadOnlyList<ChatMessage>>()),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
             Times.Never);
         _chatRepositoryMock.Verify(
             x => x.AddSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
@@ -1231,6 +1246,409 @@ var expectedSessions = new List<ChatSessionSummary>
     }
 
     [Fact]
+    public async Task ChatAsync_UsesIntentPlannerInsteadOfLegacyRouter_ForBusinessRouting()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var profile = new ChatAuthorizationProfile(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            membershipId,
+            Guid.NewGuid(),
+            [],
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            new ChatCapabilities(true, true, true, true, false, false, false, false));
+
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 1)));
+        _chatAuthServiceMock
+            .Setup(x => x.GetAuthorizationProfileAsync(membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _chatIntentRouterMock
+            .Setup(x => x.Classify(It.IsAny<string>()))
+            .Returns(new ChatIntentClassification(ChatExecutionMode.Rag, "legacy-router-would-rag"));
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "llm-planned-reporting",
+                ChatIntentFamily.Aggregate,
+                ChatScopeConfidence.Explicit));
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var expectedFrom = new DateOnly(today.Year, today.Month, 1);
+        var expectedTo = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        _chatReportingServiceMock
+            .Setup(x => x.BuildScopedExpenseSummaryAsync(profile, "Cho tôi bức tranh tài chính của workspace hiện tại", expectedFrom, expectedTo, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Workspace spending is 42 VND.", "scoped-expense-summary", 1));
+        _chatRepositoryMock
+            .Setup(x => x.AddSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _chatRepositoryMock
+            .Setup(x => x.AddMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unitOfWorkMock
+            .Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        var response = await CreateService(intentPlanner: planner.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Cho tôi bức tranh tài chính của workspace hiện tại", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Contains("42 VND", response.Answer);
+        _chatIntentRouterMock.Verify(x => x.Classify(It.IsAny<string>()), Times.Never);
+        planner.Verify(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ChatAsync_DoesNotCallMultiIntentDetector_ForPlainSingleQuestion()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var query = "Viết lại câu này cho lịch sự hơn";
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.Staff,
+            departmentId,
+            [departmentId],
+            membershipId,
+            false,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.LimitOnly,
+            ApprovalAccessLevel.OwnOnly);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.General,
+                "productivity",
+                ChatIntentFamily.Productivity,
+                ChatScopeConfidence.Explicit));
+        var detector = new Mock<IMultiIntentDetector>(MockBehavior.Strict);
+
+        await CreateService(intentPlanner: planner.Object, multiIntentDetector: detector.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, query, null),
+            CancellationToken.None);
+
+        detector.Verify(
+            x => x.DetectAndSplitAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_CallsMultiIntentDetector_ForStructurallyMultiQuestion()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var query = "Tổng chi tháng này là bao nhiêu? Nhà cung cấp nào nhiều nhất?";
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.Staff,
+            departmentId,
+            [departmentId],
+            membershipId,
+            false,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.LimitOnly,
+            ApprovalAccessLevel.OwnOnly);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.General,
+                "productivity",
+                ChatIntentFamily.Productivity,
+                ChatScopeConfidence.Explicit));
+        var detector = new Mock<IMultiIntentDetector>();
+        detector
+            .Setup(x => x.DetectAndSplitAsync(query, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([query]);
+
+        await CreateService(intentPlanner: planner.Object, multiIntentDetector: detector.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, query, null),
+            CancellationToken.None);
+
+        detector.Verify(
+            x => x.DetectAndSplitAsync(query, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ChatAsync_DoesNotCallLlmEntityExtractor_ForStructuredReportingTurn()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            departmentId,
+            [departmentId],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "workspace-spend-summary",
+                ChatIntentFamily.Aggregate,
+                ChatScopeConfidence.Explicit));
+        _chatReportingServiceMock
+            .Setup(x => x.BuildScopedExpenseSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Tổng chi: 0 VND", "summary", 0));
+        var entityExtractor = new Mock<ILlmEntityExtractor>(MockBehavior.Strict);
+
+        await CreateService(intentPlanner: planner.Object, llmEntityExtractor: entityExtractor.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Tổng chi toàn công ty tháng này", null),
+            CancellationToken.None);
+
+        entityExtractor.Verify(
+            x => x.ExtractEntitiesAsync(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_DispatchesApprovalQueue_ByStructuredReportingTask()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            departmentId,
+            [departmentId],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "User requests pending approval documents in workspace",
+                ChatIntentFamily.ApprovalQueue,
+                ChatScopeConfidence.Explicit,
+                ChatReportingTask.ApprovalQueue));
+        _chatReportingServiceMock
+            .Setup(x => x.BuildPendingApprovalSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Có 1 hóa đơn đang chờ duyệt.", "pending-approval-summary", 1));
+
+        var response = await CreateService(intentPlanner: planner.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Những chứng từ nào đang chờ duyệt trong workspace?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Contains("chờ duyệt", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildPendingApprovalSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildScopedExpenseSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_DispatchesVendorRanking_ByStructuredReportingTask()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            departmentId,
+            [departmentId],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "User asks which supplier contributes most",
+                ChatIntentFamily.Ranking,
+                ChatScopeConfidence.SafeInferred,
+                ChatReportingTask.VendorRanking));
+        _chatReportingServiceMock
+            .Setup(x => x.BuildTopVendorsSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Top nhà cung cấp: Bách Hóa Xanh · 1,500,000 VND", "top-vendors-summary", 1));
+
+        var response = await CreateService(intentPlanner: planner.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Nhà cung cấp nào đóng góp nhiều nhất trong khoảng đó?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Contains("nhà cung cấp", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildTopVendorsSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildTopEmployeesSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_DispatchesComparison_ByStructuredReportingTask()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            departmentId,
+            [departmentId],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Reporting,
+                "User asks whether spending increased or decreased compared with prior context",
+                ChatIntentFamily.Comparison,
+                ChatScopeConfidence.SafeInferred,
+                ChatReportingTask.Comparison));
+        _chatReportingServiceMock
+            .Setup(x => x.BuildExpenseComparisonAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("So với kỳ trước: không đổi, chênh lệch 0 VND.", "expense-comparison-summary", 2));
+
+        var response = await CreateService(intentPlanner: planner.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "So với câu đầu tiên thì tăng hay giảm?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Contains("So với", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildExpenseComparisonAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildScopedExpenseSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_RetriesRagCompletion_WhenProviderReturnsTooManyRequests()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var departmentId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            departmentId,
+            "Policy requires receipts for reimbursements above 1,000,000 VND.",
+            "retry-rag-hash",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Policy);
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            departmentId,
+            [departmentId],
+            membershipId,
+            true,
+            [DocumentChunkType.Policy],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.99f)]);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                "document-lookup",
+                ChatIntentFamily.DocumentLookup,
+                ChatScopeConfidence.Explicit));
+        var handler = new SequencedChatCompletionHandler(
+            new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            {
+                Content = new StringContent("{\"error\":{\"message\":\"Rate limit reached. Please try again in 0s.\"}}", Encoding.UTF8, "application/json")
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"choices\":[{\"message\":{\"content\":\"RAG answer after retry\"}}],\"usage\":{\"totalTokens\":12}}",
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.groq.com/openai/v1") };
+
+        var response = await CreateService(intentPlanner: planner.Object, httpClient: httpClient).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "What is the reimbursement receipt policy?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Rag, response.AnswerSource);
+        Assert.Contains("RAG answer after retry", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
     public async Task ChatAsync_UsesAggregateReportingPath_ForDepartmentSummary()
     {
         var tenantId = Guid.NewGuid();
@@ -1561,6 +1979,245 @@ var expectedSessions = new List<ChatSessionSummary>
     }
 
     [Fact]
+    public async Task ChatAsync_UsesPreviousClarificationQuestion_WhenUserAnswersTenantScope()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ChatSession.Create(tenantId, membershipId, "Budget question");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+        var profile = new ChatAuthorizationProfile(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            membershipId,
+            null,
+            [],
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt, DocumentChunkType.Budget],
+            new ChatCapabilities(true, true, true, true, true, true, true, true));
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.User, "Phòng nào vượt ngân sách trong tháng này?"),
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.Assistant, "Bạn muốn xem trong phạm vi nào: của bạn, phòng ban của bạn, hay toàn công ty?")
+        };
+
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 1)));
+        _chatAuthServiceMock
+            .Setup(x => x.GetAuthorizationProfileAsync(membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _chatRepositoryMock
+            .Setup(x => x.GetOwnedSessionAsync(sessionId, tenantId, membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatRepositoryMock
+            .Setup(x => x.GetMessagesBySessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(history);
+        _chatReportingServiceMock
+            .Setup(x => x.BuildBudgetUtilizationSummaryAsync(
+                profile,
+                It.Is<string>(query =>
+                    query.Contains("Phòng nào vượt ngân sách trong tháng này?", StringComparison.Ordinal) &&
+                    query.Contains("toàn công ty", StringComparison.Ordinal)),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Không có phòng ban nào vượt ngân sách.", "budget-utilization-summary", 0));
+        _chatRepositoryMock
+            .Setup(x => x.AddMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _chatRepositoryMock
+            .Setup(x => x.UpdateSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unitOfWorkMock
+            .Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        var response = await CreateService(intentRouter: new ChatIntentRouter()).ChatAsync(
+            new ChatRequest(membershipId, tenantId, sessionId, "toàn công ty", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Contains("Không có phòng ban nào", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildBudgetUtilizationSummaryAsync(
+                profile,
+                It.Is<string>(query =>
+                    query.Contains("Phòng nào vượt ngân sách trong tháng này?", StringComparison.Ordinal) &&
+                    query.Contains("toàn công ty", StringComparison.Ordinal)),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _embeddingServiceMock.Verify(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_UsesPendingScopeClarificationState_WhenPromptTextChanges()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ChatSession.Create(tenantId, membershipId, "Budget question");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+        var originalQuestion = "Phòng nào vượt ngân sách trong tháng này?";
+        var resolvedQuery = $"{originalQuestion} toàn công ty";
+        var profile = new ChatAuthorizationProfile(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            membershipId,
+            null,
+            [],
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt, DocumentChunkType.Budget],
+            new ChatCapabilities(true, true, true, true, true, true, true, true));
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.User, originalQuestion),
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.Assistant, "Bạn chọn phạm vi xem dữ liệu nào?")
+        };
+        var context = ConversationContext.Create(sessionId);
+        context.SetPendingClarification(PendingClarification.Scope(
+            originalQuestion,
+            "Bạn chọn phạm vi xem dữ liệu nào?",
+            "budget-reporting"));
+        var conversationStateManager = new Mock<IConversationStateManager>();
+        var hybridResolutionRouter = new Mock<IHybridResolutionRouter>();
+
+        _subscriptionQuotaGateMock
+            .Setup(x => x.EnsureChatbotAllowedAsync(tenantId, membershipId, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(CreateQuotaDecision(tenantId, membershipId, SubscriptionFeature.Chatbot, 1)));
+        _chatAuthServiceMock
+            .Setup(x => x.GetAuthorizationProfileAsync(membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _chatRepositoryMock
+            .Setup(x => x.GetOwnedSessionAsync(sessionId, tenantId, membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatRepositoryMock
+            .Setup(x => x.GetMessagesBySessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(history);
+        conversationStateManager
+            .Setup(x => x.GetContextAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        conversationStateManager
+            .Setup(x => x.SaveContextAsync(sessionId, context, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        hybridResolutionRouter
+            .Setup(x => x.RouteAsync(
+                It.Is<string>(query => query == resolvedQuery),
+                history,
+                context,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ResolutionResult
+            {
+                ResolvedQuery = resolvedQuery,
+                Confidence = 1.0f,
+                Tier = ResolutionTier.Pattern,
+                RequiresClarification = false
+            });
+        _chatReportingServiceMock
+            .Setup(x => x.BuildBudgetUtilizationSummaryAsync(
+                profile,
+                resolvedQuery,
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Không có phòng ban nào vượt ngân sách.", "budget-utilization-summary", 0));
+        _chatRepositoryMock
+            .Setup(x => x.AddMessageAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _chatRepositoryMock
+            .Setup(x => x.UpdateSessionAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        _unitOfWorkMock
+            .Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+
+        var response = await CreateService(
+            intentRouter: new ChatIntentRouter(new TextNormalizer()),
+            hybridResolutionRouter: hybridResolutionRouter.Object,
+            conversationStateManager: conversationStateManager.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, sessionId, "toàn công ty", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Null(context.PendingClarification);
+        hybridResolutionRouter.Verify(
+            x => x.RouteAsync(resolvedQuery, history, context, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildBudgetUtilizationSummaryAsync(
+                profile,
+                resolvedQuery,
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ChatAsync_PassesSessionHistory_ToRagPromptBuilder()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ChatSession.Create(tenantId, membershipId, "Invoice question");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            null,
+            [],
+            membershipId,
+            true,
+            [DocumentChunkType.Policy],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            Guid.NewGuid(),
+            null,
+            "Invoice policy requires supporting receipts for expenses above 1,000,000 VND.",
+            "hash-rag-history",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Policy);
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.User, "Quy định hóa đơn là gì?"),
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.Assistant, "Bạn muốn xem quy định nào?")
+        };
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.99f)]);
+        _chatRepositoryMock
+            .Setup(x => x.GetOwnedSessionAsync(sessionId, tenantId, membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatRepositoryMock
+            .Setup(x => x.GetMessagesBySessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(history);
+
+        await CreateService().ChatAsync(
+            new ChatRequest(membershipId, tenantId, sessionId, "cái trước đó", null),
+            CancellationToken.None);
+
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                "cái trước đó",
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                accessScope,
+                It.Is<IReadOnlyList<ChatMessage>>(messages =>
+                    messages.Count == 2 &&
+                    messages[0].Content == "Quy định hóa đơn là gì?" &&
+                    messages[1].Content == "Bạn muốn xem quy định nào?"),
+                It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ChatAsync_SetsAnswerSource_ToRag_ForCacheHitPath()
     {
         var tenantId = Guid.NewGuid();
@@ -1600,14 +2257,28 @@ var expectedSessions = new List<ChatSessionSummary>
                 [
                     new CachedCitation(1, chunk.Id, chunk.DocumentId, chunk.Type.ToString(), "Cached receipt detail")
                 ]));
+        ConversationContext? savedContext = null;
+        var conversationStateManager = new Mock<IConversationStateManager>();
+        conversationStateManager
+            .Setup(x => x.GetContextAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ConversationContext?)null);
+        conversationStateManager
+            .Setup(x => x.GetOrCreateContextAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid sessionId, CancellationToken _) => ConversationContext.Create(sessionId));
+        conversationStateManager
+            .Setup(x => x.SaveContextAsync(It.IsAny<Guid>(), It.IsAny<ConversationContext>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, ConversationContext, CancellationToken>((_, context, _) => savedContext = context)
+            .Returns(Task.CompletedTask);
 
-        var response = await CreateService().ChatAsync(
+        var response = await CreateService(conversationStateManager: conversationStateManager.Object).ChatAsync(
             new ChatRequest(membershipId, tenantId, null, "Show my cached receipt", null),
             CancellationToken.None);
 
         Assert.Equal(ChatAnswerSource.Rag, response.AnswerSource);
         Assert.Equal("Cached answer", response.Answer);
         Assert.Single(response.Citations!);
+        Assert.NotNull(savedContext?.LastTurn);
+        Assert.Equal(ChatAnswerSource.Rag.ToString(), savedContext!.LastTurn!.AnswerSource);
     }
 
     [Fact]
@@ -1731,7 +2402,383 @@ var expectedSessions = new List<ChatSessionSummary>
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<DocumentChunk>>(),
                 It.IsAny<ChatAccessScope>(),
-                It.IsAny<IReadOnlyList<ChatMessage>>()),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_UsesDeterministicFormatter_ForEntityStatusLookupTask()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            null,
+            [],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            null,
+            """
+            Expense record
+            Merchant: Vendor Approved
+            Reference: APPROVED-001
+            Expense date: 2026-05-22
+            Total: 150000
+            Status: Approved
+            Submitted at UTC: 2026-05-22T11:00:00Z
+            """,
+            "hash-service-approved-status",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.95f)]);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                "status-follow-up",
+                ChatIntentFamily.DocumentLookup,
+                ChatScopeConfidence.SafeInferred,
+                ChatReportingTask.EntityStatusLookup));
+
+        var response = await CreateService(intentPlanner: planner.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "Khoản đó đã được duyệt chưa?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Rag, response.AnswerSource);
+        Assert.Equal(0, response.TokenUsage);
+        Assert.Contains("Trạng thái", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Đã duyệt", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Vendor Approved", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                It.IsAny<ChatAccessScope>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_PersistsRagTurnState_ForDeterministicFormatter()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            null,
+            [],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            null,
+            """
+            Expense record
+            Merchant: Vendor State
+            Reference: STATE-001
+            Expense date: 2026-05-22
+            Total: 150000
+            Status: Approved
+            Submitted at UTC: 2026-05-22T11:00:00Z
+            """,
+            "hash-rag-turn-state",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.95f)]);
+
+        ConversationContext? savedContext = null;
+        var conversationStateManager = new Mock<IConversationStateManager>();
+        conversationStateManager
+            .Setup(x => x.GetContextAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ConversationContext?)null);
+        conversationStateManager
+            .Setup(x => x.GetOrCreateContextAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid sessionId, CancellationToken _) => ConversationContext.Create(sessionId));
+        conversationStateManager
+            .Setup(x => x.SaveContextAsync(It.IsAny<Guid>(), It.IsAny<ConversationContext>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, ConversationContext, CancellationToken>((_, context, _) => savedContext = context)
+            .Returns(Task.CompletedTask);
+
+        await CreateService(conversationStateManager: conversationStateManager.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, null, "show tất cả expense giúp tôi", null),
+            CancellationToken.None);
+
+        Assert.NotNull(savedContext?.LastTurn);
+        Assert.Equal(ChatExecutionMode.Rag.ToString(), savedContext!.LastTurn!.ExecutionMode);
+        Assert.Equal(ChatAnswerSource.Rag.ToString(), savedContext.LastTurn.AnswerSource);
+        Assert.Equal("show tất cả expense giúp tôi", savedContext.LastTurn.OriginalQuery);
+    }
+
+    [Fact]
+    public async Task ChatAsync_UsesDeterministicStatusContextFallback_WhenPlannerCannotClassifyFollowUp()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var session = ChatSession.Create(tenantId, membershipId, "Recent documents");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            null,
+            [],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            null,
+            """
+            Expense record
+            Merchant: Vendor Context
+            Reference: CTX-001
+            Expense date: 2026-05-22
+            Total: 150000
+            Status: Approved
+            Submitted at UTC: 2026-05-22T11:00:00Z
+            """,
+            "hash-context-approved-status",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.User, "Cho tôi xem chi phí gần đây nhất"),
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.Assistant, "1. Vendor Context - Trạng thái: Đã duyệt")
+        };
+        var context = ConversationContext.Create(sessionId);
+        context.SetLastTurn(ConversationTurnState.Create(
+            "Cho tôi xem chi phí gần đây nhất",
+            "Cho tôi xem chi phí gần đây nhất",
+            ChatExecutionMode.Rag.ToString(),
+            ChatIntentFamily.DocumentLookup.ToString(),
+            ChatReportingTask.Unknown.ToString(),
+            "document-listing",
+            ChatScopeConfidence.Explicit.ToString(),
+            ChatAnswerSource.Rag.ToString(),
+            null,
+            null));
+
+        SetupHappyPath(tenantId, membershipId, accessScope, [chunk], [(chunk, 0.95f)]);
+        _chatRepositoryMock
+            .Setup(x => x.GetOwnedSessionAsync(sessionId, tenantId, membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatRepositoryMock
+            .Setup(x => x.GetMessagesBySessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(history);
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                "planner-fallback-rag",
+                ChatIntentFamily.Unknown,
+                ChatScopeConfidence.Ambiguous));
+        var contextualPlanner = new Mock<IContextualChatPlanner>();
+        contextualPlanner
+            .Setup(x => x.PlanAsync(It.IsAny<ContextualChatPlanRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ContextualChatPlan?)null);
+        var conversationStateManager = new Mock<IConversationStateManager>();
+        conversationStateManager
+            .Setup(x => x.GetContextAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        conversationStateManager
+            .Setup(x => x.SaveContextAsync(sessionId, It.IsAny<ConversationContext>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var hybridResolutionRouter = new Mock<IHybridResolutionRouter>();
+        hybridResolutionRouter
+            .Setup(x => x.RouteAsync(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<ConversationContext?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string query, IReadOnlyList<ChatMessage> _, ConversationContext? _, CancellationToken _) =>
+                new ResolutionResult
+                {
+                    ResolvedQuery = query,
+                    Confidence = 0.8f,
+                    Tier = ResolutionTier.Pattern,
+                    RequiresClarification = false
+                });
+
+        var response = await CreateService(
+            intentPlanner: planner.Object,
+            contextualChatPlanner: contextualPlanner.Object,
+            hybridResolutionRouter: hybridResolutionRouter.Object,
+            conversationStateManager: conversationStateManager.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, sessionId, "Khoản đó đã được duyệt chưa?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Rag, response.AnswerSource);
+        Assert.Equal(0, response.TokenUsage);
+        Assert.Contains("Trạng thái", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Đã duyệt", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Vendor Context", response.Answer, StringComparison.OrdinalIgnoreCase);
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                It.IsAny<ChatAccessScope>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ChatAsync_UsesDeterministicReportingPeriodContextFallback_BeforeContextualLlmPlanner()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ChatSession.Create(tenantId, membershipId, "Reporting context");
+        typeof(ChatSession).GetProperty("Id")!.SetValue(session, sessionId);
+        var accessScope = new ChatAccessScope(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            null,
+            [],
+            membershipId,
+            true,
+            [DocumentChunkType.Expense, DocumentChunkType.Receipt, DocumentChunkType.Budget],
+            BudgetAccessLevel.FullBudget,
+            ApprovalAccessLevel.AllApprovals);
+        SetupHappyPath(tenantId, membershipId, accessScope);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var currentFrom = new DateOnly(today.Year, today.Month, 1);
+        var currentTo = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        var previousMonth = currentFrom.AddMonths(-1);
+        var expectedFrom = previousMonth;
+        var expectedTo = new DateOnly(previousMonth.Year, previousMonth.Month, DateTime.DaysInMonth(previousMonth.Year, previousMonth.Month));
+        var history = new List<ChatMessage>
+        {
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.User, "Cho tôi bức tranh tài chính của workspace trong tháng này"),
+            ChatMessage.Create(sessionId, membershipId, ChatMessageRole.Assistant, "Tổng chi tháng này: 0 VND")
+        };
+        var context = ConversationContext.Create(sessionId);
+        context.SetLastTurn(ConversationTurnState.Create(
+            "Cho tôi bức tranh tài chính của workspace trong tháng này",
+            "Cho tôi bức tranh tài chính của workspace trong tháng này",
+            ChatExecutionMode.Reporting.ToString(),
+            ChatIntentFamily.Aggregate.ToString(),
+            ChatReportingTask.Summary.ToString(),
+            "deterministic-summary",
+            ChatScopeConfidence.Explicit.ToString(),
+            ChatAnswerSource.Reporting.ToString(),
+            currentFrom,
+            currentTo));
+
+        _chatRepositoryMock
+            .Setup(x => x.GetOwnedSessionAsync(sessionId, tenantId, membershipId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _chatRepositoryMock
+            .Setup(x => x.GetMessagesBySessionAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(history);
+        _chatReportingServiceMock
+            .Setup(x => x.BuildScopedExpenseSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                "Còn tháng trước thì sao?",
+                expectedFrom,
+                expectedTo,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer("Tổng chi tháng trước: 0 VND", "scoped-expense-summary", 0));
+
+        var planner = new Mock<IChatIntentPlanner>();
+        planner
+            .Setup(x => x.ClassifyAsync(It.IsAny<ChatIntentPlanningRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatIntentClassification(
+                ChatExecutionMode.Rag,
+                "planner-fallback-rag",
+                ChatIntentFamily.Unknown,
+                ChatScopeConfidence.Ambiguous));
+        var contextualPlanner = new Mock<IContextualChatPlanner>();
+        var conversationStateManager = new Mock<IConversationStateManager>();
+        conversationStateManager
+            .Setup(x => x.GetContextAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(context);
+        conversationStateManager
+            .Setup(x => x.SaveContextAsync(sessionId, It.IsAny<ConversationContext>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var hybridResolutionRouter = new Mock<IHybridResolutionRouter>();
+        hybridResolutionRouter
+            .Setup(x => x.RouteAsync(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<ConversationContext?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string query, IReadOnlyList<ChatMessage> _, ConversationContext? _, CancellationToken _) =>
+                new ResolutionResult
+                {
+                    ResolvedQuery = query,
+                    Confidence = 0.8f,
+                    Tier = ResolutionTier.Pattern,
+                    RequiresClarification = false
+                });
+
+        var response = await CreateService(
+            intentPlanner: planner.Object,
+            contextualChatPlanner: contextualPlanner.Object,
+            hybridResolutionRouter: hybridResolutionRouter.Object,
+            conversationStateManager: conversationStateManager.Object).ChatAsync(
+            new ChatRequest(membershipId, tenantId, sessionId, "Còn tháng trước thì sao?", null),
+            CancellationToken.None);
+
+        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Equal(0, response.TokenUsage);
+        Assert.Contains("tháng trước", response.Answer, StringComparison.OrdinalIgnoreCase);
+        contextualPlanner.Verify(
+            x => x.PlanAsync(It.IsAny<ContextualChatPlanRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildScopedExpenseSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                "Còn tháng trước thì sao?",
+                expectedFrom,
+                expectedTo,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _promptBuilderMock.Verify(
+            x => x.BuildFullPrompt(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                It.IsAny<ChatAccessScope>(),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
             Times.Never);
     }
 
@@ -1814,7 +2861,8 @@ var expectedSessions = new List<ChatSessionSummary>
                 It.IsAny<string>(),
                 It.IsAny<IReadOnlyList<DocumentChunk>>(),
                 It.IsAny<ChatAccessScope>(),
-                It.IsAny<IReadOnlyList<ChatMessage>>()),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string?>()),
             Times.Never);
     }
 
@@ -2005,7 +3053,7 @@ var expectedSessions = new List<ChatSessionSummary>
                 It.IsAny<IReadOnlyList<ChatMessage>>()),
             Times.Once);
         _promptBuilderMock.Verify(
-            x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>()),
+            x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string?>()),
             Times.Never);
         _embeddingServiceMock.Verify(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -2049,6 +3097,7 @@ var expectedSessions = new List<ChatSessionSummary>
             new ChatRequest(membershipId, tenantId, null, "Viết code python để phân tích các hóa đơn này", null),
             CancellationToken.None);
 
+        Assert.Equal(ChatAnswerSource.General, response.AnswerSource);
         Assert.Contains("mã nguồn", response.Answer, StringComparison.OrdinalIgnoreCase);
         _promptBuilderMock.Verify(
             x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>()),
@@ -2095,6 +3144,7 @@ var expectedSessions = new List<ChatSessionSummary>
             new ChatRequest(membershipId, tenantId, null, "vendor này có mùi gian lận không", null),
             CancellationToken.None);
 
+        Assert.Equal(ChatAnswerSource.General, response.AnswerSource);
         Assert.Contains("gian lận", response.Answer, StringComparison.OrdinalIgnoreCase);
         _promptBuilderMock.Verify(
             x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>()),
@@ -2455,7 +3505,7 @@ var expectedSessions = new List<ChatSessionSummary>
     }
 
     [Fact]
-    public async Task ChatStreamAsync_ReturnsClarifyMessage_ForManagerAmbiguousRanking()
+    public async Task ChatStreamAsync_ExecutesReporting_ForManagerAmbiguousRanking()
     {
         var tenantId = Guid.NewGuid();
         var membershipId = Guid.NewGuid();
@@ -2493,6 +3543,17 @@ var expectedSessions = new List<ChatSessionSummary>
         _unitOfWorkMock
             .Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
+        _chatReportingServiceMock
+            .Setup(x => x.BuildTopEmployeesSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer(
+                "Top nhân viên chi tiêu trong phạm vi phòng ban của bạn: Nguyen Van A · 900,000 VND",
+                "top-employees-summary",
+                1));
 
         var events = await CollectStreamEventsAsync(CreateService().ChatStreamAsync(
             new ChatRequest(membershipId, tenantId, null, "tôi đứng thứ mấy", null),
@@ -2500,10 +3561,13 @@ var expectedSessions = new List<ChatSessionSummary>
 
         Assert.Equal(2, events.Count);
         Assert.Equal(ChatStreamEventKind.Token, events[0].Kind);
-        Assert.Contains("phòng ban", events[0].TokenChunk, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Top nhân viên", events[0].TokenChunk, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(ChatStreamEventKind.Complete, events[1].Kind);
         Assert.Equal(ChatAnswerSource.Reporting, events[1].AnswerSource);
-        Assert.Equal(0, events[1].DocumentCount);
+        Assert.Equal(1, events[1].DocumentCount);
+        _chatReportingServiceMock.Verify(
+            x => x.BuildTopEmployeesSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Once);
         _chatReportingServiceMock.Verify(
             x => x.BuildExpenseComparisonAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -2569,7 +3633,7 @@ var expectedSessions = new List<ChatSessionSummary>
     }
 
     [Fact]
-    public async Task ChatAsync_ReturnsClarifyMessage_ForManagerAmbiguousRanking()
+    public async Task ChatAsync_ExecutesReporting_ForManagerAmbiguousRanking()
     {
         var tenantId = Guid.NewGuid();
         var membershipId = Guid.NewGuid();
@@ -2607,20 +3671,35 @@ var expectedSessions = new List<ChatSessionSummary>
         _unitOfWorkMock
             .Setup(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
+        _chatReportingServiceMock
+            .Setup(x => x.BuildTopEmployeesSummaryAsync(
+                It.IsAny<ChatAuthorizationProfile>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatReportingAnswer(
+                "Top nhân viên chi tiêu trong phạm vi phòng ban của bạn: Nguyen Van A · 900,000 VND",
+                "top-employees-summary",
+                1));
 
         var response = await CreateService().ChatAsync(
             new ChatRequest(membershipId, tenantId, null, "tôi đứng thứ mấy", null),
             CancellationToken.None);
 
         Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
-        Assert.Contains("phòng ban", response.Answer, StringComparison.OrdinalIgnoreCase);
-        var logState = TryGetStructuredState(_loggerMock, "Chat policy requires clarification");
+        Assert.Contains("Top nhân viên", response.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, response.DocumentCount);
+        var logState = TryGetStructuredState(_loggerMock, "Chat policy decision");
         Assert.NotNull(logState);
         var audit = FindNestedStructuredState(logState!, "IntentFamily");
         Assert.NotNull(audit);
         Assert.Equal("Ranking", audit!["IntentFamily"]?.ToString());
         Assert.Equal("Ambiguous", audit["ScopeConfidence"]?.ToString());
-        Assert.Equal("Clarify", audit["Decision"]?.ToString());
+        Assert.Equal("ExecuteReporting", audit["Decision"]?.ToString());
+        _chatReportingServiceMock.Verify(
+            x => x.BuildTopEmployeesSummaryAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
+            Times.Once);
         _chatReportingServiceMock.Verify(
             x => x.BuildExpenseComparisonAsync(It.IsAny<ChatAuthorizationProfile>(), It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -2670,7 +3749,7 @@ var expectedSessions = new List<ChatSessionSummary>
             new ChatRequest(membershipId, tenantId, null, "So sánh chi tiêu của tôi với người khác trong công ty", null),
             CancellationToken.None);
 
-        Assert.Equal(ChatAnswerSource.Reporting, response.AnswerSource);
+        Assert.Equal(ChatAnswerSource.General, response.AnswerSource);
         Assert.Contains("quyền hiện tại", response.Answer, StringComparison.OrdinalIgnoreCase);
         var logState = TryGetStructuredState(_loggerMock, "Chat policy denied");
         Assert.NotNull(logState);
@@ -3172,6 +4251,26 @@ var expectedSessions = new List<ChatSessionSummary>
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(_responseFactory(request));
+    }
+
+    private sealed class SequencedChatCompletionHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public SequencedChatCompletionHandler(params HttpResponseMessage[] responses)
+        {
+            _responses = new Queue<HttpResponseMessage>(responses);
+        }
+
+        public int CallCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(_responses.Count > 0
+                ? _responses.Dequeue()
+                : new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        }
     }
 
     private static async Task<List<ChatStreamEvent>> CollectStreamEventsAsync(IAsyncEnumerable<ChatStreamEvent> stream)

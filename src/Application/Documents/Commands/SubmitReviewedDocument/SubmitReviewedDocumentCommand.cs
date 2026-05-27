@@ -1,4 +1,5 @@
 using FinFlow.Application.Common;
+using FinFlow.Application.Documents.Commands;
 using FinFlow.Application.Documents.DTOs.Responses;
 using FinFlow.Domain.Abstractions;
 
@@ -34,5 +35,6 @@ public sealed record SubmitReviewedDocumentCommand(
     decimal? DocumentDiscountPercent = null,
     decimal DocumentDiscountAmount = 0m,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null
 ) : ICommand<Result<ReviewedDocumentResponse>>;

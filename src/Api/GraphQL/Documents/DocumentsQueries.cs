@@ -91,6 +91,8 @@ public sealed record MySubmittedDocumentDetailPayload(
     Guid DocumentId,
     string OriginalFileName,
     string ContentType,
+    bool HasPreviewImage,
+    string? PreviewImageDataUrl,
     string VendorName,
     string Reference,
     DateOnly DocumentDate,
@@ -99,13 +101,18 @@ public sealed record MySubmittedDocumentDetailPayload(
     decimal Subtotal,
     decimal Vat,
     decimal TotalAmount,
+    string CurrencyCode,
+    decimal ExchangeRate,
+    string BaseCurrencyCode,
+    decimal TotalAmountInBaseCurrency,
     string Source,
     string Status,
     string SubmittedByEmail,
     DateTime SubmittedAt,
     DateTime LastUpdatedAt,
     string? RejectionReason,
-    IReadOnlyList<MySubmittedDocumentLineItemPayload> LineItems);
+    IReadOnlyList<MySubmittedDocumentLineItemPayload> LineItems,
+    IReadOnlyList<DocumentTaxLinePayload> TaxLines);
 
 public sealed record ApprovalQueueItemPayload(
     Guid DocumentId,
@@ -305,6 +312,8 @@ public sealed class DocumentsQueries
             doc.DocumentId,
             doc.OriginalFileName,
             doc.ContentType,
+            doc.HasPreviewImage,
+            doc.PreviewImageDataUrl,
             doc.VendorName,
             doc.Reference,
             doc.DocumentDate,
@@ -313,6 +322,10 @@ public sealed class DocumentsQueries
             doc.Subtotal,
             doc.Vat,
             doc.TotalAmount,
+            doc.CurrencyCode,
+            doc.ExchangeRate,
+            doc.BaseCurrencyCode,
+            doc.TotalAmountInBaseCurrency,
             doc.Source,
             doc.Status,
             doc.SubmittedByEmail,
@@ -325,6 +338,13 @@ public sealed class DocumentsQueries
                     item.Quantity,
                     item.UnitPrice,
                     item.Total))
+                .ToList(),
+            doc.TaxLines
+                .Select(item => new DocumentTaxLinePayload(
+                    item.TaxType,
+                    item.Rate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
                 .ToList());
     }
 

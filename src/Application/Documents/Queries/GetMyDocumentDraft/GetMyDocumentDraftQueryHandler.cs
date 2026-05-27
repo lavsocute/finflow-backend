@@ -35,6 +35,8 @@ public sealed class GetMyDocumentDraftQueryHandler
             draft.Id,
             draft.OriginalFileName,
             draft.ContentType,
+            draft.HasImage,
+            BuildPreviewImageDataUrl(draft.ImageContentType, draft.ImageData),
             draft.VendorName,
             draft.Reference,
             draft.DocumentDate,
@@ -46,12 +48,22 @@ public sealed class GetMyDocumentDraftQueryHandler
             draft.Source,
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
-            draft.HasImage,
             draft.LineItems
                 .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+                .ToList(),
+            draft.TaxLines
+                .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
                 .ToList(),
             draft.CurrencyCode,
             draft.ExchangeRate,
             draft.BaseCurrencyCode,
             decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero));
+
+    private static string? BuildPreviewImageDataUrl(string? contentType, byte[]? imageData)
+    {
+        if (imageData is not { Length: > 0 } || string.IsNullOrWhiteSpace(contentType))
+            return null;
+
+        return $"data:{contentType};base64,{Convert.ToBase64String(imageData)}";
+    }
 }

@@ -52,7 +52,7 @@ public sealed class ChatPhraseAdversarialTests
     }
 
     [Fact]
-    public void Decide_Clarifies_Manager_CrossTeamSlangQuery()
+    public void Decide_ExecutesReporting_ForManagerCrossTeamSlangQuery()
     {
         var profile = CreateProfile(
             RoleType.Manager,
@@ -61,7 +61,7 @@ public sealed class ChatPhraseAdversarialTests
 
         var result = _policyEngine.Decide(profile, classification, "team nào burn hơn");
 
-        Assert.Equal(ChatPolicyDecisionKind.Clarify, result.Kind);
+        Assert.Equal(ChatPolicyDecisionKind.ExecuteReporting, result.Kind);
     }
 
     [Fact]

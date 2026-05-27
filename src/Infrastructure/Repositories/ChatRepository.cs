@@ -33,6 +33,7 @@ public class ChatRepository : IChatRepository
         return await _dbContext.ChatMessages
             .Where(m => m.SessionId == sessionId)
             .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.Role)
             .ToListAsync(ct);
     }
 
@@ -72,5 +73,23 @@ public class ChatRepository : IChatRepository
             .ToListAsync(ct);
 
         return result;
+    }
+
+    public async Task<IReadOnlyList<ChatSession>> GetActiveSessionsAsync(DateTime cutoff, CancellationToken ct = default)
+    {
+        return await _dbContext.ChatSessions
+            .Where(s => s.UpdatedAt >= cutoff && s.IsActive)
+            .ToListAsync(ct);
+    }
+
+    public async Task<int> DeleteExpiredAsync(DateTime cutoff, CancellationToken ct = default)
+    {
+        var expiredSessions = await _dbContext.ChatSessions
+            .Where(s => s.UpdatedAt < cutoff && !s.IsActive)
+            .ToListAsync(ct);
+
+        _dbContext.ChatSessions.RemoveRange(expiredSessions);
+
+        return expiredSessions.Count;
     }
 }

@@ -8,18 +8,21 @@ namespace FinFlow.Application.Chat.Services;
 
 internal static class ChatRagBusinessFormatter
 {
-    public const string FormatVersion = "ragfmt-2026.05.1";
+    public const string FormatVersion = "ragfmt-2026.05.2";
     private const int MaxRecentItems = 3;
     private const int MaxDetailLineItems = 3;
 
-    public static RagBusinessFormatResult? TryFormat(string query, IReadOnlyList<DocumentChunk> chunks)
+    public static RagBusinessFormatResult? TryFormat(
+        string query,
+        IReadOnlyList<DocumentChunk> chunks,
+        ChatReportingTask reportingTask = ChatReportingTask.Unknown)
     {
         if (string.IsNullOrWhiteSpace(query) || chunks.Count == 0)
             return null;
 
         var normalizedQuery = IntentTextNormalizer.Normalize(query);
         var intent = ResolveIntent(normalizedQuery);
-        if (intent == RagBusinessFormatIntent.None)
+        if (intent == RagBusinessFormatIntent.None && reportingTask != ChatReportingTask.EntityStatusLookup)
             return null;
 
         var documents = chunks
@@ -35,11 +38,20 @@ internal static class ChatRagBusinessFormatter
         if (documents.Count == 0)
             return null;
 
+        if (reportingTask == ChatReportingTask.EntityStatusLookup)
+            return BuildStatusLookupResult(documents);
+
+        if (intent == RagBusinessFormatIntent.SupplierLookup)
+            return BuildSupplierLookupResult(documents);
+
         if (intent == RagBusinessFormatIntent.Recent)
             documents = documents.Take(MaxRecentItems).ToList();
 
         if (intent == RagBusinessFormatIntent.Detail)
-            documents = [documents[0]];
+            documents = documents.Take(1).ToList();
+
+        if (documents.Count == 0)
+            return null;
 
         var answer = intent == RagBusinessFormatIntent.Detail
             ? BuildDetailAnswer(documents[0])
@@ -55,6 +67,78 @@ internal static class ChatRagBusinessFormatter
             .ToList();
 
         return new RagBusinessFormatResult(answer, citations, documents.Count);
+    }
+
+    private static RagBusinessFormatResult? BuildStatusLookupResult(IReadOnlyList<ParsedRagDocument> documents)
+    {
+        var document = documents.FirstOrDefault(static item => !string.IsNullOrWhiteSpace(item.Status));
+        if (document is null)
+            return null;
+
+        var lines = new List<string>
+        {
+            "Trạng thái chứng từ phù hợp nhất:"
+        };
+
+        if (!string.IsNullOrWhiteSpace(document.Supplier))
+            lines.Add($"- Nhà cung cấp: {document.Supplier}");
+
+        if (!string.IsNullOrWhiteSpace(document.Reference))
+            lines.Add($"- Mã tham chiếu: {document.Reference}");
+
+        if (document.DocumentDate.HasValue)
+            lines.Add($"- Ngày chứng từ: {document.DocumentDate:yyyy-MM-dd}");
+
+        lines.Add($"- Trạng thái: {MapStatus(document.Status!)}");
+
+        if (document.TotalAmount.HasValue)
+            lines.Add($"- Tổng tiền: {FormatAmount(document.TotalAmount.Value)} VND");
+
+        var citations = new List<ChatCitation>
+        {
+            new(
+                1,
+                document.RepresentativeChunk.Id,
+                document.DocumentId,
+                document.RepresentativeChunk.Type.ToString(),
+                BuildPreview(document.RepresentativeChunk.Content))
+        };
+
+        return new RagBusinessFormatResult(string.Join(Environment.NewLine, lines), citations, 1);
+    }
+
+    private static RagBusinessFormatResult? BuildSupplierLookupResult(IReadOnlyList<ParsedRagDocument> documents)
+    {
+        var document = documents.FirstOrDefault(static item => !string.IsNullOrWhiteSpace(item.Supplier));
+        if (document is null)
+            return null;
+
+        var lines = new List<string>
+        {
+            "Nhà cung cấp của chứng từ phù hợp nhất:",
+            $"- Nhà cung cấp: {document.Supplier}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(document.Reference))
+            lines.Add($"- Mã tham chiếu: {document.Reference}");
+
+        if (document.DocumentDate.HasValue)
+            lines.Add($"- Ngày chứng từ: {document.DocumentDate:yyyy-MM-dd}");
+
+        if (document.TotalAmount.HasValue)
+            lines.Add($"- Tổng tiền: {FormatAmount(document.TotalAmount.Value)} VND");
+
+        var citations = new List<ChatCitation>
+        {
+            new(
+                1,
+                document.RepresentativeChunk.Id,
+                document.DocumentId,
+                document.RepresentativeChunk.Type.ToString(),
+                BuildPreview(document.RepresentativeChunk.Content))
+        };
+
+        return new RagBusinessFormatResult(string.Join(Environment.NewLine, lines), citations, 1);
     }
 
     private static ParsedRagDocument ParseDocumentGroup(IGrouping<Guid, DocumentChunk> group)
@@ -168,6 +252,8 @@ internal static class ChatRagBusinessFormatter
             DeduplicateLineItems(lineItems));
     }
 
+    // Cross-document synthesis is forbidden. This method only merges chunks belonging to the same DocumentId.
+    // The caller (ParseDocumentGroup) groups chunks by DocumentId before calling Merge, ensuring no cross-document merging occurs.
     private static ParsedRagDocument Merge(ParsedRagDocument current, ParsedRagDocument incoming)
     {
         var mergedLineItems = current.LineItems
@@ -258,6 +344,9 @@ internal static class ChatRagBusinessFormatter
 
     private static RagBusinessFormatIntent ResolveIntent(string normalizedQuery)
     {
+        if (AsksForSupplier(normalizedQuery))
+            return RagBusinessFormatIntent.SupplierLookup;
+
         if (!MentionsExpenseOrDocument(normalizedQuery))
             return RagBusinessFormatIntent.None;
 
@@ -277,6 +366,7 @@ internal static class ChatRagBusinessFormatter
 
         if (normalizedQuery.Contains("show", StringComparison.Ordinal) ||
             normalizedQuery.Contains("list", StringComparison.Ordinal) ||
+            normalizedQuery.Contains("evidence", StringComparison.Ordinal) ||
             normalizedQuery.Contains("liet ke", StringComparison.Ordinal) ||
             normalizedQuery.Contains("danh sach", StringComparison.Ordinal) ||
             normalizedQuery.Contains("tat ca", StringComparison.Ordinal) ||
@@ -289,18 +379,35 @@ internal static class ChatRagBusinessFormatter
         return RagBusinessFormatIntent.None;
     }
 
+    private static bool AsksForSupplier(string normalizedQuery) =>
+        (normalizedQuery.Contains("nha cung cap", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("vendor", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("merchant", StringComparison.Ordinal)) &&
+        (normalizedQuery.Contains("la ai", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("thuoc", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("which", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("who", StringComparison.Ordinal));
+
     private static bool MentionsExpenseOrDocument(string normalizedQuery) =>
         normalizedQuery.Contains("expense", StringComparison.Ordinal) ||
         normalizedQuery.Contains("chi phi", StringComparison.Ordinal) ||
         normalizedQuery.Contains("hoa don", StringComparison.Ordinal) ||
         normalizedQuery.Contains("chung tu", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("invoice", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("invoices", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("evidence", StringComparison.Ordinal) ||
         normalizedQuery.Contains("receipt", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("receipts", StringComparison.Ordinal) ||
         normalizedQuery.Contains("bill", StringComparison.Ordinal);
 
     private static string ResolveSubjectLabel(string normalizedQuery)
     {
         if (normalizedQuery.Contains("hoa don", StringComparison.Ordinal) ||
+            normalizedQuery.Contains("invoice", StringComparison.Ordinal) ||
+            normalizedQuery.Contains("invoices", StringComparison.Ordinal) ||
+            normalizedQuery.Contains("evidence", StringComparison.Ordinal) ||
             normalizedQuery.Contains("receipt", StringComparison.Ordinal) ||
+            normalizedQuery.Contains("receipts", StringComparison.Ordinal) ||
             normalizedQuery.Contains("bill", StringComparison.Ordinal))
         {
             return "chứng từ";
@@ -434,6 +541,7 @@ internal static class ChatRagBusinessFormatter
         None,
         List,
         Recent,
-        Detail
+        Detail,
+        SupplierLookup
     }
 }

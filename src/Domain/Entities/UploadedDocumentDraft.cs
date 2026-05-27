@@ -17,6 +17,7 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         FinancialBreakdownMismatch: UploadedDocumentDraftErrors.FinancialBreakdownMismatch);
 
     private readonly List<UploadedDocumentDraftLineItem> _lineItems = [];
+    private readonly List<UploadedDocumentDraftTaxLine> _taxLines = [];
 
     private UploadedDocumentDraft(
         Guid id,
@@ -40,7 +41,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         DateTime uploadedAtUtc,
         string? imageContentType,
         byte[]? imageData,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine> taxLines)
     {
         Id = id;
         IdTenant = idTenant;
@@ -66,6 +68,7 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         ImageContentType = imageContentType;
         ImageData = imageData;
         _lineItems.AddRange(lineItems);
+        _taxLines.AddRange(taxLines);
     }
 
     private UploadedDocumentDraft() { }
@@ -132,6 +135,7 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
     public string? ImageContentType { get; private set; }
     public byte[]? ImageData { get; private set; }
     public IReadOnlyCollection<UploadedDocumentDraftLineItem> LineItems => _lineItems.AsReadOnly();
+    public IReadOnlyCollection<UploadedDocumentDraftTaxLine> TaxLines => _taxLines.AsReadOnly();
 
     public static Result<UploadedDocumentDraft> CreateSuggested(
         Guid documentId,
@@ -153,7 +157,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         DateTime uploadedAtUtc,
         string? imageContentType,
         byte[]? imageData,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
         => CreateSuggested(
             documentId,
             idTenant,
@@ -176,7 +181,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             uploadedAtUtc,
             imageContentType,
             imageData,
-            lineItems);
+            lineItems,
+            taxLines);
 
     public static Result<UploadedDocumentDraft> CreateSuggested(
         Guid documentId,
@@ -200,7 +206,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         DateTime uploadedAtUtc,
         string? imageContentType,
         byte[]? imageData,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
     {
         if (documentId == Guid.Empty)
             return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.DocumentIdRequired);
@@ -237,6 +244,10 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         if (breakdown.IsFailure)
             return Result.Failure<UploadedDocumentDraft>(breakdown.Error);
 
+        var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
+        if (normalizedTaxLines.IsFailure)
+            return Result.Failure<UploadedDocumentDraft>(normalizedTaxLines.Error);
+
         return Result.Success(new UploadedDocumentDraft(
             documentId,
             idTenant,
@@ -259,7 +270,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             uploadedAtUtc,
             imageContentType?.Trim(),
             imageData,
-            lineItems));
+            lineItems,
+            normalizedTaxLines.Value));
     }
 
     public static Result<UploadedDocumentDraft> CreateManual(
@@ -275,7 +287,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         decimal vat,
         decimal totalAmount,
         string uploadedByStaff,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
         => CreateManual(
             idTenant,
             membershipId,
@@ -291,7 +304,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             vat,
             totalAmount,
             uploadedByStaff,
-            lineItems);
+            lineItems,
+            taxLines);
 
     public static Result<UploadedDocumentDraft> CreateManual(
         Guid idTenant,
@@ -308,7 +322,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         decimal vat,
         decimal totalAmount,
         string uploadedByStaff,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
     {
         if (idTenant == Guid.Empty)
             return Result.Failure<UploadedDocumentDraft>(UploadedDocumentDraftErrors.TenantRequired);
@@ -333,6 +348,10 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         if (breakdown.IsFailure)
             return Result.Failure<UploadedDocumentDraft>(breakdown.Error);
 
+        var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
+        if (normalizedTaxLines.IsFailure)
+            return Result.Failure<UploadedDocumentDraft>(normalizedTaxLines.Error);
+
         var now = DateTime.UtcNow;
         return Result.Success(new UploadedDocumentDraft(
             Guid.NewGuid(),
@@ -356,7 +375,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             now,
             null,
             null,
-            lineItems));
+            lineItems,
+            normalizedTaxLines.Value));
     }
 
     public Result MarkSubmitted()
@@ -424,6 +444,19 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             _lineItems.Add(copyResult.Value);
         }
 
+        _taxLines.Clear();
+        foreach (var taxLine in document.TaxLines)
+        {
+            var copyResult = UploadedDocumentDraftTaxLine.Create(
+                taxLine.TaxType,
+                taxLine.Rate,
+                taxLine.TaxableAmount,
+                taxLine.TaxAmount);
+            if (copyResult.IsFailure)
+                return Result.Failure(copyResult.Error);
+            _taxLines.Add(copyResult.Value);
+        }
+
         return Result.Success();
     }
 
@@ -468,7 +501,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             now,
             null,
             null,
-            lineItems));
+            lineItems,
+            CopyReviewedTaxLines(document.TaxLines)));
     }
 
     public Result UpdateReviewedData(
@@ -481,7 +515,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         decimal vat,
         decimal totalAmount,
         string confidenceLabel,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
         => UpdateDraftFields(
             vendorName,
             reference,
@@ -494,7 +529,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
             vat,
             totalAmount,
             confidenceLabel,
-            lineItems);
+            lineItems,
+            taxLines);
 
     public Result UpdateDraftFields(
         string vendorName,
@@ -508,7 +544,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         decimal vat,
         decimal totalAmount,
         string confidenceLabel,
-        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems)
+        IReadOnlyCollection<UploadedDocumentDraftLineItem> lineItems,
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines = null)
     {
         if (!IsActive)
             return Result.Failure(UploadedDocumentDraftErrors.AlreadySubmitted);
@@ -532,6 +569,10 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         if (breakdown.IsFailure)
             return breakdown;
 
+        var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
+        if (normalizedTaxLines.IsFailure)
+            return normalizedTaxLines;
+
         VendorName = vendorName.Trim();
         Reference = reference.Trim();
         DocumentDate = documentDate;
@@ -547,6 +588,8 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
 
         _lineItems.Clear();
         _lineItems.AddRange(lineItems);
+        _taxLines.Clear();
+        _taxLines.AddRange(normalizedTaxLines.Value);
 
         return Result.Success();
     }
@@ -559,5 +602,41 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
     {
         IdVendor = vendorId;
         UpdatedAt = DateTime.UtcNow;
+    }
+
+    private static Result<IReadOnlyCollection<UploadedDocumentDraftTaxLine>> NormalizeTaxLines(
+        IReadOnlyCollection<UploadedDocumentDraftTaxLine>? taxLines,
+        decimal taxableAmount,
+        decimal vat)
+    {
+        if (taxLines is null || taxLines.Count == 0)
+            return Result.Success<IReadOnlyCollection<UploadedDocumentDraftTaxLine>>(CreateFallbackTaxLines(taxableAmount, vat));
+
+        var taxAmount = taxLines.Sum(x => x.TaxAmount);
+        if (!FinancialInvariants.EqualsWithinTolerance(
+                FinancialInvariants.RoundMoney(taxAmount),
+                FinancialInvariants.RoundMoney(vat)))
+            return Result.Failure<IReadOnlyCollection<UploadedDocumentDraftTaxLine>>(UploadedDocumentDraftErrors.FinancialBreakdownMismatch);
+
+        return Result.Success<IReadOnlyCollection<UploadedDocumentDraftTaxLine>>(taxLines.ToList());
+    }
+
+    private static IReadOnlyCollection<UploadedDocumentDraftTaxLine> CreateFallbackTaxLines(decimal taxableAmount, decimal vat)
+    {
+        if (vat <= 0)
+            return [];
+
+        return
+        [
+            UploadedDocumentDraftTaxLine.Create("VAT", null, taxableAmount, vat).Value
+        ];
+    }
+
+    private static IReadOnlyCollection<UploadedDocumentDraftTaxLine> CopyReviewedTaxLines(
+        IReadOnlyCollection<ReviewedDocumentTaxLine> taxLines)
+    {
+        return taxLines
+            .Select(x => UploadedDocumentDraftTaxLine.Create(x.TaxType, x.Rate, x.TaxableAmount, x.TaxAmount).Value)
+            .ToList();
     }
 }

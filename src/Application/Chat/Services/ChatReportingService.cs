@@ -261,6 +261,33 @@ public sealed partial class ChatReportingService : IChatReportingService
                 0);
         }
 
+        if (MentionsBudgetOverrun(normalizedQuery))
+        {
+            var overBudgetRows = rows
+                .Where(x => x.IsOverBudget || x.UtilizationPercent > 100m || x.Remaining < 0m)
+                .OrderByDescending(x => x.UtilizationPercent)
+                .ToList();
+
+            if (overBudgetRows.Count == 0)
+            {
+                return new ChatReportingAnswer(
+                    $"Không có phòng ban nào vượt ngân sách trong phạm vi {scope.ScopeLabel} ở {year:D4}-{month:D2}.",
+                    "budget-utilization-summary",
+                    0);
+            }
+
+            var lines = overBudgetRows.Select((row, index) =>
+                $"{index + 1}. {row.DepartmentName} · {row.UtilizationPercent:0.##}% · vượt {FormatAmount(Math.Abs(row.Remaining))} {row.BaseCurrencyCode}");
+
+            return new ChatReportingAnswer(
+                string.Join(
+                    Environment.NewLine,
+                    new[] { $"Các phòng ban vượt ngân sách trong phạm vi {scope.ScopeLabel} ở {year:D4}-{month:D2}:" }
+                        .Concat(lines)),
+                "budget-utilization-summary",
+                overBudgetRows.Count);
+        }
+
         if (scope.IsTenantScope)
         {
             var allocated = rows.Sum(x => x.Allocated);
@@ -304,11 +331,14 @@ public sealed partial class ChatReportingService : IChatReportingService
         if (_reviewedDocumentRepository is null)
             throw new InvalidOperationException("Chat reporting approval summary is unavailable because the reviewed document repository is not configured.");
 
-        var normalizedQuery = query.ToLowerInvariant();
-        var useTenantScope = profile.CanAccessAllTenantData && MentionsTenantScope(normalizedQuery);
+        var normalizedQuery = IntentTextNormalizer.Normalize(query);
+        var mentionsOwnScope = MentionsOwnScope(normalizedQuery);
+        var mentionsDepartmentScope = MentionsDepartmentScope(normalizedQuery);
+        var useTenantScope = profile.CanAccessAllTenantData &&
+            (MentionsTenantScope(normalizedQuery) || (!mentionsOwnScope && !mentionsDepartmentScope));
         var useDepartmentScope = profile.Capabilities.CanViewDepartmentExpenseDetails
             && profile.DepartmentId.HasValue
-            && (!useTenantScope && (MentionsDepartmentScope(normalizedQuery) || !MentionsOwnScope(normalizedQuery)));
+            && (!useTenantScope && (mentionsDepartmentScope || !mentionsOwnScope));
 
         IReadOnlyList<ReviewedDocument> documents;
         string scopeLabel;
@@ -354,7 +384,7 @@ public sealed partial class ChatReportingService : IChatReportingService
         return new ChatReportingAnswer(answer, "pending-approval-summary", documents.Count);
     }
 
-    public Task<ChatReportingAnswer> BuildExpenseComparisonAsync(
+    public async Task<ChatReportingAnswer> BuildExpenseComparisonAsync(
         ChatAuthorizationProfile profile,
         string query,
         DateOnly from,
@@ -368,18 +398,18 @@ public sealed partial class ChatReportingService : IChatReportingService
 
         if (mentionsTenantScope && !profile.Capabilities.CanViewTenantExpenseSummary)
         {
-            return Task.FromResult(new ChatReportingAnswer(
+            return new ChatReportingAnswer(
                 "Tôi không thể so sánh chi tiêu của bạn với người khác trong công ty vì quyền hiện tại chỉ cho phép xem dữ liệu trong phạm vi của bạn.",
                 "expense-comparison-denied",
-                0));
+                0);
         }
 
         if (mentionsDepartmentScope && !profile.Capabilities.CanViewDepartmentExpenseSummary)
         {
-            return Task.FromResult(new ChatReportingAnswer(
+            return new ChatReportingAnswer(
                 "Tôi không thể so sánh chi tiêu của bạn với người khác trong phòng ban vì quyền hiện tại chỉ cho phép xem dữ liệu trong phạm vi của bạn.",
                 "expense-comparison-denied",
-                0));
+                0);
         }
 
         if (mentionsCrossUserScope &&
@@ -388,36 +418,77 @@ public sealed partial class ChatReportingService : IChatReportingService
             !profile.Capabilities.CanViewDepartmentExpenseSummary &&
             !profile.Capabilities.CanViewTenantExpenseSummary)
         {
-            return Task.FromResult(new ChatReportingAnswer(
+            return new ChatReportingAnswer(
                 "Tôi không thể so sánh chi tiêu của bạn với người khác vì quyền hiện tại chỉ cho phép xem dữ liệu của chính bạn.",
                 "expense-comparison-denied",
-                0));
+                0);
         }
 
-        return Task.FromResult(new ChatReportingAnswer(
-            "Hiện tôi chưa hỗ trợ so sánh chi tiêu trực tiếp trong chatbot cho phạm vi này. Bạn có thể hỏi cụ thể hơn như: \"Tháng này tôi đã tiêu bao nhiêu?\", \"Phòng ban tôi đã chi bao nhiêu?\", hoặc \"Top nhân viên chi tiêu trong phòng ban là ai?\"",
-            "expense-comparison-unsupported",
-            0));
+        var normalizedForScope = IntentTextNormalizer.Normalize(query);
+        var scope = ResolveAggregateScope(profile, normalizedForScope);
+        var currentPeriod = ReportingPeriod.Create(from, to);
+        if (currentPeriod.IsFailure)
+            throw new InvalidOperationException(currentPeriod.Error.Description);
+
+        var days = to.DayNumber - from.DayNumber + 1;
+        var previousTo = from.AddDays(-1);
+        var previousFrom = previousTo.AddDays(-(days - 1));
+        var previousPeriod = ReportingPeriod.Create(previousFrom, previousTo);
+        if (previousPeriod.IsFailure)
+            throw new InvalidOperationException(previousPeriod.Error.Description);
+
+        var current = await _reportingService.GetExpenseSummaryAsync(
+            profile.TenantId,
+            currentPeriod.Value,
+            scope.DepartmentScope,
+            cancellationToken);
+        var previous = await _reportingService.GetExpenseSummaryAsync(
+            profile.TenantId,
+            previousPeriod.Value,
+            scope.DepartmentScope,
+            cancellationToken);
+
+        var delta = current.TotalInBaseCurrency - previous.TotalInBaseCurrency;
+        var direction = delta switch
+        {
+            > 0 => "tăng",
+            < 0 => "giảm",
+            _ => "không đổi"
+        };
+        decimal? percent = previous.TotalInBaseCurrency == 0m
+            ? null
+            : Math.Abs(delta / previous.TotalInBaseCurrency * 100m);
+        var currency = !string.IsNullOrWhiteSpace(current.BaseCurrencyCode)
+            ? current.BaseCurrencyCode
+            : previous.BaseCurrencyCode;
+
+        var lines = new List<string>
+        {
+            $"So với kỳ trước trong phạm vi {scope.ScopeLabel}: chi tiêu {direction}.",
+            $"Kỳ hiện tại ({from:yyyy-MM-dd} đến {to:yyyy-MM-dd}): {FormatAmount(current.TotalInBaseCurrency)} {currency} · {current.ExpenseCount} khoản chi",
+            $"Kỳ so sánh ({previousFrom:yyyy-MM-dd} đến {previousTo:yyyy-MM-dd}): {FormatAmount(previous.TotalInBaseCurrency)} {currency} · {previous.ExpenseCount} khoản chi",
+            $"Chênh lệch: {FormatAmount(Math.Abs(delta))} {currency}" + (percent.HasValue ? $" ({percent.Value:0.##}%)" : string.Empty)
+        };
+
+        return new ChatReportingAnswer(
+            string.Join(Environment.NewLine, lines),
+            "expense-comparison-summary",
+            current.ExpenseCount + previous.ExpenseCount);
     }
 
     private static bool MentionsOwnScope(string normalizedQuery) =>
-        normalizedQuery.Contains(" của tôi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains(" của em", StringComparison.Ordinal) ||
-        normalizedQuery.Contains(" của mình", StringComparison.Ordinal) ||
-        normalizedQuery.Contains(" my ", StringComparison.Ordinal) ||
-        normalizedQuery.StartsWith("my ", StringComparison.Ordinal);
+        ScopeKeywords.MentionsOwnScope(normalizedQuery);
 
     private static bool MentionsDepartmentScope(string normalizedQuery) =>
-        normalizedQuery.Contains("phòng ban", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("department", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("team", StringComparison.Ordinal);
+        ScopeKeywords.MentionsDepartmentScope(normalizedQuery);
 
     private static bool MentionsTenantScope(string normalizedQuery) =>
-        normalizedQuery.Contains("toàn công ty", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("công ty", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("tenant", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("workspace", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("all company", StringComparison.Ordinal);
+        ScopeKeywords.MentionsTenantScope(normalizedQuery);
+
+    private static bool MentionsBudgetOverrun(string normalizedQuery) =>
+        normalizedQuery.Contains("vuot ngan sach", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("over budget", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("overbudget", StringComparison.Ordinal);
 
     private static bool MentionsCrossUserScope(string normalizedQuery) =>
         normalizedQuery.Contains("người khác", StringComparison.Ordinal) ||
@@ -430,10 +501,13 @@ public sealed partial class ChatReportingService : IChatReportingService
 
     private static AggregateScope ResolveAggregateScope(ChatAuthorizationProfile profile, string normalizedQuery)
     {
-        var useTenantScope = profile.CanAccessAllTenantData && MentionsTenantScope(normalizedQuery);
+        var mentionsOwnScope = MentionsOwnScope(normalizedQuery);
+        var mentionsDepartmentScope = MentionsDepartmentScope(normalizedQuery);
+        var useTenantScope = profile.CanAccessAllTenantData &&
+            (MentionsTenantScope(normalizedQuery) || (!mentionsOwnScope && !mentionsDepartmentScope));
         var useDepartmentScope = profile.Capabilities.CanViewDepartmentExpenseSummary
             && profile.DepartmentId.HasValue
-            && (!useTenantScope && (MentionsDepartmentScope(normalizedQuery) || !MentionsOwnScope(normalizedQuery)));
+            && (!useTenantScope && (mentionsDepartmentScope || !mentionsOwnScope));
 
         if (useTenantScope)
             return new AggregateScope("toàn công ty", null, null, true, false);

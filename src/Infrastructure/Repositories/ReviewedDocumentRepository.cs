@@ -18,12 +18,14 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
     public async Task<ReviewedDocument?> GetByIdForUpdateAsync(Guid id, Guid tenantId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .IgnoreQueryFilters()
+            .Include(x => x.TaxLines)
             .FirstOrDefaultAsync(x => x.Id == id && x.IdTenant == tenantId && x.IsActive, cancellationToken);
 
     public async Task<ReviewedDocument?> GetOwnedByIdAsync(Guid id, Guid tenantId, Guid membershipId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .IgnoreQueryFilters()
             .AsNoTracking()
+            .Include(x => x.TaxLines)
             .FirstOrDefaultAsync(
                 x => x.Id == id && x.IdTenant == tenantId && x.MembershipId == membershipId && x.IsActive,
                 cancellationToken);
@@ -136,6 +138,7 @@ internal sealed class ReviewedDocumentRepository : IReviewedDocumentRepository
         CancellationToken cancellationToken = default) =>
         await _dbContext.Set<ReviewedDocument>()
             .AsNoTracking()
+            .Include(d => d.TaxLines)
             .Where(d => d.IdTenant == tenantId && ids.Contains(d.Id))
             .ToListAsync(cancellationToken);
 }

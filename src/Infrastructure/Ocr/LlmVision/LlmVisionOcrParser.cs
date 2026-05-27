@@ -26,6 +26,7 @@ public static class LlmVisionOcrParser
             var vat = GetRequiredDecimal(root, "vat");
             var totalAmount = GetRequiredDecimal(root, "totalAmount");
             var currencyCode = NormalizeCurrencyCode(GetOptionalString(root, "currencyCode"));
+            var taxLines = ParseTaxLines(root);
 
             if (!root.TryGetProperty("lineItems", out var lineItemsElement) || lineItemsElement.ValueKind != JsonValueKind.Array)
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
@@ -54,7 +55,8 @@ public static class LlmVisionOcrParser
                 "AI extracted",
                 lineItems,
                 0,
-                currencyCode));
+                currencyCode,
+                TaxLines: taxLines));
         }
         catch (FormatException)
         {
@@ -138,6 +140,55 @@ public static class LlmVisionOcrParser
             JsonValueKind.String when decimal.TryParse(property.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
             _ => throw new InvalidOperationException($"{propertyName} must be a decimal.")
         };
+    }
+
+    private static IReadOnlyList<OcrExtractionTaxLine> ParseTaxLines(JsonElement root)
+    {
+        if (!root.TryGetProperty("taxLines", out var taxLinesElement) ||
+            taxLinesElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return [];
+        }
+
+        if (taxLinesElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("taxLines must be an array.");
+
+        var taxLines = new List<OcrExtractionTaxLine>();
+        foreach (var taxLine in taxLinesElement.EnumerateArray())
+        {
+            taxLines.Add(new OcrExtractionTaxLine(
+                NormalizeTaxType(GetOptionalString(taxLine, "taxType")),
+                GetOptionalDecimal(taxLine, "rate"),
+                GetRequiredDecimal(taxLine, "taxableAmount"),
+                GetRequiredDecimal(taxLine, "taxAmount")));
+        }
+
+        return taxLines;
+    }
+
+    private static decimal? GetOptionalDecimal(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Number when property.TryGetDecimal(out var value) => value,
+            JsonValueKind.String when decimal.TryParse(property.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => throw new InvalidOperationException($"{propertyName} must be a decimal.")
+        };
+    }
+
+    private static string NormalizeTaxType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "VAT";
+
+        var normalized = value.Trim().ToUpperInvariant();
+        return normalized.Length <= 32 ? normalized : normalized[..32];
     }
 
     private static string? NormalizeVendorTaxId(string? value)

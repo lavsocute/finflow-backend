@@ -1,3 +1,4 @@
+using FinFlow.Api.GraphQL.Auth;
 using FinFlow.Application.Membership.Commands.ChangeMemberRole;
 using FinFlow.Application.Membership.Commands.ReactivateMember;
 using FinFlow.Application.Membership.Commands.RemoveMember;
@@ -7,6 +8,7 @@ using FinFlow.Domain.Enums;
 using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
+using HotChocolate.Types;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 
@@ -19,6 +21,7 @@ public record RevokeInvitationInput(Guid InvitationId);
 
 public record MemberMutationPayload(bool Success, string? Message);
 
+[ExtendObjectType(typeof(AuthMutations))]
 public sealed class MembershipMutations
 {
     [Authorize]

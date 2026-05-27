@@ -10,7 +10,8 @@ public interface IPromptBuilder
         string query,
         IReadOnlyList<DocumentChunk> retrievedChunks,
         ChatAccessScope scope,
-        IReadOnlyList<ChatMessage> conversationHistory);
+        IReadOnlyList<ChatMessage> conversationHistory,
+        string? compressedSummary = null);
 
     Prompt BuildReportingPrompt(
         string query,

@@ -57,13 +57,7 @@ internal sealed class MemberUsageSnapshotRepository : IMemberUsageSnapshotReposi
         }
 
         var insertedRows = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-            INSERT INTO member_usage_snapshot
-                ("Id", id_tenant, membership_id, period_start, period_end, ocr_pages_used, chatbot_messages_used, is_active)
-            VALUES
-                ({snapshot.Id}, {snapshot.IdTenant}, {snapshot.MembershipId}, {snapshot.PeriodStart}, {snapshot.PeriodEnd}, {snapshot.OcrPagesUsed}, {snapshot.ChatbotMessagesUsed}, {snapshot.IsActive})
-            ON CONFLICT (id_tenant, membership_id, period_start, period_end) DO NOTHING
-            """,
+            CreateInsertCommand(snapshot),
             cancellationToken);
 
         if (insertedRows > 0)
@@ -87,4 +81,13 @@ internal sealed class MemberUsageSnapshotRepository : IMemberUsageSnapshotReposi
     public void Add(MemberUsageSnapshot snapshot) => _dbContext.Set<MemberUsageSnapshot>().Add(snapshot);
 
     public void Update(MemberUsageSnapshot snapshot) => _dbContext.Set<MemberUsageSnapshot>().Update(snapshot);
+
+    internal static FormattableString CreateInsertCommand(MemberUsageSnapshot snapshot) =>
+        $"""
+        INSERT INTO member_usage_snapshot
+            ("Id", id_tenant, membership_id, period_start, period_end, ocr_pages_used, chatbot_messages_used, is_active)
+        VALUES
+            ({snapshot.Id}, {snapshot.IdTenant}, {snapshot.MembershipId}, {snapshot.PeriodStart}, {snapshot.PeriodEnd}, {snapshot.OcrPagesUsed}, {snapshot.ChatbotMessagesUsed}, {snapshot.IsActive})
+        ON CONFLICT (id_tenant, membership_id, period_start, period_end) DO NOTHING
+        """;
 }

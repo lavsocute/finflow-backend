@@ -11,6 +11,13 @@ public class ChatMessage : Entity
     public int? TokenCount { get; private set; }
     public DateTime CreatedAt { get; private set; }
 
+    public string? IntentFamily { get; private set; }
+    public string? AnswerSource { get; private set; }
+    public string? RetrievedChunkIds { get; private set; }
+    public Guid? EffectiveDepartmentId { get; private set; }
+    public string? ScopeContext { get; private set; }
+    public string? ContextVersion { get; private set; }
+
     private ChatMessage() { }
 
     public static ChatMessage Create(
@@ -18,7 +25,8 @@ public class ChatMessage : Entity
         Guid senderId,
         ChatMessageRole role,
         string content,
-        int? tokenCount = null)
+        int? tokenCount = null,
+        DateTime? createdAtUtc = null)
     {
         return new ChatMessage
         {
@@ -28,7 +36,37 @@ public class ChatMessage : Entity
             Role = role,
             Content = content,
             TokenCount = tokenCount,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = createdAtUtc ?? DateTime.UtcNow
         };
+    }
+
+    public void SetIntentFamily(string intentFamily)
+    {
+        IntentFamily = intentFamily;
+    }
+
+    public void SetAnswerSource(string answerSource)
+    {
+        AnswerSource = answerSource;
+    }
+
+    public void SetRetrievedChunkIds(string chunkIds)
+    {
+        RetrievedChunkIds = chunkIds;
+    }
+
+    public void SetEffectiveDepartmentId(Guid? departmentId)
+    {
+        EffectiveDepartmentId = departmentId;
+    }
+
+    public void SetScopeContext(string scopeContext)
+    {
+        ScopeContext = scopeContext;
+    }
+
+    public void SetContextVersion(string version)
+    {
+        ContextVersion = version;
     }
 }

@@ -12,6 +12,7 @@ internal sealed class TenantSubscriptionRepository : ITenantSubscriptionReposito
 
     public async Task<TenantSubscription?> GetByTenantIdAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantSubscription>()
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.IdTenant == tenantId, cancellationToken);
 

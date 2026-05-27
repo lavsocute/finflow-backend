@@ -11,6 +11,10 @@ public interface IChatRepository
     Task UpdateSessionAsync(ChatSession session, CancellationToken ct = default);
     Task AddMessageAsync(ChatMessage message, CancellationToken ct = default);
     Task<IReadOnlyList<ChatSessionSummary>> GetSessionsAsync(Guid membershipId, int limit, CancellationToken ct = default);
+
+    // Session persistence for context management
+    Task<IReadOnlyList<ChatSession>> GetActiveSessionsAsync(DateTime cutoff, CancellationToken ct = default);
+    Task<int> DeleteExpiredAsync(DateTime cutoff, CancellationToken ct = default);
 }
 
 public record ChatSessionSummary(

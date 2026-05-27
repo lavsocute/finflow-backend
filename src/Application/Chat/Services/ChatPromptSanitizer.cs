@@ -147,7 +147,7 @@ public static class ChatPromptSanitizer
         {
             if (Array.IndexOf(ZeroWidthChars, ch) >= 0) continue;
             if (Array.IndexOf(BidiControlChars, ch) >= 0) continue;
-            // Fix #16: also strip Arabic Letter Mark and Variation Selectors (FE00-FE0F)
+            // Also strip Arabic Letter Mark and Variation Selectors (FE00-FE0F) used for invisible watermarks.
             if (ch == '؜') continue;
             if (ch >= '︀' && ch <= '️') continue;
             // Other control characters stripped (except tab, LF, CR for prompts).
@@ -158,7 +158,7 @@ public static class ChatPromptSanitizer
         var stripped = StripTagBlock(sb.ToString());
 
         // Step 4: Neutralize instruction-style labels regardless of language/case.
-        // Fix #15: advance index by replacement length, not original label length,
+        // Advance index by replacement length, not original label length,
         // so we don't re-scan inside the inserted "[label]" marker.
         var lower = stripped.ToLowerInvariant();
         foreach (var label in InstructionLabels)

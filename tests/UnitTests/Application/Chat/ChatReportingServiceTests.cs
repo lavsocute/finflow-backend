@@ -343,6 +343,46 @@ public sealed class ChatReportingServiceTests
     }
 
     [Fact]
+    public async Task BuildBudgetUtilizationSummaryAsync_UsesTenantScope_WhenQueryMentionsWholeCompany()
+    {
+        var reporting = new Mock<IReportingService>();
+        var service = new ChatReportingService(reporting.Object);
+        var tenantId = Guid.NewGuid();
+        var profile = new ChatAuthorizationProfile(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            Guid.NewGuid(),
+            null,
+            [],
+            true,
+            Array.Empty<DocumentChunkType>(),
+            new ChatCapabilities(true, true, true, true, true, true, true, true));
+
+        reporting
+            .Setup(x => x.GetBudgetUtilizationAsync(tenantId, 5, 2026, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new BudgetUtilizationDto(Guid.NewGuid(), "Kỹ thuật", 5, 2026, 1000000m, 200000m, 900000m, -100000m, 110m, false, true, "VND"),
+                new BudgetUtilizationDto(Guid.NewGuid(), "Marketing", 5, 2026, 1000000m, 100000m, 700000m, 200000m, 80m, false, false, "VND")
+            ]);
+
+        var result = await service.BuildBudgetUtilizationSummaryAsync(
+            profile,
+            "Phòng nào vượt ngân sách trong tháng này? toàn công ty",
+            new DateOnly(2026, 5, 1),
+            new DateOnly(2026, 5, 31),
+            CancellationToken.None);
+
+        Assert.Contains("vượt ngân sách", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Kỹ thuật", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("110%", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hạn mức cá nhân", result.Answer, StringComparison.OrdinalIgnoreCase);
+        reporting.Verify(
+            x => x.GetBudgetUtilizationAsync(tenantId, 5, 2026, null, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task BuildBudgetUtilizationSummaryAsync_ReturnsUnsupportedMessage_ForOwnScope()
     {
         var reporting = new Mock<IReportingService>(MockBehavior.Strict);
@@ -399,5 +439,48 @@ public sealed class ChatReportingServiceTests
 
         Assert.Contains("không thể so sánh", result.Answer, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, result.RecordCount);
+    }
+
+    [Fact]
+    public async Task BuildExpenseComparisonAsync_ComparesCurrentPeriodWithPreviousEquivalentPeriod()
+    {
+        var reporting = new Mock<IReportingService>();
+        var tenantId = Guid.NewGuid();
+        var profile = new ChatAuthorizationProfile(
+            tenantId,
+            "Tenant",
+            RoleType.TenantAdmin,
+            Guid.NewGuid(),
+            null,
+            [],
+            true,
+            Array.Empty<DocumentChunkType>(),
+            new ChatCapabilities(true, true, true, true, true, true, true, true));
+
+        reporting
+            .SetupSequence(x => x.GetExpenseSummaryAsync(
+                tenantId,
+                It.IsAny<ReportingPeriod>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpenseSummaryDto(2, 1500000m, "VND", [], [], []))
+            .ReturnsAsync(new ExpenseSummaryDto(1, 1000000m, "VND", [], [], []));
+
+        var service = new ChatReportingService(reporting.Object);
+
+        var result = await service.BuildExpenseComparisonAsync(
+            profile,
+            "So với kỳ trước thì tăng hay giảm?",
+            new DateOnly(2026, 5, 1),
+            new DateOnly(2026, 5, 31),
+            CancellationToken.None);
+
+        Assert.Contains("So với", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("tăng", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("500,000", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, result.RecordCount);
+        reporting.Verify(
+            x => x.GetExpenseSummaryAsync(tenantId, It.IsAny<ReportingPeriod>(), null, It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
     }
 }

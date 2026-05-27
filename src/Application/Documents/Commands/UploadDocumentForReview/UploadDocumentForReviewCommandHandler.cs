@@ -117,6 +117,9 @@ var contentType = request.ContentType?.Trim() ?? string.Empty;
         var lineItems = extracted.LineItems
             .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
             .ToList();
+        var taxLines = (extracted.TaxLines ?? [])
+            .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+            .ToList();
 
         var documentId = Guid.NewGuid();
         var uploadedAtUtc = DateTime.UtcNow;
@@ -130,6 +133,15 @@ var contentType = request.ContentType?.Trim() ?? string.Empty;
             return Result.Failure<DocumentOcrDraftResponse>(firstFailure.Error);
 
         var draftLineItems = draftLineItemsResult.Select(r => r.Value).ToList();
+        var draftTaxLinesResult = taxLines
+            .Select(item => UploadedDocumentDraftTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+            .ToList();
+
+        var firstTaxFailure = draftTaxLinesResult.FirstOrDefault(r => r.IsFailure);
+        if (firstTaxFailure is not null)
+            return Result.Failure<DocumentOcrDraftResponse>(firstTaxFailure.Error);
+
+        var draftTaxLines = draftTaxLinesResult.Select(r => r.Value).ToList();
 
 var draftResult = UploadedDocumentDraft.CreateSuggested(
             documentId,
@@ -151,7 +163,8 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
             uploadedAtUtc,
             contentType,
             request.FileContents,
-            draftLineItems);
+            draftLineItems,
+            draftTaxLines);
 
         if (draftResult.IsFailure)
             return Result.Failure<DocumentOcrDraftResponse>(draftResult.Error);
@@ -198,6 +211,8 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
             draft.Id,
             draft.OriginalFileName,
             draft.ContentType,
+            draft.HasImage,
+            BuildPreviewImageDataUrl(draft.ImageContentType, draft.ImageData),
             draft.VendorName,
             draft.Reference,
             draft.DocumentDate,
@@ -209,9 +224,11 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
             draft.Source,
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
-            draft.HasImage,
             draft.LineItems
                 .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+                .ToList(),
+            draft.TaxLines
+                .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
                 .ToList(),
             draft.CurrencyCode,
             draft.ExchangeRate,
@@ -243,5 +260,13 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
         }
 
         return Result.Success();
+    }
+
+    private static string? BuildPreviewImageDataUrl(string? contentType, byte[]? imageData)
+    {
+        if (imageData is not { Length: > 0 } || string.IsNullOrWhiteSpace(contentType))
+            return null;
+
+        return $"data:{contentType};base64,{Convert.ToBase64String(imageData)}";
     }
 }

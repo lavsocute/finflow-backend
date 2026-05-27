@@ -33,6 +33,9 @@ public sealed class ChatIntentRouterTests
     [InlineData("ngoài tôi ra ai chi kiểu này", ChatExecutionMode.Reporting, ChatIntentFamily.Comparison, ChatScopeConfidence.Ambiguous)]
     [InlineData("team nào cháy ngân sách hơn", ChatExecutionMode.Reporting, ChatIntentFamily.Comparison, ChatScopeConfidence.Ambiguous)]
     [InlineData("Show me the receipt for lunch last Friday", ChatExecutionMode.Rag, ChatIntentFamily.DocumentLookup, ChatScopeConfidence.Explicit)]
+    [InlineData("toàn công ty", ChatExecutionMode.General, ChatIntentFamily.LowSignal, ChatScopeConfidence.Ambiguous)]
+    [InlineData("phòng ban", ChatExecutionMode.General, ChatIntentFamily.LowSignal, ChatScopeConfidence.Ambiguous)]
+    [InlineData("của tôi", ChatExecutionMode.General, ChatIntentFamily.LowSignal, ChatScopeConfidence.Ambiguous)]
     [InlineData("", ChatExecutionMode.Rag, ChatIntentFamily.Unknown, ChatScopeConfidence.Ambiguous)]
     public void Classify_ReturnsExpectedClassification(
         string query,

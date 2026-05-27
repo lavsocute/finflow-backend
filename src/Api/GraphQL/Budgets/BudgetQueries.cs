@@ -2,6 +2,7 @@ using FinFlow.Application.Budgets.DTOs;
 using FinFlow.Application.Budgets.Queries.GetBudgets;
 using FinFlow.Application.Budgets.Queries.GetBudgetByDepartment;
 using FinFlow.Application.Budgets.Queries.CheckBudgetAvailable;
+using FinFlow.Application.Budgets.Services;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Enums;
 using HotChocolate.Authorization;
@@ -85,6 +86,27 @@ public sealed class BudgetQueries
             throw ToGraphQlException(result.Error);
 
         return BudgetCheckType.FromDto(result.Value);
+    }
+
+    [Authorize]
+    public async Task<BudgetWorkspaceReadModel> GetBudgetWorkspaceAsync(
+        int month,
+        int year,
+        Guid? selectedBudgetId,
+        [Service] IBudgetWorkspaceReadService workspaceReadService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var requester = ResolveRequester(context);
+
+        return await workspaceReadService.GetWorkspaceAsync(
+            requester.TenantId,
+            requester.MembershipId,
+            requester.Role,
+            month,
+            year,
+            selectedBudgetId,
+            cancellationToken);
     }
 
     // ─── auth helpers ───

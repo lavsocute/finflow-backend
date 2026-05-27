@@ -76,5 +76,20 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
         });
 
         builder.Navigation(x => x.LineItems).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.OwnsMany(x => x.TaxLines, ownedBuilder =>
+        {
+            ownedBuilder.ToTable("reviewed_document_tax_line");
+            ownedBuilder.WithOwner().HasForeignKey("reviewed_document_id");
+
+            ownedBuilder.HasKey(x => x.Id);
+            ownedBuilder.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
+            ownedBuilder.Property(x => x.TaxType).HasColumnName("tax_type").HasMaxLength(32).IsRequired();
+            ownedBuilder.Property(x => x.Rate).HasColumnName("rate").HasColumnType("numeric(5,2)");
+            ownedBuilder.Property(x => x.TaxableAmount).HasColumnName("taxable_amount").HasColumnType("numeric(18,2)").IsRequired();
+            ownedBuilder.Property(x => x.TaxAmount).HasColumnName("tax_amount").HasColumnType("numeric(18,2)").IsRequired();
+        });
+
+        builder.Navigation(x => x.TaxLines).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }
