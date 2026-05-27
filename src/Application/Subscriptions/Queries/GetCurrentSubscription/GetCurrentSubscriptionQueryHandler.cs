@@ -41,7 +41,7 @@ public sealed class GetCurrentSubscriptionQueryHandler : IRequestHandler<GetCurr
             return Result.Failure<CurrentSubscriptionResponse>(MembershipRequiredError);
 
         var subscription = await _tenantSubscriptionRepository.GetByTenantIdAsync(request.TenantId, cancellationToken);
-        if (subscription is null)
+        if (subscription is null || subscription.ComputeEffectiveStatus(DateTime.UtcNow) != SubscriptionStatus.Active)
         {
             var fallbackSubscription = CreateFallbackSubscription(request.TenantId);
             return Result.Success(await BuildResponseAsync(fallbackSubscription, _currentTenant.MembershipId.Value, cancellationToken));

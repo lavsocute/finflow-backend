@@ -1,5 +1,6 @@
 using FinFlow.Application.Vendors.Queries.GetVendorByTaxCode;
 using FinFlow.Application.Vendors.Queries.GetVendors;
+using FinFlow.Application.Vendors.Services;
 using FinFlow.Domain.Abstractions;
 using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
@@ -14,9 +15,10 @@ namespace FinFlow.Api.GraphQL.Vendors;
 public sealed class VendorQueries
 {
     [Authorize]
-    public async Task<IReadOnlyList<VendorPayload>> MyVendorsAsync(
+    public async Task<IReadOnlyList<VendorListItemPayload>> MyVendorsAsync(
         bool? isVerified,
         [Service] IMediator mediator,
+        [Service] IVendorWorkspaceReadService vendorWorkspaceReadService,
         IResolverContext context,
         CancellationToken cancellationToken)
     {
@@ -29,8 +31,13 @@ public sealed class VendorQueries
         if (result.IsFailure)
             throw ToGraphQlException(result.Error);
 
+        var linkedDocumentCounts = await vendorWorkspaceReadService.GetLinkedDocumentCountsAsync(
+            scope.TenantId,
+            result.Value.Select(vendor => vendor.VendorId).ToArray(),
+            cancellationToken);
+
         return result.Value
-            .Select(v => new VendorPayload(
+            .Select(v => new VendorListItemPayload(
                 v.VendorId,
                 v.TaxCode,
                 v.Name,
@@ -38,8 +45,40 @@ public sealed class VendorQueries
                 v.VerifiedByMembershipId,
                 v.VerifiedAt,
                 v.CreatedAt,
-                v.UpdatedAt))
+                v.UpdatedAt,
+                linkedDocumentCounts.GetValueOrDefault(v.VendorId)))
             .ToList();
+    }
+
+    [Authorize]
+    public async Task<VendorDetailPayload> VendorDetailAsync(
+        Guid vendorId,
+        [Service] IVendorWorkspaceReadService vendorWorkspaceReadService,
+        IResolverContext context,
+        CancellationToken cancellationToken)
+    {
+        var scope = EnsureAuthorizedWorkspace(context);
+        var detail = await vendorWorkspaceReadService.GetDetailAsync(
+            scope.TenantId,
+            vendorId,
+            cancellationToken);
+
+        if (detail is null)
+            throw ToGraphQlException(new DomainError("Vendor.NotFound", "Vendor not found."));
+
+        return new VendorDetailPayload(
+            detail.VendorId,
+            detail.LinkedDocumentsCount,
+            detail.RecentDocuments
+                .Select(document => new VendorLinkedDocumentPayload(
+                    document.DocumentId,
+                    document.Reference,
+                    document.Category,
+                    document.Status,
+                    document.TotalAmount,
+                    document.CurrencyCode,
+                    document.DocumentDate))
+                .ToList());
     }
 
     [Authorize]
@@ -103,3 +142,28 @@ public sealed record VendorPayload(
     DateTime? VerifiedAt,
     DateTime CreatedAt,
     DateTime UpdatedAt);
+
+public sealed record VendorListItemPayload(
+    Guid VendorId,
+    string TaxCode,
+    string Name,
+    bool IsVerified,
+    Guid? VerifiedByMembershipId,
+    DateTime? VerifiedAt,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    int LinkedDocumentsCount);
+
+public sealed record VendorDetailPayload(
+    Guid VendorId,
+    int LinkedDocumentsCount,
+    IReadOnlyList<VendorLinkedDocumentPayload> RecentDocuments);
+
+public sealed record VendorLinkedDocumentPayload(
+    Guid DocumentId,
+    string Reference,
+    string Category,
+    string Status,
+    decimal TotalAmount,
+    string CurrencyCode,
+    DateOnly DocumentDate);

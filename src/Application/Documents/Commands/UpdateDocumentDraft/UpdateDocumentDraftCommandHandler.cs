@@ -54,6 +54,19 @@ internal sealed class UpdateDocumentDraftCommandHandler
             lineItems.Add(r.Value);
         }
 
+        var taxLines = new List<UploadedDocumentDraftTaxLine>();
+        foreach (var taxLine in cmd.TaxLines ?? [])
+        {
+            var r = UploadedDocumentDraftTaxLine.Create(
+                taxLine.TaxType,
+                taxLine.Rate,
+                taxLine.TaxableAmount,
+                taxLine.TaxAmount);
+            if (r.IsFailure)
+                return Result.Failure<DocumentOcrDraftResponse>(r.Error);
+            taxLines.Add(r.Value);
+        }
+
         var updateResult = draft.UpdateDraftFields(
             cmd.VendorName,
             cmd.Reference,
@@ -66,7 +79,8 @@ internal sealed class UpdateDocumentDraftCommandHandler
             cmd.Vat,
             cmd.TotalAmount,
             cmd.ConfidenceLabel,
-            lineItems);
+            lineItems,
+            taxLines);
 
         if (updateResult.IsFailure)
             return Result.Failure<DocumentOcrDraftResponse>(updateResult.Error);
@@ -154,6 +168,8 @@ internal sealed class UpdateDocumentDraftCommandHandler
             draft.Id,
             draft.OriginalFileName,
             draft.ContentType,
+            draft.HasImage,
+            BuildPreviewImageDataUrl(draft.ImageContentType, draft.ImageData),
             draft.VendorName,
             draft.Reference,
             draft.DocumentDate,
@@ -165,14 +181,24 @@ internal sealed class UpdateDocumentDraftCommandHandler
             draft.Source,
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
-            draft.HasImage,
             draft.LineItems
                 .Select(li => new DocumentOcrDraftLineItemResponse(li.ItemName, li.Quantity, li.UnitPrice, li.Total))
+                .ToList(),
+            draft.TaxLines
+                .Select(taxLine => new DocumentTaxLineResponse(taxLine.TaxType, taxLine.Rate, taxLine.TaxableAmount, taxLine.TaxAmount))
                 .ToList(),
             draft.CurrencyCode,
             draft.ExchangeRate,
             draft.BaseCurrencyCode,
             decimal.Round(draft.TotalAmount * draft.ExchangeRate, 2, MidpointRounding.AwayFromZero));
+
+    private static string? BuildPreviewImageDataUrl(string? contentType, byte[]? imageData)
+    {
+        if (imageData is not { Length: > 0 } || string.IsNullOrWhiteSpace(contentType))
+            return null;
+
+        return $"data:{contentType};base64,{Convert.ToBase64String(imageData)}";
+    }
 
     private readonly record struct CurrencyContext(string DocumentCurrency, string BaseCurrency, decimal ExchangeRate);
 }

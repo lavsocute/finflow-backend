@@ -1,4 +1,5 @@
 using FinFlow.Application.Common;
+using FinFlow.Application.Documents.Commands;
 using FinFlow.Domain.Abstractions;
 
 namespace FinFlow.Application.Documents.Commands.SaveManualDraft;
@@ -25,5 +26,6 @@ public sealed record SaveManualDraftCommand(
     string ReviewedByStaff,
     IReadOnlyList<SaveManualDraftLineItem> LineItems,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null
 ) : ICommand<Result<Guid>>;

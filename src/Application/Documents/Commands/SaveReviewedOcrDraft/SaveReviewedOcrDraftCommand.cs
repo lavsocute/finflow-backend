@@ -1,4 +1,5 @@
 using FinFlow.Application.Common;
+using FinFlow.Application.Documents.Commands;
 using FinFlow.Domain.Abstractions;
 
 namespace FinFlow.Application.Documents.Commands.SaveReviewedOcrDraft;
@@ -23,5 +24,6 @@ public sealed record SaveReviewedOcrDraftCommand(
     decimal Vat,
     decimal TotalAmount,
     string ConfidenceLabel,
-    IReadOnlyList<SaveReviewedOcrDraftLineItem> LineItems
+    IReadOnlyList<SaveReviewedOcrDraftLineItem> LineItems,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null
 ) : ICommand<Result<Guid>>;

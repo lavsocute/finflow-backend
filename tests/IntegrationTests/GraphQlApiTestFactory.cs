@@ -90,9 +90,13 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.RemoveAll(typeof(IChatRepository));
             services.RemoveAll(typeof(IEmbeddingService));
             services.RemoveAll(typeof(IVectorStore));
+            services.RemoveAll(typeof(IRerankService));
             services.RemoveAll(typeof(IChatAuthorizationService));
             services.RemoveAll(typeof(IChatService));
             services.RemoveAll(typeof(FinFlow.Application.Chat.Services.ChatService));
+            services.RemoveAll(typeof(IRateLimitService));
+            services.RemoveAll(typeof(IContextualChatPlanner));
+            services.RemoveAll(typeof(IChatIntentPlanner));
 
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
@@ -148,7 +152,11 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             services.AddScoped<IPromptBuilder, PromptBuilder>();
             services.AddScoped<IEmbeddingService, TestEmbeddingService>();
             services.AddScoped<IVectorStore, TestVectorStore>();
+            services.AddScoped<IRerankService, TestRerankService>();
             services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
+            services.AddSingleton<IRateLimitService, NoOpChatRateLimitService>();
+            services.AddSingleton<IContextualChatPlanner, DeterministicContextualChatPlanner>();
+            services.AddSingleton<IChatIntentPlanner>(_ => new RouterBackedChatIntentPlanner(new ChatIntentRouter(new TextNormalizer())));
             services.AddScoped<ICurrentTenant, TestHttpCurrentTenant>();
             services.AddScoped<FinFlow.Application.Chat.Services.ChatService>(sp =>
                 ActivatorUtilities.CreateInstance<FinFlow.Application.Chat.Services.ChatService>(
@@ -158,7 +166,8 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     {
                         BaseUrl = "https://chat.finflow.test/api/v1",
                         ChatModel = "test-chat-model"
-                    })));
+                    }),
+                    sp.GetRequiredService<IContextualChatPlanner>()));
             services.AddScoped<IChatService>(sp => sp.GetRequiredService<FinFlow.Application.Chat.Services.ChatService>());
 
             services.AddDataProtection().UseEphemeralDataProtectionProvider();
@@ -300,6 +309,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
             mutation Chat($input: ChatInput!) {
                 chat(input: $input) {
                     answer
+                    answerSource
                     sessionId
                     messageId
                     documentCount
@@ -333,6 +343,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
         {
             data = new ChatExecutionData(
                 chatElement.GetProperty("answer").GetString() ?? string.Empty,
+                chatElement.GetProperty("answerSource").GetString() ?? string.Empty,
                 chatElement.GetProperty("sessionId").GetGuid(),
                 chatElement.GetProperty("messageId").GetGuid(),
                 chatElement.GetProperty("documentCount").GetInt32(),
@@ -449,6 +460,7 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
 
     public sealed record ChatExecutionData(
         string Answer,
+        string AnswerSource,
         Guid SessionId,
         Guid MessageId,
         int DocumentCount,
@@ -495,7 +507,11 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
                     new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
                     new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
-                ], 1)));
+                ], 1,
+                TaxLines:
+                [
+                    new OcrExtractionTaxLine("VAT", 20.83m, 1200.00m, 250.00m)
+                ])));
         }
 
         public Task<Result<int>> GetPageCountAsync(
@@ -582,7 +598,11 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                     new OcrExtractionLineItem("Cloud Compute Instance - t3.large", 1m, 850.00m, 850.00m),
                     new OcrExtractionLineItem("Storage Block (EBS) - 2TB", 1m, 300.00m, 300.00m),
                     new OcrExtractionLineItem("Support Plan - Business", 1m, 300.00m, 300.00m)
-                ], 1));
+                ], 1,
+                TaxLines:
+                [
+                    new OcrExtractionTaxLine("VAT", 20.83m, 1200.00m, 250.00m)
+                ]));
         }
 
         public async Task<Result<int>> GetPageCountAsync(
@@ -971,6 +991,55 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                 chunks.Take(topN).Select(static (chunk, index) => (chunk, 1f - (index * 0.01f))).ToList());
     }
 
+    private sealed class NoOpChatRateLimitService : IRateLimitService
+    {
+        public Task<bool> CheckUserRateLimitAsync(Guid membershipId, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CheckTenantRateLimitAsync(Guid tenantId, CancellationToken ct = default)
+            => Task.FromResult(true);
+    }
+
+    private sealed class DeterministicContextualChatPlanner : IContextualChatPlanner
+    {
+        public Task<ContextualChatPlan?> PlanAsync(
+            ContextualChatPlanRequest request,
+            CancellationToken ct = default)
+        {
+            if (request.LastTurn?.ExecutionMode != ChatExecutionMode.Reporting.ToString() ||
+                request.InitialIntent.Mode != ChatExecutionMode.Rag ||
+                request.InitialIntent.Family != ChatIntentFamily.Unknown ||
+                request.InitialIntent.ScopeConfidence != ChatScopeConfidence.Ambiguous ||
+                request.LastTurn.PeriodFrom is null)
+            {
+                return Task.FromResult<ContextualChatPlan?>(null);
+            }
+
+            var from = request.LastTurn.PeriodFrom.Value.AddMonths(-1);
+            from = new DateOnly(from.Year, from.Month, 1);
+            var to = new DateOnly(from.Year, from.Month, DateTime.DaysInMonth(from.Year, from.Month));
+
+            var family = Enum.TryParse<ChatIntentFamily>(request.LastTurn.IntentFamily, out var parsedFamily)
+                ? parsedFamily
+                : ChatIntentFamily.Aggregate;
+            var scopeConfidence = Enum.TryParse<ChatScopeConfidence>(request.LastTurn.ScopeConfidence, out var parsedScope)
+                ? parsedScope
+                : ChatScopeConfidence.Ambiguous;
+
+            var plan = new ContextualChatPlan(
+                request.Query,
+                new ChatIntentClassification(
+                    ChatExecutionMode.Reporting,
+                    request.LastTurn.IntentReason,
+                    family,
+                    scopeConfidence),
+                from,
+                to);
+
+            return Task.FromResult<ContextualChatPlan?>(plan);
+        }
+    }
+
     private sealed class DeterministicChatHttpMessageHandler : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -983,9 +1052,17 @@ internal sealed class GraphQlApiTestFactory : WebApplicationFactory<Program>
                 .GetProperty("content")
                 .GetString() ?? string.Empty;
 
-            var responseText = lastMessage.Contains("Context from documents:", StringComparison.Ordinal)
-                ? "Authorized expense context found."
-                : "There is not enough authorized context to answer that question.";
+            var responseText = lastMessage switch
+            {
+                var message when message.Contains("CloudOps", StringComparison.OrdinalIgnoreCase)
+                    => "Authorized expense context found: CloudOps 1450 VND.",
+                var message when message.Contains("Marketing Secret Roadshow", StringComparison.OrdinalIgnoreCase)
+                    => "Authorized expense context found: Marketing Secret Roadshow 2500 VND.",
+                var message when message.Contains("authorized context", StringComparison.OrdinalIgnoreCase) ||
+                                 message.Contains("context from documents", StringComparison.OrdinalIgnoreCase)
+                    => "Authorized expense context found.",
+                _ => "There is not enough authorized context to answer that question."
+            };
 
             var responseBody = JsonSerializer.Serialize(new
             {

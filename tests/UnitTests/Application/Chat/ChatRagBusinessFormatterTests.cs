@@ -1,4 +1,5 @@
 using FinFlow.Application.Chat.Services;
+using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Domain.Documents;
 
 namespace FinFlow.UnitTests.Application.Chat;
@@ -126,5 +127,120 @@ public class ChatRagBusinessFormatterTests
         Assert.Contains("Trạng thái: Đã duyệt", result.Answer, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Trạng thái: Chờ duyệt", result.Answer, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, result.DocumentCount);
+    }
+
+    [Fact]
+    public void TryFormat_ReturnsDeterministicStatusAnswer_ForEntityStatusLookupTask()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            null,
+            """
+            Expense record
+            Merchant: Vendor Approved
+            Reference: APPROVED-001
+            Expense date: 2026-05-22
+            Total: 150000
+            Status: Approved
+            Submitted at UTC: 2026-05-22T11:00:00Z
+            """,
+            "hash-approved-status",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        var result = ChatRagBusinessFormatter.TryFormat(
+            "Khoản đó đã được duyệt chưa?",
+            [chunk],
+            ChatReportingTask.EntityStatusLookup);
+
+        Assert.NotNull(result);
+        Assert.Contains("Trạng thái", result!.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Đã duyệt", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Vendor Approved", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Tôi tìm thấy", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(result.Citations);
+        Assert.Equal(1, result.DocumentCount);
+    }
+
+    [Fact]
+    public void TryFormat_ReturnsDeterministicSupplierAnswer_ForSupplierFieldLookup()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var documentId = Guid.NewGuid();
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            documentId,
+            null,
+            """
+            Expense record
+            Merchant: CloudOps
+            Reference: INV-ENG-001
+            Expense date: 2026-05-20
+            Total: 1450000
+            Status: ReadyForApproval
+            Submitted at UTC: 2026-05-20T10:00:00Z
+            """,
+            "hash-supplier-lookup",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        var result = ChatRagBusinessFormatter.TryFormat(
+            "Chứng từ đầu tiên thuộc nhà cung cấp nào?",
+            [chunk]);
+
+        Assert.NotNull(result);
+        Assert.Contains("Nhà cung cấp", result!.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CloudOps", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("INV-ENG-001", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Tôi tìm thấy", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(result.Citations);
+        Assert.Equal(1, result.DocumentCount);
+    }
+
+    [Fact]
+    public void TryFormat_ReturnsDocumentList_ForEvidenceInvoiceFollowUp()
+    {
+        var tenantId = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        var chunk = DocumentChunk.Create(
+            tenantId,
+            membershipId,
+            Guid.NewGuid(),
+            null,
+            """
+            Expense record
+            Merchant: Evidence Vendor
+            Reference: EVID-001
+            Expense date: 2026-04-15
+            Total: 250000
+            Status: Approved
+            Submitted at UTC: 2026-04-15T10:00:00Z
+            """,
+            "hash-evidence-invoice",
+            0,
+            [0.1f, 0.2f],
+            DocumentChunkType.Expense);
+
+        var result = ChatRagBusinessFormatter.TryFormat(
+            "list evidence invoices behind that",
+            [chunk]);
+
+        Assert.NotNull(result);
+        Assert.Contains("Tôi tìm thấy 1 chứng từ phù hợp", result!.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Evidence Vendor", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("EVID-001", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Trạng thái: Đã duyệt", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Trạng thái chứng từ phù hợp nhất", result.Answer, StringComparison.OrdinalIgnoreCase);
+        Assert.Single(result.Citations);
+        Assert.Equal(1, result.DocumentCount);
     }
 }

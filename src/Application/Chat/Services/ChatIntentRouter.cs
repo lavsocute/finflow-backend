@@ -3,8 +3,19 @@ using FinFlow.Application.Chat.Interfaces;
 
 namespace FinFlow.Application.Chat.Services;
 
+/// <summary>
+/// Routes incoming chat queries to the appropriate execution mode using regex patterns and semantic classification.
+/// </summary>
 public sealed partial class ChatIntentRouter : IChatIntentRouter
 {
+    private readonly ITextNormalizer _textNormalizer;
+    private static readonly VerbSemanticClassifier _verbClassifier = new();
+
+    public ChatIntentRouter(ITextNormalizer? textNormalizer = null)
+    {
+        _textNormalizer = textNormalizer ?? new TextNormalizer();
+    }
+
     [GeneratedRegex(@"^\s*(hello|hi|hey|xin chao|chao|alo)\s*([!.?,]+)?\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex GreetingPattern();
 
@@ -41,6 +52,7 @@ public sealed partial class ChatIntentRouter : IChatIntentRouter
     [GeneratedRegex(@"\b(receipt|invoice|hoa don|chung tu|expense\s+id|vendor)\b", RegexOptions.IgnoreCase)]
     private static partial Regex RagPattern();
 
+    
     public ChatIntentClassification Classify(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -48,11 +60,21 @@ public sealed partial class ChatIntentRouter : IChatIntentRouter
             return new ChatIntentClassification(ChatExecutionMode.Rag, "empty-default", ChatIntentFamily.Unknown, ChatScopeConfidence.Ambiguous);
         }
 
-        var normalizedQuery = IntentTextNormalizer.Normalize(query);
+        var normalizedQuery = _textNormalizer.Normalize(query);
 
         if (GreetingPattern().IsMatch(normalizedQuery))
         {
             return new ChatIntentClassification(ChatExecutionMode.Greeting, "keyword-greeting", ChatIntentFamily.Greeting, ChatScopeConfidence.Explicit);
+        }
+
+        if (IsScopeOnlyQuery(normalizedQuery))
+        {
+            return new ChatIntentClassification(ChatExecutionMode.General, "scope-only-low-signal", ChatIntentFamily.LowSignal, ChatScopeConfidence.Ambiguous);
+        }
+
+        if (IsDestructiveOperationRequest(normalizedQuery))
+        {
+            return new ChatIntentClassification(ChatExecutionMode.General, "destructive-action-deny", ChatIntentFamily.DestructiveAction, ChatScopeConfidence.Forbidden);
         }
 
         if (SmallTalkPattern().IsMatch(normalizedQuery))
@@ -67,12 +89,12 @@ public sealed partial class ChatIntentRouter : IChatIntentRouter
 
         if (ProgrammingPattern().IsMatch(normalizedQuery))
         {
-            return new ChatIntentClassification(ChatExecutionMode.General, "programming-deny", ChatIntentFamily.Programming, ChatScopeConfidence.Forbidden);
+            return new ChatIntentClassification(ChatExecutionMode.General, "programming-deny", ChatIntentFamily.Programming, ChatScopeConfidence.Explicit);
         }
 
         if (SensitiveAdvicePattern().IsMatch(normalizedQuery))
         {
-            return new ChatIntentClassification(ChatExecutionMode.General, "sensitive-advice-deny", ChatIntentFamily.SensitiveAdvice, ChatScopeConfidence.Forbidden);
+            return new ChatIntentClassification(ChatExecutionMode.General, "sensitive-advice-deny", ChatIntentFamily.SensitiveAdvice, ChatScopeConfidence.Explicit);
         }
 
         if (ApprovalReportingPattern().IsMatch(normalizedQuery))
@@ -138,7 +160,81 @@ public sealed partial class ChatIntentRouter : IChatIntentRouter
             return new ChatIntentClassification(ChatExecutionMode.General, "low-signal-general", ChatIntentFamily.LowSignal, ChatScopeConfidence.Ambiguous);
         }
 
+        // Semantic classification as fallback - only block if no other pattern matched
+        // This catches action verbs that didn't match any specific pattern
+        var semanticKind = _verbClassifier.ClassifyQuery(normalizedQuery);
+        var normalizedTokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Check if any query verb is present - if so, don't block as action
+        var hasQueryVerb = normalizedTokens.Any(t => VerbSemanticClassifier.IsQueryVerb(t));
+
+        // Only block if semantic is action and no query verbs present
+        if (semanticKind == VerbKind.Action && !hasQueryVerb)
+        {
+            return new ChatIntentClassification(ChatExecutionMode.General, "semantic-action-deny", ChatIntentFamily.DestructiveAction, ChatScopeConfidence.Forbidden);
+        }
+
         return new ChatIntentClassification(ChatExecutionMode.Rag, "default-rag", ChatIntentFamily.Unknown, ChatScopeConfidence.Ambiguous);
+    }
+
+    private static bool IsDestructiveOperationRequest(string normalizedQuery)
+    {
+        if (IsDestructiveDefinitionQuery(normalizedQuery) || IsDeleteButtonLocationQuery(normalizedQuery))
+            return false;
+
+        var destructiveTerms = new[]
+        {
+            "xoa",
+            "delete",
+            "drop",
+            "wipe",
+            "loai bo",
+            "remove",
+            "tieu huy",
+            "pha huy",
+            "destroy"
+        };
+
+        return destructiveTerms.Any(term => ContainsWholePhrase(normalizedQuery, term));
+    }
+
+    private static bool IsScopeOnlyQuery(string normalizedQuery) =>
+        normalizedQuery is
+            "toan cong ty" or
+            "cong ty" or
+            "company" or
+            "all company" or
+            "phong ban" or
+            "department" or
+            "team" or
+            "phong ban cua toi" or
+            "phong ban toi" or
+            "bo phan cua toi" or
+            "bo phan toi" or
+            "team toi" or
+            "my team" or
+            "cua toi" or
+            "cua em" or
+            "cua minh" or
+            "toi" or
+            "minh" or
+            "my";
+
+    private static bool IsDestructiveDefinitionQuery(string normalizedQuery) =>
+        normalizedQuery.Contains("xoa la gi", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("delete la gi", StringComparison.Ordinal) ||
+        normalizedQuery.Contains("delete mean", StringComparison.Ordinal);
+
+    private static bool IsDeleteButtonLocationQuery(string normalizedQuery) =>
+        normalizedQuery.Contains("nut xoa", StringComparison.Ordinal) &&
+        (normalizedQuery.Contains("o dau", StringComparison.Ordinal) ||
+         normalizedQuery.Contains("where", StringComparison.Ordinal));
+
+    private static bool ContainsWholePhrase(string normalizedQuery, string phrase)
+    {
+        var paddedQuery = $" {normalizedQuery} ";
+        var paddedPhrase = $" {phrase} ";
+        return paddedQuery.Contains(paddedPhrase, StringComparison.Ordinal);
     }
 
     private static ChatScopeConfidence ResolveScopeConfidence(string normalizedQuery)
@@ -226,42 +322,19 @@ public sealed partial class ChatIntentRouter : IChatIntentRouter
         normalizedQuery.StartsWith("my ", StringComparison.Ordinal);
 
     private static bool MentionsOwnedDepartmentScope(string normalizedQuery) =>
-        normalizedQuery.Contains("team toi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("phong ban toi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("bo phan toi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("my team", StringComparison.Ordinal);
+        ScopeKeywords.MentionsOwnedDepartmentScope(normalizedQuery);
 
     private static bool MentionsDepartmentScope(string normalizedQuery) =>
-        normalizedQuery.Contains("phong ban", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("department", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("team", StringComparison.Ordinal);
+        ScopeKeywords.MentionsDepartmentScope(normalizedQuery);
 
     private static bool MentionsTenantScope(string normalizedQuery) =>
-        normalizedQuery.Contains("toan cong ty", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("cong ty", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("tenant", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("workspace", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("all company", StringComparison.Ordinal);
+        ScopeKeywords.MentionsTenantScope(normalizedQuery);
 
     private static bool MentionsCrossScope(string normalizedQuery) =>
-        normalizedQuery.Contains("nguoi khac", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("dong nghiep", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("others", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("other people", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("ngoai toi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("team kia", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("phong khac", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("bo phan khac", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("khac", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("so voi", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("versus", StringComparison.Ordinal) ||
-        normalizedQuery.Contains(" vs", StringComparison.Ordinal);
+        ScopeKeywords.MentionsCrossScope(normalizedQuery);
 
     private static bool MentionsGenericGroupScope(string normalizedQuery) =>
-        normalizedQuery.Contains("team nao", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("phong nao", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("bo phan nao", StringComparison.Ordinal) ||
-        normalizedQuery.Contains("department nao", StringComparison.Ordinal);
+        ScopeKeywords.MentionsGenericGroupScope(normalizedQuery);
 
     private static bool IsLowSignalQuery(string normalizedQuery)
     {

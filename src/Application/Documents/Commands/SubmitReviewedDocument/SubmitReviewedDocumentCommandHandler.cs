@@ -105,6 +105,19 @@ public sealed class SubmitReviewedDocumentCommandHandler
         var lineItems = request.LineItems
             .Select(item => ReviewedDocumentLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.DiscountPercent, item.DiscountAmount, item.Total))
             .ToList();
+        var requestedTaxLines = (request.TaxLines ?? [])
+            .Select(item => ReviewedDocumentTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+            .ToList();
+        var firstTaxFailure = requestedTaxLines.FirstOrDefault(r => r.IsFailure);
+        if (firstTaxFailure is not null)
+            return Result.Failure<ReviewedDocumentResponse>(firstTaxFailure.Error);
+        var taxLines = requestedTaxLines.Select(r => r.Value).ToList();
+        if (taxLines.Count == 0 && draft is not null)
+        {
+            taxLines = draft.TaxLines
+                .Select(item => ReviewedDocumentTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount).Value)
+                .ToList();
+        }
 
         var documentResult = ReviewedDocument.CreateSubmitted(
             documentId,
@@ -127,7 +140,8 @@ public sealed class SubmitReviewedDocumentCommandHandler
             request.ReviewedByStaff,
             string.IsNullOrWhiteSpace(request.ConfidenceLabel) ? "Staff corrected" : request.ConfidenceLabel,
             request.SubmittedAt,
-            lineItems);
+            lineItems,
+            taxLines);
 
         if (documentResult.IsFailure)
             return Result.Failure<ReviewedDocumentResponse>(documentResult.Error);

@@ -110,6 +110,22 @@ public sealed class TenantSubscription : Entity, IMultiTenant
         return Result.Success();
     }
 
+    public Result StartNewCycle(PlanTier planTier, DateTime periodStart)
+    {
+        if (periodStart.Kind != DateTimeKind.Utc)
+            return Result.Failure(TenantSubscriptionErrors.InvalidPeriod);
+
+        PlanTier = planTier;
+        Features = GetFeatures(planTier);
+        PeriodStart = periodStart;
+        PeriodEnd = periodStart.AddMonths(BillingCycleMonths);
+        Status = SubscriptionStatus.Active;
+        CanceledAt = null;
+        PausedAt = null;
+        UpdatedAt = DateTime.UtcNow;
+        return Result.Success();
+    }
+
     /// <summary>Mark subscription as past-due when billing period ends without renewal.</summary>
     public Result MarkPastDue()
     {

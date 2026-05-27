@@ -87,6 +87,7 @@ public sealed class RerankService : IRerankService
 
         double score = 0;
         var docLength = (double)docTerms.Count;
+        if (avgDocLength == 0) avgDocLength = 1;
         var lengthNorm = K1 * (1 - B + B * (docLength / avgDocLength));
 
         foreach (var queryTerm in queryTerms.Distinct())

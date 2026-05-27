@@ -54,6 +54,12 @@ public sealed class GraphQlDocumentsApiTests
                 subtotal
                 vat
                 totalAmount
+                taxLines {
+                  taxType
+                  rate
+                  taxableAmount
+                  taxAmount
+                }
                 source
                 reviewedByStaff
                 confidenceLabel
@@ -93,6 +99,11 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal("High precision", draft.GetProperty("confidenceLabel").GetString());
         Assert.Equal(1, draft.GetProperty("processedPageCount").GetInt32());
         Assert.Equal(3, draft.GetProperty("lineItems").GetArrayLength());
+        var taxLine = draft.GetProperty("taxLines")[0];
+        Assert.Equal("VAT", taxLine.GetProperty("taxType").GetString());
+        Assert.Equal(20.83m, taxLine.GetProperty("rate").GetDecimal());
+        Assert.Equal(1200m, taxLine.GetProperty("taxableAmount").GetDecimal());
+        Assert.Equal(250m, taxLine.GetProperty("taxAmount").GetDecimal());
     }
 
     [Fact]
@@ -896,11 +907,22 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal(documentId, draft.GetProperty("documentId").GetString());
         Assert.Equal("invoice-aws-october.pdf", draft.GetProperty("originalFileName").GetString());
         Assert.Equal("application/pdf", draft.GetProperty("contentType").GetString());
+        Assert.True(draft.GetProperty("hasPreviewImage").GetBoolean());
+        Assert.StartsWith("data:application/pdf;base64,", draft.GetProperty("previewImageDataUrl").GetString());
         Assert.Equal("Amazon Web Services, Inc.", draft.GetProperty("vendorName").GetString());
         Assert.Equal("Software & SaaS", draft.GetProperty("category").GetString());
         Assert.Equal("draft.owner@finflow.test", draft.GetProperty("reviewedByStaff").GetString());
         Assert.Equal("High precision", draft.GetProperty("confidenceLabel").GetString());
+        Assert.Equal("VND", draft.GetProperty("currencyCode").GetString());
+        Assert.Equal(1m, draft.GetProperty("exchangeRate").GetDecimal());
+        Assert.Equal("VND", draft.GetProperty("baseCurrencyCode").GetString());
+        Assert.Equal(1450.00m, draft.GetProperty("totalAmountInBaseCurrency").GetDecimal());
         Assert.Equal(3, draft.GetProperty("lineItems").GetArrayLength());
+        var draftTaxLine = draft.GetProperty("taxLines")[0];
+        Assert.Equal("VAT", draftTaxLine.GetProperty("taxType").GetString());
+        Assert.Equal(20.83m, draftTaxLine.GetProperty("rate").GetDecimal());
+        Assert.Equal(1200.00m, draftTaxLine.GetProperty("taxableAmount").GetDecimal());
+        Assert.Equal(250.00m, draftTaxLine.GetProperty("taxAmount").GetDecimal());
     }
 
     [Fact]
@@ -1068,6 +1090,8 @@ public sealed class GraphQlDocumentsApiTests
                 documentId
                 originalFileName
                 contentType
+                hasPreviewImage
+                previewImageDataUrl
                 vendorName
                 reference
                 documentDate
@@ -1076,6 +1100,10 @@ public sealed class GraphQlDocumentsApiTests
                 subtotal
                 vat
                 totalAmount
+                currencyCode
+                exchangeRate
+                baseCurrencyCode
+                totalAmountInBaseCurrency
                 source
                 status
                 submittedByEmail
@@ -1087,6 +1115,12 @@ public sealed class GraphQlDocumentsApiTests
                   quantity
                   unitPrice
                   total
+                }
+                taxLines {
+                  taxType
+                  rate
+                  taxableAmount
+                  taxAmount
                 }
               }
             }
@@ -1102,6 +1136,8 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal(submittedId, doc.GetProperty("documentId").GetString());
         Assert.Equal("invoice-aws-october.pdf", doc.GetProperty("originalFileName").GetString());
         Assert.Equal("application/pdf", doc.GetProperty("contentType").GetString());
+        Assert.True(doc.GetProperty("hasPreviewImage").GetBoolean());
+        Assert.StartsWith("data:application/pdf;base64,", doc.GetProperty("previewImageDataUrl").GetString());
         Assert.Equal("Amazon Web Services, Inc.", doc.GetProperty("vendorName").GetString());
         Assert.Equal("INV-2026-0101", doc.GetProperty("reference").GetString());
         Assert.Equal("2026-04-18", doc.GetProperty("documentDate").GetString());
@@ -1110,10 +1146,19 @@ public sealed class GraphQlDocumentsApiTests
         Assert.Equal(1200.00m, doc.GetProperty("subtotal").GetDecimal());
         Assert.Equal(250.00m, doc.GetProperty("vat").GetDecimal());
         Assert.Equal(1450.00m, doc.GetProperty("totalAmount").GetDecimal());
+        Assert.Equal("VND", doc.GetProperty("currencyCode").GetString());
+        Assert.Equal(1m, doc.GetProperty("exchangeRate").GetDecimal());
+        Assert.Equal("VND", doc.GetProperty("baseCurrencyCode").GetString());
+        Assert.Equal(1450.00m, doc.GetProperty("totalAmountInBaseCurrency").GetDecimal());
         Assert.Equal("staff-upload", doc.GetProperty("source").GetString());
         Assert.Equal("Submitted", doc.GetProperty("status").GetString());
         Assert.Equal("detail.staff@finflow.test", doc.GetProperty("submittedByEmail").GetString());
         Assert.Null(doc.GetProperty("rejectionReason").GetString());
+        var taxLine = doc.GetProperty("taxLines")[0];
+        Assert.Equal("VAT", taxLine.GetProperty("taxType").GetString());
+        Assert.Equal(20.83m, taxLine.GetProperty("rate").GetDecimal());
+        Assert.Equal(1200.00m, taxLine.GetProperty("taxableAmount").GetDecimal());
+        Assert.Equal(250.00m, taxLine.GetProperty("taxAmount").GetDecimal());
 
         var lineItems = doc.GetProperty("lineItems");
         Assert.Equal(3, lineItems.GetArrayLength());
@@ -1525,6 +1570,8 @@ public sealed class GraphQlDocumentsApiTests
                 documentId
                 originalFileName
                 contentType
+                hasPreviewImage
+                previewImageDataUrl
                 vendorName
                 reference
                 documentDate
@@ -1536,11 +1583,21 @@ public sealed class GraphQlDocumentsApiTests
                 source
                 reviewedByStaff
                 confidenceLabel
+                currencyCode
+                exchangeRate
+                baseCurrencyCode
+                totalAmountInBaseCurrency
                 lineItems {
                   itemName
                   quantity
                   unitPrice
                   total
+                }
+                taxLines {
+                  taxType
+                  rate
+                  taxableAmount
+                  taxAmount
                 }
               }
             }

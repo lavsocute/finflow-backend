@@ -31,6 +31,7 @@ public static partial class ChatCitationParser
             if (!seen.Add(n)) continue;
 
             var chunk = chunks[n - 1];
+            if (string.IsNullOrEmpty(chunk.Content)) continue;
             var preview = chunk.Content.Length <= 100
                 ? chunk.Content
                 : chunk.Content[..100] + "...";

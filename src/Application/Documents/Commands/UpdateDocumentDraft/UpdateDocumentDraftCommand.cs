@@ -1,4 +1,5 @@
 using FinFlow.Application.Documents.DTOs.Responses;
+using FinFlow.Application.Documents.Commands;
 using FinFlow.Domain.Abstractions;
 using MediatR;
 
@@ -22,7 +23,8 @@ public sealed record UpdateDocumentDraftCommand(
     string ConfidenceLabel,
     IReadOnlyList<UpdateDocumentDraftLineItem> LineItems,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null
 ) : IRequest<Result<DocumentOcrDraftResponse>>;
 
 public sealed record UpdateDocumentDraftLineItem(

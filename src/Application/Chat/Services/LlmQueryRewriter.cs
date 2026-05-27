@@ -38,10 +38,10 @@ public sealed class LlmQueryRewriter : IQueryRewriter
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
-        var baseUrl = string.IsNullOrWhiteSpace(_options.BaseUrl)
-            ? throw new InvalidOperationException("Query rewriter base URL is not configured.")
-            : _options.BaseUrl.TrimEnd('/') + "/";
-        _completionsUri = new Uri(new Uri(baseUrl, UriKind.Absolute), "chat/completions");
+        if (string.IsNullOrWhiteSpace(_options.BaseUrl))
+            throw new InvalidOperationException("Query rewriter base URL is not configured.");
+
+        _completionsUri = ChatCompletionsEndpointBuilder.Build(_options.BaseUrl);
     }
 
     public async Task<string> RewriteAsync(string originalQuery, CancellationToken cancellationToken = default)

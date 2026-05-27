@@ -39,6 +39,13 @@ public sealed class SaveReviewedOcrDraftCommandHandler
             return Result.Failure<Guid>(firstFailure.Error);
 
         var lineItems = lineItemsResult.Select(r => r.Value).ToList();
+        var taxLinesResult = (request.TaxLines ?? [])
+            .Select(item => UploadedDocumentDraftTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+            .ToList();
+        var firstTaxFailure = taxLinesResult.FirstOrDefault(r => r.IsFailure);
+        if (firstTaxFailure is not null)
+            return Result.Failure<Guid>(firstTaxFailure.Error);
+        var taxLines = taxLinesResult.Select(r => r.Value).ToList();
 
         var updateResult = draft.UpdateReviewedData(
             request.VendorName,
@@ -50,7 +57,8 @@ public sealed class SaveReviewedOcrDraftCommandHandler
             request.Vat,
             request.TotalAmount,
             request.ConfidenceLabel,
-            lineItems);
+            lineItems,
+            taxLines);
 
         if (updateResult.IsFailure)
             return Result.Failure<Guid>(updateResult.Error);

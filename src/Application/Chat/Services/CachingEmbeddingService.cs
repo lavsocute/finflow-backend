@@ -43,7 +43,7 @@ public sealed class CachingEmbeddingService : IEmbeddingService
         }
         catch (Exception ex)
         {
-            // Fix #14: schema drift in cached entries should not break requests.
+            // Schema drift in cached entries (e.g., older record with missing fields) should not break requests.
             _logger.LogWarning(ex, "Embedding cache read failed for key {Key}; treating as miss.", key);
         }
         if (cached is { Vector.Length: > 0 })
@@ -97,7 +97,7 @@ public sealed class CachingEmbeddingService : IEmbeddingService
         {
             var providerResults = await _inner.EmbedBatchAsync(missTexts, ct);
 
-            // Fix #13: provider must return exactly one embedding per requested miss.
+            // Provider must return exactly one embedding per requested miss.
             // If counts diverge (provider dropped or merged), fail fast — re-mapping
             // by index would silently associate the wrong embedding with the wrong text.
             if (providerResults.Count != missTexts.Count)

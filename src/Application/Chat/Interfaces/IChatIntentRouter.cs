@@ -13,6 +13,7 @@ public enum ChatIntentFamily
     LowSignal,
     Programming,
     SensitiveAdvice,
+    PromptBoundary,
     OwnSummary,
     OwnDetail,
     ApprovalQueue,
@@ -20,6 +21,8 @@ public enum ChatIntentFamily
     Comparison,
     Ranking,
     DocumentLookup,
+    DestructiveCommand,
+    DestructiveAction,
     Unknown
 }
 
@@ -39,8 +42,22 @@ public enum ChatExecutionMode
     Rag
 }
 
+public enum ChatReportingTask
+{
+    Unknown,
+    Summary,
+    Trend,
+    VendorRanking,
+    EmployeeRanking,
+    BudgetUtilization,
+    ApprovalQueue,
+    Comparison,
+    EntityStatusLookup
+}
+
 public sealed record ChatIntentClassification(
     ChatExecutionMode Mode,
     string Reason,
     ChatIntentFamily Family = ChatIntentFamily.Unknown,
-    ChatScopeConfidence ScopeConfidence = ChatScopeConfidence.Ambiguous);
+    ChatScopeConfidence ScopeConfidence = ChatScopeConfidence.Ambiguous,
+    ChatReportingTask ReportingTask = ChatReportingTask.Unknown);

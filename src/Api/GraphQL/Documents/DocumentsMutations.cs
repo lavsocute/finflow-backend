@@ -30,6 +30,12 @@ public sealed record SubmitReviewedDocumentLineItemInput(
     decimal UnitPrice,
     decimal Total);
 
+public sealed record DocumentTaxLineInput(
+    string TaxType,
+    decimal? Rate,
+    decimal TaxableAmount,
+    decimal TaxAmount);
+
 public sealed record SubmitReviewedDocumentInput(
     Guid? DraftId,
     string OriginalFileName,
@@ -45,7 +51,8 @@ public sealed record SubmitReviewedDocumentInput(
     string? ConfidenceLabel,
     IReadOnlyList<SubmitReviewedDocumentLineItemInput> LineItems,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null);
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null);
 
 public sealed record ApproveReviewedDocumentInput(Guid DocumentId, string? Comment, string? OverrideJustification = null);
 
@@ -69,7 +76,8 @@ public sealed record SaveManualDraftInput(
     decimal TotalAmount,
     IReadOnlyList<SaveManualDraftLineItemInput> LineItems,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null);
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null);
 
 public sealed record SaveManualDraftPayload(Guid DraftId);
 
@@ -90,7 +98,8 @@ public sealed record SaveReviewedOcrDraftInput(
     decimal Vat,
     decimal TotalAmount,
     string? ConfidenceLabel,
-    IReadOnlyList<SaveReviewedOcrDraftLineItemInput> LineItems);
+    IReadOnlyList<SaveReviewedOcrDraftLineItemInput> LineItems,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null);
 
 public sealed record SaveReviewedOcrDraftPayload(Guid DraftId);
 
@@ -119,7 +128,8 @@ public sealed record UpdateDocumentDraftInput(
     string? ConfidenceLabel,
     IReadOnlyList<UpdateDocumentDraftLineItemInput> LineItems,
     string? CurrencyCode = null,
-    decimal? ExchangeRate = null);
+    decimal? ExchangeRate = null,
+    IReadOnlyList<DocumentTaxLineInput>? TaxLines = null);
 
 public sealed record ReindexReviewedDocumentsPayload(
     int ScannedDocuments,
@@ -132,6 +142,12 @@ public sealed record DocumentOcrDraftLineItemPayload(
     decimal Quantity,
     decimal UnitPrice,
     decimal Total);
+
+public sealed record DocumentTaxLinePayload(
+    string TaxType,
+    decimal? Rate,
+    decimal TaxableAmount,
+    decimal TaxAmount);
 
 public sealed record DocumentOcrDraftPayload(
     Guid DocumentId,
@@ -148,8 +164,11 @@ public sealed record DocumentOcrDraftPayload(
     string Source,
     string ReviewedByStaff,
     string ConfidenceLabel,
+    bool HasPreviewImage,
+    string? PreviewImageDataUrl,
     bool HasImage,
     IReadOnlyList<DocumentOcrDraftLineItemPayload> LineItems,
+    IReadOnlyList<DocumentTaxLinePayload> TaxLines,
     string CurrencyCode = "VND",
     decimal ExchangeRate = 1m,
     string BaseCurrencyCode = "VND",
@@ -233,7 +252,8 @@ public sealed class DocumentsMutations
                 DateTime.UtcNow,
                 input.LineItems.Select(x => new SubmitReviewedDocumentLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
                 CurrencyCode: input.CurrencyCode,
-                ExchangeRate: input.ExchangeRate),
+                ExchangeRate: input.ExchangeRate,
+                TaxLines: MapTaxLineInputs(input.TaxLines)),
             cancellationToken);
 
         if (result.IsFailure)
@@ -280,7 +300,8 @@ public sealed class DocumentsMutations
                 reviewedByStaff,
                 input.LineItems.Select(x => new SaveManualDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
                 CurrencyCode: input.CurrencyCode,
-                ExchangeRate: input.ExchangeRate),
+                ExchangeRate: input.ExchangeRate,
+                TaxLines: MapTaxLineInputs(input.TaxLines)),
             cancellationToken);
 
         if (result.IsFailure)
@@ -313,7 +334,8 @@ public sealed class DocumentsMutations
                 input.Vat,
                 input.TotalAmount,
                 string.IsNullOrWhiteSpace(input.ConfidenceLabel) ? "Staff corrected" : input.ConfidenceLabel,
-                input.LineItems.Select(x => new SaveReviewedOcrDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList()),
+                input.LineItems.Select(x => new SaveReviewedOcrDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                TaxLines: MapTaxLineInputs(input.TaxLines)),
             cancellationToken);
 
         if (result.IsFailure)
@@ -484,9 +506,14 @@ public sealed class DocumentsMutations
             response.Source,
             response.ReviewedByStaff,
             response.ConfidenceLabel,
-            response.HasImage,
+            response.HasPreviewImage,
+            response.PreviewImageDataUrl,
+            response.HasPreviewImage,
             response.LineItems
                 .Select(x => new DocumentOcrDraftLineItemPayload(x.ItemName, x.Quantity, x.UnitPrice, x.Total))
+                .ToList(),
+            response.TaxLines
+                .Select(x => new DocumentTaxLinePayload(x.TaxType, x.Rate, x.TaxableAmount, x.TaxAmount))
                 .ToList(),
             response.CurrencyCode,
             response.ExchangeRate,
@@ -530,7 +557,8 @@ public sealed class DocumentsMutations
                 input.LineItems.Select(x => new Application.Documents.Commands.UpdateDocumentDraft.UpdateDocumentDraftLineItem(
                     x.ItemName, x.Quantity, x.UnitPrice, x.DiscountPercent, x.DiscountAmount, x.Total)).ToList(),
                 CurrencyCode: input.CurrencyCode,
-                ExchangeRate: input.ExchangeRate),
+                ExchangeRate: input.ExchangeRate,
+                TaxLines: MapTaxLineInputs(input.TaxLines)),
             cancellationToken);
 
         if (result.IsFailure)
@@ -588,4 +616,9 @@ public sealed class DocumentsMutations
         var rawRole = GetOptionalClaim(context, ClaimTypes.Role, "http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
         return Enum.TryParse<RoleType>(rawRole, out var role) && role == RoleType.TenantAdmin;
     }
+
+    private static IReadOnlyList<Application.Documents.Commands.DocumentTaxLineInput> MapTaxLineInputs(IReadOnlyList<DocumentTaxLineInput>? taxLines) =>
+        taxLines?
+            .Select(x => new Application.Documents.Commands.DocumentTaxLineInput(x.TaxType, x.Rate, x.TaxableAmount, x.TaxAmount))
+            .ToList() ?? [];
 }

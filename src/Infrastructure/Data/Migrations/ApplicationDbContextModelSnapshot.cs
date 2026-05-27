@@ -30,15 +30,33 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AnswerSource")
+                        .HasColumnType("text");
+
                     b.Property<string>("Content")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContextVersion")
                         .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("EffectiveDepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IntentFamily")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RetrievedChunkIds")
+                        .HasColumnType("text");
+
                     b.Property<int>("Role")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ScopeContext")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("SenderId")
                         .HasColumnType("uuid");
@@ -60,7 +78,16 @@ namespace FinFlow.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CompressedSummary")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("IdTenant")
@@ -69,7 +96,13 @@ namespace FinFlow.Infrastructure.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LastAccessedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ScopeBoundary")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Title")
@@ -2406,7 +2439,46 @@ namespace FinFlow.Infrastructure.Data.Migrations
                                 .HasForeignKey("reviewed_document_id");
                         });
 
+                    b.OwnsMany("FinFlow.Domain.Entities.ReviewedDocumentTaxLine", "TaxLines", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .HasColumnType("uuid")
+                                .HasColumnName("id");
+
+                            b1.Property<decimal?>("Rate")
+                                .HasColumnType("numeric(5,2)")
+                                .HasColumnName("rate");
+
+                            b1.Property<decimal>("TaxAmount")
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("tax_amount");
+
+                            b1.Property<string>("TaxType")
+                                .IsRequired()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasColumnName("tax_type");
+
+                            b1.Property<decimal>("TaxableAmount")
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("taxable_amount");
+
+                            b1.Property<Guid>("reviewed_document_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("reviewed_document_id");
+
+                            b1.ToTable("reviewed_document_tax_line", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("reviewed_document_id");
+                        });
+
                     b.Navigation("LineItems");
+
+                    b.Navigation("TaxLines");
                 });
 
             modelBuilder.Entity("FinFlow.Domain.Entities.TenantApprovalRequest", b =>
@@ -2509,7 +2581,46 @@ namespace FinFlow.Infrastructure.Data.Migrations
                                 .HasForeignKey("uploaded_document_draft_id");
                         });
 
+                    b.OwnsMany("FinFlow.Domain.Entities.UploadedDocumentDraftTaxLine", "TaxLines", b1 =>
+                        {
+                            b1.Property<Guid>("Id")
+                                .HasColumnType("uuid")
+                                .HasColumnName("id");
+
+                            b1.Property<decimal?>("Rate")
+                                .HasColumnType("numeric(5,2)")
+                                .HasColumnName("rate");
+
+                            b1.Property<decimal>("TaxAmount")
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("tax_amount");
+
+                            b1.Property<string>("TaxType")
+                                .IsRequired()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasColumnName("tax_type");
+
+                            b1.Property<decimal>("TaxableAmount")
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("taxable_amount");
+
+                            b1.Property<Guid>("uploaded_document_draft_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("uploaded_document_draft_id");
+
+                            b1.ToTable("uploaded_document_draft_tax_line", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("uploaded_document_draft_id");
+                        });
+
                     b.Navigation("LineItems");
+
+                    b.Navigation("TaxLines");
                 });
 #pragma warning restore 612, 618
         }

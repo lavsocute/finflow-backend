@@ -11,10 +11,14 @@ public sealed class GetMySubmittedDocumentQueryHandler
     : IRequestHandler<GetMySubmittedDocumentQuery, Result<MySubmittedDocumentDetailResponse>>
 {
     private readonly IReviewedDocumentRepository _reviewedDocumentRepository;
+    private readonly IUploadedDocumentDraftRepository _uploadedDocumentDraftRepository;
 
-    public GetMySubmittedDocumentQueryHandler(IReviewedDocumentRepository reviewedDocumentRepository)
+    public GetMySubmittedDocumentQueryHandler(
+        IReviewedDocumentRepository reviewedDocumentRepository,
+        IUploadedDocumentDraftRepository uploadedDocumentDraftRepository)
     {
         _reviewedDocumentRepository = reviewedDocumentRepository;
+        _uploadedDocumentDraftRepository = uploadedDocumentDraftRepository;
     }
 
     public async Task<Result<MySubmittedDocumentDetailResponse>> Handle(GetMySubmittedDocumentQuery request, CancellationToken cancellationToken)
@@ -28,10 +32,21 @@ public sealed class GetMySubmittedDocumentQueryHandler
         if (document == null)
             return Result.Failure<MySubmittedDocumentDetailResponse>(ReviewedDocumentErrors.NotFound);
 
+        var originalDraft = await _uploadedDocumentDraftRepository.GetByIdAsync(
+            request.DocumentId,
+            request.TenantId,
+            request.MembershipId,
+            includeInactive: true,
+            cancellationToken);
+
+        var previewImageDataUrl = BuildPreviewImageDataUrl(originalDraft?.ImageContentType, originalDraft?.ImageData);
+
         return Result.Success(new MySubmittedDocumentDetailResponse(
             document.Id,
             document.OriginalFileName,
             document.ContentType,
+            previewImageDataUrl is not null,
+            previewImageDataUrl,
             document.VendorName,
             document.Reference,
             document.DocumentDate,
@@ -40,6 +55,10 @@ public sealed class GetMySubmittedDocumentQueryHandler
             document.Subtotal,
             document.Vat,
             document.TotalAmount,
+            document.CurrencyCode,
+            document.ExchangeRate,
+            document.BaseCurrencyCode,
+            document.TotalAmountInBaseCurrency,
             document.Source,
             ToStatusString(document),
             document.ReviewedByStaff,
@@ -52,7 +71,22 @@ public sealed class GetMySubmittedDocumentQueryHandler
                     item.Quantity,
                     item.UnitPrice,
                     item.Total))
+                .ToList(),
+            document.TaxLines
+                .Select(item => new DocumentTaxLineResponse(
+                    item.TaxType,
+                    item.Rate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
                 .ToList()));
+    }
+
+    private static string? BuildPreviewImageDataUrl(string? contentType, byte[]? imageData)
+    {
+        if (imageData is not { Length: > 0 } || string.IsNullOrWhiteSpace(contentType))
+            return null;
+
+        return $"data:{contentType};base64,{Convert.ToBase64String(imageData)}";
     }
 
     private static string ToStatusString(ReviewedDocument document) =>

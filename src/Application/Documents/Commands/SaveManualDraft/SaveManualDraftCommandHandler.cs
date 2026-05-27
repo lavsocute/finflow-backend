@@ -44,6 +44,13 @@ public sealed class SaveManualDraftCommandHandler
             return Result.Failure<Guid>(firstFailure.Error);
 
         var lineItems = lineItemsResult.Select(r => r.Value).ToList();
+        var taxLinesResult = (request.TaxLines ?? [])
+            .Select(item => UploadedDocumentDraftTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+            .ToList();
+        var firstTaxFailure = taxLinesResult.FirstOrDefault(r => r.IsFailure);
+        if (firstTaxFailure is not null)
+            return Result.Failure<Guid>(firstTaxFailure.Error);
+        var taxLines = taxLinesResult.Select(r => r.Value).ToList();
 
         var draftResult = UploadedDocumentDraft.CreateManual(
             request.TenantId,
@@ -58,7 +65,8 @@ public sealed class SaveManualDraftCommandHandler
             request.Vat,
             request.TotalAmount,
             request.ReviewedByStaff,
-            lineItems);
+            lineItems,
+            taxLines);
 
         if (draftResult.IsFailure)
             return Result.Failure<Guid>(draftResult.Error);

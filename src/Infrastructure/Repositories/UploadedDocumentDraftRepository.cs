@@ -22,6 +22,7 @@ internal sealed class UploadedDocumentDraftRepository : IUploadedDocumentDraftRe
         var query = _dbContext.Set<UploadedDocumentDraft>()
             .IgnoreQueryFilters()
             .Include(x => x.LineItems)
+            .Include(x => x.TaxLines)
             .Where(x => x.Id == id && x.IdTenant == tenantId && x.MembershipId == membershipId);
 
         if (!includeInactive)
@@ -34,6 +35,7 @@ internal sealed class UploadedDocumentDraftRepository : IUploadedDocumentDraftRe
         await _dbContext.Set<UploadedDocumentDraft>()
             .IgnoreQueryFilters()
             .Include(x => x.LineItems)
+            .Include(x => x.TaxLines)
             .FirstOrDefaultAsync(
                 x => x.Id == id && x.IdTenant == tenantId && x.IsActive,
                 cancellationToken);

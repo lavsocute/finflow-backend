@@ -1,6 +1,8 @@
 using FinFlow.Application;
 using FinFlow.Api.GraphQL.Auth;
 using FinFlow.Api.GraphQL.Chat;
+using FinFlow.Api.GraphQL.Budgets;
+using FinFlow.Api.GraphQL.Categories;
 using FinFlow.Api.GraphQL.Departments;
 using FinFlow.Api.GraphQL.Documents;
 using FinFlow.Api.GraphQL.Membership;
@@ -171,6 +173,8 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<MembershipQueries>()
     .AddTypeExtension<PlatformQueries>()
     .AddTypeExtension<ChatQueries>()
+    .AddTypeExtension<BudgetQueries>()
+    .AddTypeExtension<CategoryQueries>()
     .AddTypeExtension<FinFlow.Api.GraphQL.ExchangeRates.ExchangeRateQueries>()
     .AddTypeExtension<FinFlow.Api.GraphQL.Employees.ReimbursementProfileQueries>()
     .AddTypeExtension<FinFlow.Api.GraphQL.Bank.BankExportQueries>()
@@ -183,8 +187,10 @@ builder.Services.AddGraphQLServer()
     .AddTypeExtension<PaymentMutations>()
     .AddTypeExtension<MembershipMutations>()
     .AddTypeExtension<PlatformMutations>()
+    .AddTypeExtension<DepartmentMutations>()
     .AddTypeExtension<VendorMutations>()
     .AddTypeExtension<ChatMutations>()
+    .AddTypeExtension<BudgetMutations>()
     .AddTypeExtension<FinFlow.Api.GraphQL.Subscriptions.SubscriptionsMutations>()
     .AddTypeExtension<FinFlow.Api.GraphQL.ExchangeRates.ExchangeRateMutations>()
     .AddTypeExtension<FinFlow.Api.GraphQL.Employees.ReimbursementProfileMutations>()
