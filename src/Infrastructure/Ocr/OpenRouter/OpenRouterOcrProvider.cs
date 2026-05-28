@@ -5,6 +5,7 @@ using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Abstractions;
 using FinFlow.Domain.Entities;
 using FinFlow.Infrastructure.Ocr.LlmVision;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
@@ -22,16 +23,19 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
     private readonly HttpClient _httpClient;
     private readonly IPdfPageRenderer _pdfPageRenderer;
     private readonly OpenRouterProviderOptions _options;
+    private readonly ILogger<OpenRouterOcrProvider>? _logger;
     private readonly Uri _chatCompletionsUri;
 
     public OpenRouterOcrProvider(
         HttpClient httpClient,
         IPdfPageRenderer pdfPageRenderer,
-        IOptions<OpenRouterProviderOptions> options)
+        IOptions<OpenRouterProviderOptions> options,
+        ILogger<OpenRouterOcrProvider>? logger = null)
     {
         _httpClient = httpClient;
         _pdfPageRenderer = pdfPageRenderer;
         _options = options.Value;
+        _logger = logger;
         _chatCompletionsUri = BuildChatCompletionsUri(_options.BaseUrl);
 
         _retryPipeline = new ResiliencePipelineBuilder<HttpResponseMessage>()
@@ -92,10 +96,25 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
                 async ct => await _httpClient.PostAsJsonAsync(_chatCompletionsUri, request, SerializerOptions, ct),
                 cancellationToken);
 
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
+            {
+                _logger?.LogWarning(
+                    "OpenRouter OCR request failed with HTTP {StatusCode}. Body: {Body}",
+                    (int)response.StatusCode,
+                    Truncate(responseBody));
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrExtractionFailed);
+            }
 
-            var completion = await response.Content.ReadFromJsonAsync<OpenRouterChatCompletionResponse>(SerializerOptions, cancellationToken);
+            if (TryReadOpenRouterError(responseBody, out var upstreamError))
+            {
+                _logger?.LogWarning(
+                    "OpenRouter OCR upstream returned an error payload. Body: {Body}",
+                    Truncate(upstreamError));
+                return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrExtractionFailed);
+            }
+
+            var completion = JsonSerializer.Deserialize<OpenRouterChatCompletionResponse>(responseBody, SerializerOptions);
             var choice = completion?.Choices?.FirstOrDefault();
             if (choice?.Message is null)
                 return Result.Failure<OcrExtractionResult>(DocumentOcrErrors.OcrInvalidJson);
@@ -106,7 +125,10 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
 
             var parseResult = LlmVisionOcrParser.Parse(content, "openrouter");
             if (parseResult.IsFailure)
+            {
+                _logger?.LogWarning("OpenRouter OCR response could not be parsed.");
                 return parseResult;
+            }
 
             return Result.Success(OcrExtractionResult.Create(
                 parseResult.Value.VendorName,
@@ -123,7 +145,8 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
                 parseResult.Value.LineItems,
                 processedPageCount,
                 wasTruncated,
-                parseResult.Value.CurrencyCode));
+                parseResult.Value.CurrencyCode,
+                parseResult.Value.TaxLines));
         }
         catch (HttpRequestException)
         {
@@ -182,6 +205,38 @@ public sealed class OpenRouterOcrProvider : IOcrProvider
             : baseUrl.TrimEnd('/') + "/";
 
         return new Uri(new Uri(normalizedBaseUrl, UriKind.Absolute), "chat/completions");
+    }
+
+    private static bool TryReadOpenRouterError(string responseBody, out string upstreamError)
+    {
+        upstreamError = string.Empty;
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            if (!document.RootElement.TryGetProperty("error", out var errorElement))
+                return false;
+
+            upstreamError = errorElement.GetRawText();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string Truncate(string value)
+    {
+        const int maxLength = 1_000;
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        return value.Length <= maxLength
+            ? value
+            : value[..maxLength] + "...";
     }
 }
 

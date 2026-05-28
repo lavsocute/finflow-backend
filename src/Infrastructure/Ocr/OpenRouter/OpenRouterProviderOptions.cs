@@ -4,7 +4,7 @@ public sealed class OpenRouterProviderOptions
 {
     public string BaseUrl { get; init; } = "https://openrouter.ai/api/v1/";
     public string ApiKey { get; init; } = string.Empty;
-    public string Model { get; init; } = "google/gemma-4-31b-it:free";
+    public string Model { get; init; } = "nvidia/nemotron-nano-12b-v2-vl:free";
     public int MaxPagesPerDocument { get; init; } = 3;
     public int MaxImagesPerRequest { get; init; } = 5;
     public int MaxImageBytes { get; init; } = 4 * 1024 * 1024;

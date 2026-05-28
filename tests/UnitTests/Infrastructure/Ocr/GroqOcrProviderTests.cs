@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Documents.Ocr;
 using FinFlow.Domain.Abstractions;
@@ -51,7 +52,24 @@ public sealed class GroqOcrProviderTests
         Assert.EndsWith("chat/completions", handler.LastRequest.RequestUri!.ToString(), StringComparison.Ordinal);
 
         var requestBody = await handler.LastRequest.Content!.ReadAsStringAsync();
-        Assert.Contains("\"model\":\"test-model\"", requestBody, StringComparison.Ordinal);
+        using var requestJson = JsonDocument.Parse(requestBody);
+        var root = requestJson.RootElement;
+        Assert.Equal("test-model", root.GetProperty("model").GetString());
+        var responseFormat = root.GetProperty("response_format");
+        Assert.Equal("json_schema", responseFormat.GetProperty("type").GetString());
+        var schema = responseFormat.GetProperty("json_schema").GetProperty("schema");
+        Assert.True(schema.GetProperty("properties").TryGetProperty("lineItems", out var lineItemsSchema));
+        Assert.True(schema.GetProperty("properties").TryGetProperty("taxLines", out _));
+        var lineItemProperties = lineItemsSchema.GetProperty("items").GetProperty("properties");
+        Assert.True(lineItemProperties.TryGetProperty("taxRate", out _));
+        Assert.True(lineItemProperties.TryGetProperty("taxableAmount", out _));
+        Assert.True(lineItemProperties.TryGetProperty("taxAmount", out _));
+        Assert.Contains(
+            schema.GetProperty("required").EnumerateArray(),
+            property => property.GetString() == "totalAmount");
+        Assert.Contains(
+            schema.GetProperty("required").EnumerateArray(),
+            property => property.GetString() == "taxLines");
         Assert.Contains("data:image/png;base64,AQID", requestBody, StringComparison.Ordinal);
     }
 

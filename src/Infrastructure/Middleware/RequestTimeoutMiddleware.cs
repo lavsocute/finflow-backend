@@ -2,19 +2,34 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FinFlow.Infrastructure.Middleware;
+
+public sealed class RequestTimeoutOptions
+{
+    public const string SectionName = "RequestTimeout";
+
+    public int DefaultTimeoutSeconds { get; init; } = 90;
+}
 
 public class RequestTimeoutMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<RequestTimeoutMiddleware> _logger;
-    private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _defaultTimeout;
 
-    public RequestTimeoutMiddleware(RequestDelegate next, ILogger<RequestTimeoutMiddleware> logger)
+    public RequestTimeoutMiddleware(
+        RequestDelegate next,
+        ILogger<RequestTimeoutMiddleware> logger,
+        IOptions<RequestTimeoutOptions> options)
     {
         _next = next;
         _logger = logger;
+        var timeoutSeconds = options.Value.DefaultTimeoutSeconds > 0
+            ? options.Value.DefaultTimeoutSeconds
+            : new RequestTimeoutOptions().DefaultTimeoutSeconds;
+        _defaultTimeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
 
     public async Task InvokeAsync(HttpContext context)
