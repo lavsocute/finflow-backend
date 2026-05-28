@@ -58,11 +58,26 @@ public sealed class InviteMemberCommandHandler : MediatR.IRequestHandler<InviteM
         if (inviterMembership.AccountId != request.InviterAccountId)
             return Result.Failure<InvitationResponse>(AccountErrors.Unauthorized);
 
-        if (inviterMembership.Role != Domain.Enums.RoleType.TenantAdmin)
-            return Result.Failure<InvitationResponse>(InvitationErrors.Forbidden);
+        // Authorization: TenantAdmin can invite anyone (except SuperAdmin) to any department.
+        // Manager can invite Staff only, and only into their own department.
+        if (inviterMembership.Role == Domain.Enums.RoleType.TenantAdmin)
+        {
+            if (request.Role is Domain.Enums.RoleType.SuperAdmin)
+                return Result.Failure<InvitationResponse>(InvitationErrors.InvalidRole);
+        }
+        else if (inviterMembership.Role == Domain.Enums.RoleType.Manager)
+        {
+            if (request.Role != Domain.Enums.RoleType.Staff)
+                return Result.Failure<InvitationResponse>(InvitationErrors.InvalidRole);
 
-        if (request.Role is Domain.Enums.RoleType.SuperAdmin)
-            return Result.Failure<InvitationResponse>(InvitationErrors.InvalidRole);
+            if (!inviterMembership.DepartmentId.HasValue ||
+                inviterMembership.DepartmentId.Value != request.DepartmentId)
+                return Result.Failure<InvitationResponse>(InvitationErrors.Forbidden);
+        }
+        else
+        {
+            return Result.Failure<InvitationResponse>(InvitationErrors.Forbidden);
+        }
 
         var tenant = await _tenantRepository.GetByIdAsync(inviterMembership.IdTenant, cancellationToken);
         if (tenant == null || !tenant.IsActive)

@@ -98,6 +98,30 @@ public sealed class GetCurrentSubscriptionQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ReturnsCanceledSubscriptionStatus_WhenSubscriptionWasCanceled()
+    {
+        var periodStart = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(-1), DateTimeKind.Utc);
+        var periodEnd = periodStart.AddMonths(1);
+
+        var subscriptionResult = TenantSubscription.Create(TenantId, PlanTier.Pro, periodStart, periodEnd);
+        Assert.True(subscriptionResult.IsSuccess, subscriptionResult.Error.Description);
+        Assert.True(subscriptionResult.Value.Cancel().IsSuccess);
+
+        var usageService = new RecordingTenantUsageService();
+        var memberUsageService = new RecordingMemberUsageService();
+        var subscriptionRepository = new StubTenantSubscriptionRepository(subscriptionResult.Value);
+        var handler = CreateHandler(subscriptionRepository, usageService, memberUsageService, MembershipId);
+
+        var result = await handler.Handle(new GetCurrentSubscriptionQuery(TenantId), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal("Pro", result.Value.PlanTier);
+        Assert.Equal("Canceled", result.Value.Status);
+        Assert.False(result.Value.Entitlements.DocumentsOcrEnabled);
+        Assert.False(result.Value.Entitlements.ChatbotEnabled);
+    }
+
+    [Fact]
     public async Task Handle_ReturnsFailure_WhenAuthenticatedMembershipIsMissing()
     {
         var usageService = new RecordingTenantUsageService();

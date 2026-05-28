@@ -9,5 +9,6 @@ public record CurrentWorkspaceResponse(
     RoleType Role,
     Guid TenantId,
     string TenantCode,
-    string TenantName
+    string TenantName,
+    Guid? DepartmentId
 );

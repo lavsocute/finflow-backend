@@ -22,7 +22,7 @@ public sealed class MembershipQueries
         CancellationToken cancellationToken)
     {
         var membershipId = currentTenant.MembershipId ?? Guid.Empty;
-        var query = new GetWorkspaceMembersQuery(tenantId, membershipId, departmentId);
+        var query = new GetWorkspaceMembersQuery(tenantId, membershipId, departmentId, PageSize: 200);
         var result = await mediator.Send(query, cancellationToken);
 
         if (result.IsFailure)
