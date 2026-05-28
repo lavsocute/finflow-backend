@@ -42,18 +42,29 @@ public sealed record ApprovalDetailPayload(
     string Department,
     decimal Amount,
     string Currency,
+    decimal Subtotal,
+    decimal? DocumentDiscountPercent,
+    decimal DocumentDiscountAmount,
+    decimal Vat,
+    decimal TotalAmount,
     DateOnly ExpenseDate,
     DateTime SubmittedAt,
     string Priority,
     string Status,
     string? PolicySummary,
-    IReadOnlyList<ApprovalLineItemPayload> LineItems);
+    IReadOnlyList<ApprovalLineItemPayload> LineItems,
+    IReadOnlyList<DocumentTaxLinePayload> TaxLines);
 
 public sealed record ApprovalLineItemPayload(
     string Description,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m,
+    decimal Total = 0m);
 
 public sealed record MyDocumentDraftPayload(
     Guid DocumentId,
@@ -85,7 +96,12 @@ public sealed record MySubmittedDocumentLineItemPayload(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m,
+    decimal Total = 0m);
 
 public sealed record MySubmittedDocumentDetailPayload(
     Guid DocumentId,
@@ -202,6 +218,11 @@ public sealed class DocumentsQueries
             detail.Department,
             detail.Amount,
             detail.Currency,
+            detail.Subtotal,
+            detail.DocumentDiscountPercent,
+            detail.DocumentDiscountAmount,
+            detail.Vat,
+            detail.TotalAmount,
             detail.ExpenseDate,
             detail.SubmittedAt,
             detail.Priority,
@@ -209,10 +230,22 @@ public sealed class DocumentsQueries
             detail.PolicySummary,
             detail.LineItems
                 .Select(item => new ApprovalLineItemPayload(
-                    item.Description,
-                    item.Quantity,
-                    item.UnitPrice,
-                    item.Total))
+                    Description: item.Description,
+                    Quantity: item.Quantity,
+                    UnitPrice: item.UnitPrice,
+                    DiscountPercent: item.DiscountPercent,
+                    DiscountAmount: item.DiscountAmount,
+                    TaxRate: item.TaxRate,
+                    TaxableAmount: item.TaxableAmount,
+                    TaxAmount: item.TaxAmount,
+                    Total: item.Total))
+                .ToList(),
+            detail.TaxLines
+                .Select(item => new DocumentTaxLinePayload(
+                    item.TaxType,
+                    item.Rate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
                 .ToList());
     }
 
@@ -334,10 +367,15 @@ public sealed class DocumentsQueries
             doc.RejectionReason,
             doc.LineItems
                 .Select(item => new MySubmittedDocumentLineItemPayload(
-                    item.ItemName,
-                    item.Quantity,
-                    item.UnitPrice,
-                    item.Total))
+                    ItemName: item.ItemName,
+                    Quantity: item.Quantity,
+                    UnitPrice: item.UnitPrice,
+                    DiscountPercent: item.DiscountPercent,
+                    DiscountAmount: item.DiscountAmount,
+                    TaxRate: item.TaxRate,
+                    TaxableAmount: item.TaxableAmount,
+                    TaxAmount: item.TaxAmount,
+                    Total: item.Total))
                 .ToList(),
             doc.TaxLines
                 .Select(item => new DocumentTaxLinePayload(

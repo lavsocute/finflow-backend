@@ -27,7 +27,7 @@ public static class FinancialInvariants
     ///   - DocumentDiscountPercent ∈ [0, 100] when supplied
     ///   - DocumentDiscountAmount &lt;= Subtotal
     ///   - When both DocPercent and DocAmount supplied: round(Subtotal * Percent / 100) ≈ DocAmount
-    ///   - TotalAmount &gt; 0
+    ///   - TotalAmount &gt;= 0 (fully discounted promotional receipts are valid)
     ///   - Subtotal − DocumentDiscountAmount + Vat ≈ TotalAmount (UBL formula; reduces to legacy when DocAmount=0)
     ///
     /// NOTE: Each entity is responsible for its own ΣLineItem.Total invariant since the
@@ -80,7 +80,7 @@ public static class FinancialInvariants
                 return Result.Failure(errorFactory.FinancialBreakdownMismatch);
         }
 
-        if (roundedTotal <= 0)
+        if (roundedTotal < 0)
             return Result.Failure(errorFactory.TotalAmountInvalid);
 
         return Result.Success();

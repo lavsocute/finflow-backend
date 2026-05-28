@@ -103,6 +103,35 @@ public sealed class SubmitReviewedDocumentCommandHandlerTests
         Assert.Equal("Bách Hóa Xanh", result.Value.VendorName);
     }
 
+    [Fact]
+    public async Task Handle_ReturnsSuccess_WhenPromotionDiscountsLineTotalToZero()
+    {
+        var sut = BuildSut(out _, out _, out _);
+        var command = new SubmitReviewedDocumentCommand(
+            null,
+            sut.TenantId,
+            sut.MembershipId,
+            "receipt.jpg",
+            "BIG C DI AN",
+            "025000112",
+            new DateOnly(2018, 10, 2),
+            "Groceries",
+            "3702058398",
+            0m,
+            0m,
+            0m,
+            "OCR",
+            "staff@finflow.test",
+            "High precision",
+            DateTime.UtcNow,
+            [new SubmitReviewedDocumentLineItem("SCU TT NUTI DAU 11", 1m, 17000m, 0m, null, 17000m)]);
+
+        var result = await sut.Handler.Handle(command, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(0m, result.Value.TotalAmount);
+    }
+
     private static (SubmitReviewedDocumentCommandHandler Handler, Guid TenantId, Guid MembershipId) BuildSut(
         out Mock<IReviewedDocumentChunkIndexer> indexerMock,
         out Mock<IVendorLinkResolver> resolverMock,

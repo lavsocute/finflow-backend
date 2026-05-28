@@ -70,6 +70,11 @@ public sealed class GetMySubmittedDocumentQueryHandler
                     item.ItemName,
                     item.Quantity,
                     item.UnitPrice,
+                    item.DiscountPercent,
+                    item.DiscountAmount,
+                    item.TaxRate,
+                    item.TaxableAmount,
+                    item.TaxAmount,
                     item.Total))
                 .ToList(),
             document.TaxLines

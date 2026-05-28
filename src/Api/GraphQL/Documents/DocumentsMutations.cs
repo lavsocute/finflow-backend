@@ -28,7 +28,12 @@ public sealed record SubmitReviewedDocumentLineItemInput(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal Total,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m);
 
 public sealed record DocumentTaxLineInput(
     string TaxType,
@@ -62,7 +67,10 @@ public sealed record SaveManualDraftLineItemInput(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal Total,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m);
 
 public sealed record SaveManualDraftInput(
     string OriginalFileName,
@@ -85,7 +93,12 @@ public sealed record SaveReviewedOcrDraftLineItemInput(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal Total,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m);
 
 public sealed record SaveReviewedOcrDraftInput(
     Guid DraftId,
@@ -111,7 +124,10 @@ public sealed record UpdateDocumentDraftLineItemInput(
     decimal UnitPrice,
     decimal? DiscountPercent,
     decimal DiscountAmount,
-    decimal Total);
+    decimal Total,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m);
 
 public sealed record UpdateDocumentDraftInput(
     Guid DraftId,
@@ -141,7 +157,12 @@ public sealed record DocumentOcrDraftLineItemPayload(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total);
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m,
+    decimal Total = 0m);
 
 public sealed record DocumentTaxLinePayload(
     string TaxType,
@@ -250,7 +271,16 @@ public sealed class DocumentsMutations
                 reviewedByStaff,
                 string.IsNullOrWhiteSpace(input.ConfidenceLabel) ? "Staff corrected" : input.ConfidenceLabel,
                 DateTime.UtcNow,
-                input.LineItems.Select(x => new SubmitReviewedDocumentLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                input.LineItems.Select(x => new SubmitReviewedDocumentLineItem(
+                    x.ItemName,
+                    x.Quantity,
+                    x.UnitPrice,
+                    x.Total,
+                    x.DiscountPercent,
+                    x.DiscountAmount,
+                    x.TaxRate,
+                    x.TaxableAmount,
+                    x.TaxAmount)).ToList(),
                 CurrencyCode: input.CurrencyCode,
                 ExchangeRate: input.ExchangeRate,
                 TaxLines: MapTaxLineInputs(input.TaxLines)),
@@ -298,7 +328,14 @@ public sealed class DocumentsMutations
                 input.Vat,
                 input.TotalAmount,
                 reviewedByStaff,
-                input.LineItems.Select(x => new SaveManualDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                input.LineItems.Select(x => new SaveManualDraftLineItem(
+                    x.ItemName,
+                    x.Quantity,
+                    x.UnitPrice,
+                    x.Total,
+                    x.TaxRate,
+                    x.TaxableAmount,
+                    x.TaxAmount)).ToList(),
                 CurrencyCode: input.CurrencyCode,
                 ExchangeRate: input.ExchangeRate,
                 TaxLines: MapTaxLineInputs(input.TaxLines)),
@@ -334,7 +371,16 @@ public sealed class DocumentsMutations
                 input.Vat,
                 input.TotalAmount,
                 string.IsNullOrWhiteSpace(input.ConfidenceLabel) ? "Staff corrected" : input.ConfidenceLabel,
-                input.LineItems.Select(x => new SaveReviewedOcrDraftLineItem(x.ItemName, x.Quantity, x.UnitPrice, x.Total)).ToList(),
+                input.LineItems.Select(x => new SaveReviewedOcrDraftLineItem(
+                    x.ItemName,
+                    x.Quantity,
+                    x.UnitPrice,
+                    x.Total,
+                    x.DiscountPercent,
+                    x.DiscountAmount,
+                    x.TaxRate,
+                    x.TaxableAmount,
+                    x.TaxAmount)).ToList(),
                 TaxLines: MapTaxLineInputs(input.TaxLines)),
             cancellationToken);
 
@@ -510,7 +556,16 @@ public sealed class DocumentsMutations
             response.PreviewImageDataUrl,
             response.HasPreviewImage,
             response.LineItems
-                .Select(x => new DocumentOcrDraftLineItemPayload(x.ItemName, x.Quantity, x.UnitPrice, x.Total))
+                .Select(x => new DocumentOcrDraftLineItemPayload(
+                    ItemName: x.ItemName,
+                    Quantity: x.Quantity,
+                    UnitPrice: x.UnitPrice,
+                    DiscountPercent: x.DiscountPercent,
+                    DiscountAmount: x.DiscountAmount,
+                    TaxRate: x.TaxRate,
+                    TaxableAmount: x.TaxableAmount,
+                    TaxAmount: x.TaxAmount,
+                    Total: x.Total))
                 .ToList(),
             response.TaxLines
                 .Select(x => new DocumentTaxLinePayload(x.TaxType, x.Rate, x.TaxableAmount, x.TaxAmount))
@@ -555,7 +610,15 @@ public sealed class DocumentsMutations
                 input.TotalAmount,
                 input.ConfidenceLabel ?? "Staff corrected",
                 input.LineItems.Select(x => new Application.Documents.Commands.UpdateDocumentDraft.UpdateDocumentDraftLineItem(
-                    x.ItemName, x.Quantity, x.UnitPrice, x.DiscountPercent, x.DiscountAmount, x.Total)).ToList(),
+                    x.ItemName,
+                    x.Quantity,
+                    x.UnitPrice,
+                    x.DiscountPercent,
+                    x.DiscountAmount,
+                    x.Total,
+                    x.TaxRate,
+                    x.TaxableAmount,
+                    x.TaxAmount)).ToList(),
                 CurrencyCode: input.CurrencyCode,
                 ExchangeRate: input.ExchangeRate,
                 TaxLines: MapTaxLineInputs(input.TaxLines)),

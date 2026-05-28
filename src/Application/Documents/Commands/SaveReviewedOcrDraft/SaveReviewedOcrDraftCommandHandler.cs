@@ -31,7 +31,16 @@ public sealed class SaveReviewedOcrDraftCommandHandler
             return Result.Failure<Guid>(UploadedDocumentDraftErrors.NotFound);
 
         var lineItemsResult = request.LineItems
-            .Select(item => UploadedDocumentDraftLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+            .Select(item => UploadedDocumentDraftLineItem.Create(
+                item.ItemName,
+                item.Quantity,
+                item.UnitPrice,
+                item.DiscountPercent,
+                item.DiscountAmount,
+                item.Total,
+                item.TaxRate,
+                item.TaxableAmount,
+                item.TaxAmount))
             .ToList();
 
         var firstFailure = lineItemsResult.FirstOrDefault(r => r.IsFailure);

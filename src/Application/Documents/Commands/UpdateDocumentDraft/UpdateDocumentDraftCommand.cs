@@ -33,4 +33,7 @@ public sealed record UpdateDocumentDraftLineItem(
     decimal UnitPrice,
     decimal? DiscountPercent,
     decimal DiscountAmount,
-    decimal Total);
+    decimal Total,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m);

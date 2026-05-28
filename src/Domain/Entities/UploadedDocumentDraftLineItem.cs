@@ -11,6 +11,9 @@ public sealed class UploadedDocumentDraftLineItem
         decimal unitPrice,
         decimal? discountPercent,
         decimal discountAmount,
+        decimal? taxRate,
+        decimal taxableAmount,
+        decimal taxAmount,
         decimal total)
     {
         Id = id;
@@ -19,6 +22,9 @@ public sealed class UploadedDocumentDraftLineItem
         UnitPrice = unitPrice;
         DiscountPercent = discountPercent;
         DiscountAmount = discountAmount;
+        TaxRate = taxRate;
+        TaxableAmount = taxableAmount;
+        TaxAmount = taxAmount;
         Total = total;
     }
 
@@ -30,6 +36,9 @@ public sealed class UploadedDocumentDraftLineItem
     public decimal UnitPrice { get; private set; }
     public decimal? DiscountPercent { get; private set; }
     public decimal DiscountAmount { get; private set; }
+    public decimal? TaxRate { get; private set; }
+    public decimal TaxableAmount { get; private set; }
+    public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
 
     public static Result<UploadedDocumentDraftLineItem> Create(
@@ -37,6 +46,16 @@ public sealed class UploadedDocumentDraftLineItem
         decimal quantity,
         decimal unitPrice,
         decimal total)
+        => CreateLenient(itemName, quantity, unitPrice, total, null, 0m, 0m);
+
+    public static Result<UploadedDocumentDraftLineItem> CreateLenient(
+        string itemName,
+        decimal quantity,
+        decimal unitPrice,
+        decimal total,
+        decimal? taxRate = null,
+        decimal taxableAmount = 0m,
+        decimal taxAmount = 0m)
     {
         // Legacy overload: lenient — does NOT enforce Total = Q*UP formula.
         // OCR may produce rounded/mismatched totals; we accept them as-is.
@@ -52,8 +71,14 @@ public sealed class UploadedDocumentDraftLineItem
         if (total <= 0)
             return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
 
+        if (taxRate.HasValue && (taxRate.Value < 0 || taxRate.Value > 100))
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
+
+        if (taxableAmount < 0 || taxAmount < 0)
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
+
         return Result.Success(new UploadedDocumentDraftLineItem(
-            Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, null, 0m, total));
+            Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, null, 0m, taxRate, taxableAmount, taxAmount, total));
     }
 
     public static Result<UploadedDocumentDraftLineItem> Create(
@@ -62,7 +87,10 @@ public sealed class UploadedDocumentDraftLineItem
         decimal unitPrice,
         decimal? discountPercent,
         decimal discountAmount,
-        decimal total)
+        decimal total,
+        decimal? taxRate = null,
+        decimal taxableAmount = 0m,
+        decimal taxAmount = 0m)
     {
         if (string.IsNullOrWhiteSpace(itemName))
             return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemNameRequired);
@@ -79,6 +107,12 @@ public sealed class UploadedDocumentDraftLineItem
         if (discountPercent.HasValue && (discountPercent.Value < 0 || discountPercent.Value > 100))
             return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.DiscountPercentOutOfRange);
 
+        if (taxRate.HasValue && (taxRate.Value < 0 || taxRate.Value > 100))
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
+
+        if (taxableAmount < 0 || taxAmount < 0)
+            return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
+
         // Cross-check % vs amount when both supplied
         if (discountPercent.HasValue)
         {
@@ -93,7 +127,7 @@ public sealed class UploadedDocumentDraftLineItem
         if (!FinancialInvariants.EqualsWithinTolerance(expectedTotal, roundedTotal))
             return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
 
-        if (roundedTotal <= 0)
+        if (roundedTotal < 0)
             return Result.Failure<UploadedDocumentDraftLineItem>(UploadedDocumentDraftErrors.LineItemTotalInvalid);
 
         return Result.Success(new UploadedDocumentDraftLineItem(
@@ -103,6 +137,9 @@ public sealed class UploadedDocumentDraftLineItem
             unitPrice,
             discountPercent,
             discountAmount,
+            taxRate,
+            taxableAmount,
+            taxAmount,
             total));
     }
 }

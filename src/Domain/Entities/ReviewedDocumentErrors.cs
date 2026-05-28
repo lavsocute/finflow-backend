@@ -17,7 +17,7 @@ public static class ReviewedDocumentErrors
     public static readonly Error CategoryRequired = new("ReviewedDocument.CategoryRequired", "Expense category is required.");
     public static readonly Error ReviewedByRequired = new("ReviewedDocument.ReviewedByRequired", "Reviewed by staff is required.");
     public static readonly Error SubmittedAtRequired = new("ReviewedDocument.SubmittedAtRequired", "Submitted at must be a valid UTC timestamp.");
-    public static readonly Error TotalAmountInvalid = new("ReviewedDocument.TotalAmountInvalid", "Total amount must be greater than zero.");
+    public static readonly Error TotalAmountInvalid = new("ReviewedDocument.TotalAmountInvalid", "Total amount must be greater than or equal to zero.");
     public static readonly Error LineItemRequired = new("ReviewedDocument.LineItemRequired", "At least one line item is required.");
     public static readonly Error LineItemNameRequired = new("ReviewedDocument.LineItemNameRequired", "Line item name is required.");
     public static readonly Error LineItemQuantityInvalid = new("ReviewedDocument.LineItemQuantityInvalid", "Line item quantity must be greater than zero.");

@@ -125,7 +125,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             foreach (var lineItem in document.LineItems)
             {
                 builder.AppendLine(
-                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
+                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}{FormatLineTaxSuffix(lineItem)}");
             }
         }
 
@@ -156,7 +156,7 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
             foreach (var lineItem in document.LineItems)
             {
                 builder.AppendLine(
-                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}");
+                    $"- {NormalizeForEvidence(DocumentTextNormalizer.NormalizeLineItemName(lineItem.ItemName))}: quantity {lineItem.Quantity:0.##}, unit price {lineItem.UnitPrice:0.##}, total {lineItem.Total:0.##}{FormatLineTaxSuffix(lineItem)}");
             }
         }
 
@@ -189,9 +189,26 @@ public sealed class ReviewedDocumentChunkIndexer : IReviewedDocumentChunkIndexer
                 builder.Append($" ({lineItem.DiscountPercent.Value:0.##}%)");
             builder.AppendLine();
         }
+        if (HasLineTax(lineItem))
+        {
+            builder.AppendLine($"Tax rate: {FormatTaxRate(lineItem.TaxRate)}");
+            builder.AppendLine($"Taxable amount: {lineItem.TaxableAmount:0.##}");
+            builder.AppendLine($"Tax amount: {lineItem.TaxAmount:0.##}");
+        }
         builder.AppendLine($"Total: {lineItem.Total:0.##}");
         return builder.ToString().Trim();
     }
+
+    private static string FormatLineTaxSuffix(ReviewedDocumentLineItem lineItem) =>
+        HasLineTax(lineItem)
+            ? $", tax rate {FormatTaxRate(lineItem.TaxRate)}, taxable {lineItem.TaxableAmount:0.##}, tax {lineItem.TaxAmount:0.##}"
+            : string.Empty;
+
+    private static bool HasLineTax(ReviewedDocumentLineItem lineItem) =>
+        lineItem.TaxRate.HasValue || lineItem.TaxableAmount > 0m || lineItem.TaxAmount > 0m;
+
+    private static string FormatTaxRate(decimal? taxRate) =>
+        taxRate.HasValue ? $"{taxRate.Value:0.##}%" : "n/a";
 
     private static void ValidateDocumentMetadata(ReviewedDocument document)
     {

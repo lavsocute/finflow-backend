@@ -50,6 +50,11 @@ public sealed class GetApprovalDetailQueryHandler
                 item.ItemName,
                 item.Quantity,
                 item.UnitPrice,
+                item.DiscountPercent,
+                item.DiscountAmount,
+                item.TaxRate,
+                item.TaxableAmount,
+                item.TaxAmount,
                 item.Total))
             .ToList();
 
@@ -72,11 +77,23 @@ public sealed class GetApprovalDetailQueryHandler
             departmentName,
             document.TotalAmount,
             "VND",
+            document.Subtotal,
+            document.DocumentDiscountPercent,
+            document.DocumentDiscountAmount,
+            document.Vat,
+            document.TotalAmount,
             document.DocumentDate,
             document.SubmittedAt,
             document.TotalAmount >= 5000m ? "High" : "Medium",
             document.Status.ToString(),
             policySummary,
-            lineItems));
+            lineItems,
+            document.TaxLines
+                .Select(item => new DocumentTaxLineResponse(
+                    item.TaxType,
+                    item.Rate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
+                .ToList()));
     }
 }

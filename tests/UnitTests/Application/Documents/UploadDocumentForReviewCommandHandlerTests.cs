@@ -208,6 +208,157 @@ public sealed class UploadDocumentForReviewCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_DerivesTaxLinesFromLineItems_WhenOcrOmitsTaxSummary()
+    {
+        var ocrService = new StubOcrExtractionService(Result.Success(CreateValidOcrResult(
+            [
+                new OcrExtractionLineItem("Fresh food", 1m, 100000m, 100000m, 0.05m, 100000m, 5000m),
+                new OcrExtractionLineItem("Household item", 1m, 200000m, 200000m, 0.1m, 200000m, 20000m)
+            ],
+            subtotal: 300000m,
+            vat: 25000m,
+            totalAmount: 325000m)));
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionQuotaGate(),
+            new NoOpDocumentStorageProvider(),
+            new StubTenantRepositoryWithCurrency("VND"),
+            new StubExchangeRateService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new UploadDocumentForReviewCommand(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "reviewer@finflow.test",
+                "receipt.png",
+                "image/png",
+                [1, 2, 3]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Collection(
+            result.Value.TaxLines.OrderBy(line => line.Rate).ToList(),
+            line =>
+            {
+                Assert.Equal(5m, line.Rate);
+                Assert.Equal(100000m, line.TaxableAmount);
+                Assert.Equal(5000m, line.TaxAmount);
+            },
+            line =>
+            {
+                Assert.Equal(10m, line.Rate);
+                Assert.Equal(200000m, line.TaxableAmount);
+                Assert.Equal(20000m, line.TaxAmount);
+            });
+        Assert.Equal(5m, result.Value.LineItems[0].TaxRate);
+        Assert.Equal(10m, result.Value.LineItems[1].TaxRate);
+        Assert.Equal(2, repository.AddedDrafts.Single().TaxLines.Count);
+    }
+
+    [Fact]
+    public async Task Handle_CreatesDraft_WhenPromotionReducesTotalAmountToZero()
+    {
+        var ocrService = new StubOcrExtractionService(
+            Result.Success(new OcrExtractionResult(
+                "BIG C DI AN",
+                "025000112",
+                new DateOnly(2018, 10, 2),
+                null,
+                "Groceries",
+                "3702058398",
+                17000m,
+                0m,
+                0m,
+                "groq",
+                "High precision",
+                [new OcrExtractionLineItem("SCU TT NUTI DAU 11", 1m, 17000m, 17000m)],
+                1)));
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionQuotaGate(),
+            new NoOpDocumentStorageProvider(),
+            new StubTenantRepositoryWithCurrency("VND"),
+            new StubExchangeRateService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new UploadDocumentForReviewCommand(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "reviewer@finflow.test",
+                "promotion-receipt.jpg",
+                "image/jpeg",
+                [1, 2, 3]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(0m, result.Value.TotalAmount);
+        Assert.Single(repository.AddedDrafts);
+        Assert.Equal(0m, repository.AddedDrafts[0].TotalAmount);
+    }
+
+    [Fact]
+    public async Task Handle_CreatesDraft_WhenOcrIncludesPromotionAsNegativeAdjustmentLine()
+    {
+        var ocrService = new StubOcrExtractionService(
+            Result.Success(new OcrExtractionResult(
+                "BIG C DI AN",
+                "025000112",
+                new DateOnly(2018, 10, 2),
+                null,
+                "Groceries",
+                "3702058398",
+                17000m,
+                0m,
+                0m,
+                "groq",
+                "High precision",
+                [
+                    new OcrExtractionLineItem("SCU TT NUTI DAU 11", 1m, 17000m, 17000m),
+                    new OcrExtractionLineItem("SO TIEN GIAM GIA", 1m, -17000m, -17000m)
+                ],
+                1)));
+        var repository = new StubUploadedDocumentDraftRepository();
+        var unitOfWork = new StubUnitOfWork();
+        var handler = new UploadDocumentForReviewCommandHandler(
+            repository,
+            unitOfWork,
+            ocrService,
+            new AllowAllSubscriptionQuotaGate(),
+            new NoOpDocumentStorageProvider(),
+            new StubTenantRepositoryWithCurrency("VND"),
+            new StubExchangeRateService(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<UploadDocumentForReviewCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new UploadDocumentForReviewCommand(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "reviewer@finflow.test",
+                "promotion-receipt.jpg",
+                "image/jpeg",
+                [1, 2, 3]),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(0m, result.Value.TotalAmount);
+        Assert.Single(result.Value.LineItems);
+        Assert.Equal("SCU TT NUTI DAU 11", result.Value.LineItems[0].ItemName);
+    }
+
+    [Fact]
     public async Task Handle_ReturnsExactProcessedPageCount_FromActualOcrUsage()
     {
         var tenantId = Guid.NewGuid();

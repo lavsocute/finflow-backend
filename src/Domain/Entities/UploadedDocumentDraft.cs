@@ -438,7 +438,15 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         foreach (var li in document.LineItems)
         {
             var copyResult = UploadedDocumentDraftLineItem.Create(
-                li.ItemName, li.Quantity, li.UnitPrice, li.DiscountPercent, li.DiscountAmount, li.Total);
+                li.ItemName,
+                li.Quantity,
+                li.UnitPrice,
+                li.DiscountPercent,
+                li.DiscountAmount,
+                li.Total,
+                li.TaxRate,
+                li.TaxableAmount,
+                li.TaxAmount);
             if (copyResult.IsFailure)
                 return Result.Failure(copyResult.Error);
             _lineItems.Add(copyResult.Value);
@@ -472,7 +480,15 @@ public sealed class UploadedDocumentDraft : Entity, IMultiTenant, ISoftDeletable
         foreach (var li in document.LineItems)
         {
             var copy = UploadedDocumentDraftLineItem.Create(
-                li.ItemName, li.Quantity, li.UnitPrice, li.DiscountPercent, li.DiscountAmount, li.Total);
+                li.ItemName,
+                li.Quantity,
+                li.UnitPrice,
+                li.DiscountPercent,
+                li.DiscountAmount,
+                li.Total,
+                li.TaxRate,
+                li.TaxableAmount,
+                li.TaxAmount);
             if (copy.IsFailure)
                 return Result.Failure<UploadedDocumentDraft>(copy.Error);
             lineItems.Add(copy.Value);

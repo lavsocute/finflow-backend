@@ -8,7 +8,10 @@ public sealed record SaveManualDraftLineItem(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total
+    decimal Total,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m
 );
 
 public sealed record SaveManualDraftCommand(
