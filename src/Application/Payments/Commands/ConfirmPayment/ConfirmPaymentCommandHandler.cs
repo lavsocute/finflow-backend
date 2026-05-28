@@ -58,7 +58,7 @@ internal sealed class ConfirmPaymentCommandHandler : IRequestHandler<ConfirmPaym
         _paymentRepository.Update(payment);
 
         var document = await _documentRepository.GetByIdForUpdateAsync(payment.DocumentId, _currentTenant.Id.Value, cancellationToken);
-        var documentDate = document?.DocumentDate.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow;
+        var documentDate = document?.DocumentDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) ?? DateTime.UtcNow;
 
         // 1. Materialize the expense row.
         await CreateExpenseAsync(payment, documentDate, cancellationToken);

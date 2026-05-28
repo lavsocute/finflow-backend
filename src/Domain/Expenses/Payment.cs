@@ -210,6 +210,43 @@ public sealed class Payment : Entity, IMultiTenant
         return Result.Success();
     }
 
+    public Result Reschedule(Guid recordedByMembershipId, PaymentMethod method, string? notes)
+    {
+        if (Status is not (PaymentStatus.Rejected or PaymentStatus.Cancelled))
+            return Result.Failure(PaymentErrors.DocumentAlreadyHasPayment);
+        if (recordedByMembershipId == Guid.Empty)
+            return Result.Failure(PaymentErrors.RecordedByRequired);
+        if (!SupportedMethods.Contains(method))
+            return Result.Failure(PaymentErrors.InvalidPaymentMethod);
+
+        RecordedByMembershipId = recordedByMembershipId;
+        RecordedAt = DateTime.UtcNow;
+        Method = method;
+        Status = PaymentStatus.Pending;
+        ConfirmedByMembershipId = null;
+        ConfirmedAt = null;
+        ExecutionReference = null;
+        RejectedByMembershipId = null;
+        RejectedAt = null;
+        RejectionType = null;
+        RejectionReason = null;
+        CancelledByMembershipId = null;
+        CancelledAt = null;
+        CancellationReason = null;
+        Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+        UpdatedAt = DateTime.UtcNow;
+
+        RaiseDomainEvent(new PaymentRecordedDomainEvent(
+            Id,
+            IdTenant,
+            DocumentId,
+            RecordedByMembershipId,
+            Amount,
+            CurrencyCode,
+            Method));
+        return Result.Success();
+    }
+
     private static readonly HashSet<PaymentMethod> SupportedMethods =
     [
         PaymentMethod.Cash,

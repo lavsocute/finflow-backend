@@ -99,6 +99,11 @@ public sealed class GetPaymentDetailQueryHandler
             Department: department?.Name ?? string.Empty,
             CostCenter: null,
             Amount: document.TotalAmount,
+            Subtotal: document.Subtotal,
+            DocumentDiscountPercent: document.DocumentDiscountPercent,
+            DocumentDiscountAmount: document.DocumentDiscountAmount,
+            Vat: document.Vat,
+            TotalAmount: document.TotalAmount,
             CurrencyCode: payment?.CurrencyCode ?? "VND",
             AmountInBaseCurrency: payment?.AmountInBaseCurrency ?? document.TotalAmount,
             ExpenseDate: document.DocumentDate,
@@ -107,6 +112,25 @@ public sealed class GetPaymentDetailQueryHandler
             DocumentFileName: document.OriginalFileName,
             DocumentDownloadUrl: null,
             DocumentViewUrl: null,
+            LineItems: document.LineItems
+                .Select(item => new PaymentDocumentLineItemResponse(
+                    Description: item.ItemName,
+                    Quantity: item.Quantity,
+                    UnitPrice: item.UnitPrice,
+                    DiscountPercent: item.DiscountPercent,
+                    DiscountAmount: item.DiscountAmount,
+                    TaxRate: item.TaxRate,
+                    TaxableAmount: item.TaxableAmount,
+                    TaxAmount: item.TaxAmount,
+                    Total: item.Total))
+                .ToList(),
+            TaxLines: document.TaxLines
+                .Select(item => new PaymentDocumentTaxLineResponse(
+                    item.TaxType,
+                    item.Rate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
+                .ToList(),
             AuditTrail: auditTrail,
             MethodSource: payment is null ? null : "SelectedByAccountant",
             MethodEditable: payment is null));

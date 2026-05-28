@@ -36,6 +36,23 @@ public sealed record PaymentAuditTrailItemPayload(
     DateTime Timestamp,
     string? Note);
 
+public sealed record PaymentDocumentLineItemPayload(
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m,
+    decimal Total = 0m);
+
+public sealed record PaymentDocumentTaxLinePayload(
+    string TaxType,
+    decimal? Rate,
+    decimal TaxableAmount,
+    decimal TaxAmount);
+
 public sealed record PaymentDetailPayload(
     Guid? PaymentId,
     Guid DocumentId,
@@ -49,6 +66,11 @@ public sealed record PaymentDetailPayload(
     string Department,
     string? CostCenter,
     decimal Amount,
+    decimal Subtotal,
+    decimal? DocumentDiscountPercent,
+    decimal DocumentDiscountAmount,
+    decimal Vat,
+    decimal TotalAmount,
     string CurrencyCode,
     decimal AmountInBaseCurrency,
     DateOnly ExpenseDate,
@@ -57,6 +79,8 @@ public sealed record PaymentDetailPayload(
     string DocumentFileName,
     string? DocumentDownloadUrl,
     string? DocumentViewUrl,
+    IReadOnlyList<PaymentDocumentLineItemPayload> LineItems,
+    IReadOnlyList<PaymentDocumentTaxLinePayload> TaxLines,
     IReadOnlyList<PaymentAuditTrailItemPayload> AuditTrail,
     string? MethodSource,
     bool MethodEditable);
@@ -149,6 +173,11 @@ public sealed class PaymentQueries
             detail.Department,
             detail.CostCenter,
             detail.Amount,
+            detail.Subtotal,
+            detail.DocumentDiscountPercent,
+            detail.DocumentDiscountAmount,
+            detail.Vat,
+            detail.TotalAmount,
             detail.CurrencyCode,
             detail.AmountInBaseCurrency,
             detail.ExpenseDate,
@@ -157,6 +186,21 @@ public sealed class PaymentQueries
             detail.DocumentFileName,
             detail.DocumentDownloadUrl,
             detail.DocumentViewUrl,
+            detail.LineItems.Select(x => new PaymentDocumentLineItemPayload(
+                Description: x.Description,
+                Quantity: x.Quantity,
+                UnitPrice: x.UnitPrice,
+                DiscountPercent: x.DiscountPercent,
+                DiscountAmount: x.DiscountAmount,
+                TaxRate: x.TaxRate,
+                TaxableAmount: x.TaxableAmount,
+                TaxAmount: x.TaxAmount,
+                Total: x.Total)).ToList(),
+            detail.TaxLines.Select(x => new PaymentDocumentTaxLinePayload(
+                x.TaxType,
+                x.Rate,
+                x.TaxableAmount,
+                x.TaxAmount)).ToList(),
             detail.AuditTrail.Select(x => new PaymentAuditTrailItemPayload(
                 x.Type,
                 x.Title,

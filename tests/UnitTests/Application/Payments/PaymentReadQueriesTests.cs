@@ -79,6 +79,37 @@ public sealed class PaymentReadQueriesTests
         Assert.Null(detail.PaymentMethod);
         Assert.True(detail.MethodEditable);
         Assert.Null(detail.SettlementRef);
+        Assert.Equal(9000m, detail.Subtotal);
+        Assert.Equal(450m, detail.Vat);
+        Assert.Equal(9450m, detail.TotalAmount);
+        Assert.Collection(
+            detail.TaxLines.OrderBy(line => line.Rate).ToList(),
+            line =>
+            {
+                Assert.Equal(5m, line.Rate);
+                Assert.Equal(3000m, line.TaxableAmount);
+                Assert.Equal(150m, line.TaxAmount);
+            },
+            line =>
+            {
+                Assert.Equal(10m, line.Rate);
+                Assert.Equal(6000m, line.TaxableAmount);
+                Assert.Equal(300m, line.TaxAmount);
+            });
+        Assert.Collection(
+            detail.LineItems.OrderBy(item => item.TaxRate).ToList(),
+            item =>
+            {
+                Assert.Equal("Fresh food", item.Description);
+                Assert.Equal(5m, item.TaxRate);
+                Assert.Equal(3000m, item.Total);
+            },
+            item =>
+            {
+                Assert.Equal("Household item", item.Description);
+                Assert.Equal(10m, item.TaxRate);
+                Assert.Equal(6000m, item.Total);
+            });
     }
 
     [Fact]
@@ -183,7 +214,8 @@ public sealed class PaymentReadQueriesTests
                 "EXP-2024-0039",
                 new DateOnly(2024, 11, 22),
                 9450m,
-                submittedAtUtc: new DateTime(2024, 11, 17, 10, 42, 0, DateTimeKind.Utc));
+                submittedAtUtc: new DateTime(2024, 11, 17, 10, 42, 0, DateTimeKind.Utc),
+                includeMultiRateVat: true);
 
             var scheduledDocument = CreateApprovedDocument(
                 tenantId,
@@ -301,9 +333,32 @@ public sealed class PaymentReadQueriesTests
             string reference,
             DateOnly documentDate,
             decimal totalAmount,
-            DateTime submittedAtUtc)
+            DateTime submittedAtUtc,
+            bool includeMultiRateVat = false)
         {
-            var lineItem = ReviewedDocumentLineItem.Create("Expense line", 1m, totalAmount, totalAmount);
+            var subtotal = totalAmount;
+            var vat = 0m;
+            IReadOnlyList<ReviewedDocumentLineItem> lineItems =
+            [
+                ReviewedDocumentLineItem.Create("Expense line", 1m, totalAmount, totalAmount)
+            ];
+            IReadOnlyList<ReviewedDocumentTaxLine>? taxLines = null;
+
+            if (includeMultiRateVat)
+            {
+                subtotal = 9000m;
+                vat = totalAmount - subtotal;
+                lineItems =
+                [
+                    ReviewedDocumentLineItem.Create("Fresh food", 1m, 3000m, null, 0m, 3000m, 5m, 3000m, 150m),
+                    ReviewedDocumentLineItem.Create("Household item", 1m, 6000m, null, 0m, 6000m, 10m, 6000m, 300m)
+                ];
+                taxLines =
+                [
+                    ReviewedDocumentTaxLine.Create("VAT", 5m, 3000m, 150m).Value,
+                    ReviewedDocumentTaxLine.Create("VAT", 10m, 6000m, 300m).Value
+                ];
+            }
 
             var document = ReviewedDocument.CreateSubmitted(
                 Guid.NewGuid(),
@@ -317,14 +372,15 @@ public sealed class PaymentReadQueriesTests
                 documentDate,
                 "Travel",
                 null,
-                totalAmount,
-                0m,
+                subtotal,
+                vat,
                 totalAmount,
                 "staff-upload",
                 "staff@finflow.test",
                 "Staff corrected",
                 submittedAtUtc,
-                [lineItem]).Value;
+                lineItems,
+                taxLines).Value;
 
             document.Approve();
             return document;

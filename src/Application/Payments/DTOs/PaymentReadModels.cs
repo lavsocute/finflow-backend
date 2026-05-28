@@ -29,6 +29,23 @@ public sealed record PaymentAuditTrailItemResponse(
     DateTime Timestamp,
     string? Note);
 
+public sealed record PaymentDocumentLineItemResponse(
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m,
+    decimal Total = 0m);
+
+public sealed record PaymentDocumentTaxLineResponse(
+    string TaxType,
+    decimal? Rate,
+    decimal TaxableAmount,
+    decimal TaxAmount);
+
 public sealed record PaymentDetailResponse(
     Guid? PaymentId,
     Guid DocumentId,
@@ -42,6 +59,11 @@ public sealed record PaymentDetailResponse(
     string Department,
     string? CostCenter,
     decimal Amount,
+    decimal Subtotal,
+    decimal? DocumentDiscountPercent,
+    decimal DocumentDiscountAmount,
+    decimal Vat,
+    decimal TotalAmount,
     string CurrencyCode,
     decimal AmountInBaseCurrency,
     DateOnly ExpenseDate,
@@ -50,6 +72,8 @@ public sealed record PaymentDetailResponse(
     string DocumentFileName,
     string? DocumentDownloadUrl,
     string? DocumentViewUrl,
+    IReadOnlyList<PaymentDocumentLineItemResponse> LineItems,
+    IReadOnlyList<PaymentDocumentTaxLineResponse> TaxLines,
     IReadOnlyList<PaymentAuditTrailItemResponse> AuditTrail,
     string? MethodSource,
     bool MethodEditable);
