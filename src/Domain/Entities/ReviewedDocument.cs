@@ -242,13 +242,18 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemQuantityInvalid);
             if (lineItem.UnitPrice <= 0)
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemUnitPriceInvalid);
-            if (lineItem.Total <= 0)
+            if (lineItem.Total < 0)
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemTotalInvalid);
             if (lineItem.DiscountAmount < 0)
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DiscountAmountInvalid);
             if (lineItem.DiscountPercent.HasValue &&
                 (lineItem.DiscountPercent.Value < 0 || lineItem.DiscountPercent.Value > 100))
                 return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.DiscountPercentOutOfRange);
+            if (lineItem.TaxRate.HasValue &&
+                (lineItem.TaxRate.Value < 0 || lineItem.TaxRate.Value > 100))
+                return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+            if (lineItem.TaxableAmount < 0 || lineItem.TaxAmount < 0)
+                return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.FinancialBreakdownMismatch);
 
             // Cross-check %/amount when both supplied
             if (lineItem.DiscountPercent.HasValue)
@@ -267,9 +272,13 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         }
 
         var lineSum = lineItems.Sum(i => i.Total);
-        if (!FinancialInvariants.EqualsWithinTolerance(
-                FinancialInvariants.RoundMoney(lineSum),
-                FinancialInvariants.RoundMoney(totalAmount)))
+        var lineSumMatchesLegacyTotal = FinancialInvariants.EqualsWithinTolerance(
+            FinancialInvariants.RoundMoney(lineSum),
+            FinancialInvariants.RoundMoney(totalAmount));
+        var lineSumMatchesNetSubtotal = FinancialInvariants.EqualsWithinTolerance(
+            FinancialInvariants.RoundMoney(lineSum),
+            FinancialInvariants.RoundMoney(subtotal));
+        if (!lineSumMatchesLegacyTotal && !lineSumMatchesNetSubtotal)
             return Result.Failure<ReviewedDocument>(ReviewedDocumentErrors.LineItemTotalsMismatch);
 
         var breakdown = FinancialInvariants.ValidateBreakdownStrict(
@@ -285,6 +294,10 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
         if (normalizedTaxLines.IsFailure)
             return Result.Failure<ReviewedDocument>(normalizedTaxLines.Error);
+
+        var lineTaxValidation = ValidateLineTaxGroups(lineItems, normalizedTaxLines.Value);
+        if (lineTaxValidation.IsFailure)
+            return Result.Failure<ReviewedDocument>(lineTaxValidation.Error);
 
         return Result.Success(new ReviewedDocument(
             documentId,
@@ -426,9 +439,13 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
             return Result.Failure(ReviewedDocumentErrors.LineItemRequired);
 
         var lineSum = lineItems.Sum(i => i.Total);
-        if (!FinancialInvariants.EqualsWithinTolerance(
-                FinancialInvariants.RoundMoney(lineSum),
-                FinancialInvariants.RoundMoney(totalAmount)))
+        var lineSumMatchesLegacyTotal = FinancialInvariants.EqualsWithinTolerance(
+            FinancialInvariants.RoundMoney(lineSum),
+            FinancialInvariants.RoundMoney(totalAmount));
+        var lineSumMatchesNetSubtotal = FinancialInvariants.EqualsWithinTolerance(
+            FinancialInvariants.RoundMoney(lineSum),
+            FinancialInvariants.RoundMoney(subtotal));
+        if (!lineSumMatchesLegacyTotal && !lineSumMatchesNetSubtotal)
             return Result.Failure(ReviewedDocumentErrors.LineItemTotalsMismatch);
 
         var breakdown = FinancialInvariants.ValidateBreakdownStrict(
@@ -444,6 +461,10 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         var normalizedTaxLines = NormalizeTaxLines(taxLines, subtotal, vat);
         if (normalizedTaxLines.IsFailure)
             return normalizedTaxLines;
+
+        var lineTaxValidation = ValidateLineTaxGroups(lineItems, normalizedTaxLines.Value);
+        if (lineTaxValidation.IsFailure)
+            return lineTaxValidation;
 
         VendorName = vendorName.Trim();
         Reference = reference.Trim();
@@ -549,5 +570,58 @@ public sealed class ReviewedDocument : Entity, IMultiTenant, ISoftDeletable
         [
             ReviewedDocumentTaxLine.Create("VAT", null, taxableAmount, vat).Value
         ];
+    }
+
+    private static Result ValidateLineTaxGroups(
+        IReadOnlyCollection<ReviewedDocumentLineItem> lineItems,
+        IReadOnlyCollection<ReviewedDocumentTaxLine> taxLines)
+    {
+        if (!lineItems.Any(HasLineTax))
+            return Result.Success();
+
+        var groupedLineTax = lineItems
+            .Where(HasLineTax)
+            .GroupBy(item => item.TaxRate)
+            .Select(group => new
+            {
+                Rate = group.Key,
+                TaxableAmount = FinancialInvariants.RoundMoney(group.Sum(item => item.TaxableAmount)),
+                TaxAmount = FinancialInvariants.RoundMoney(group.Sum(item => item.TaxAmount))
+            })
+            .ToList();
+
+        if (groupedLineTax.Count != taxLines.Count)
+            return Result.Failure(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+
+        foreach (var lineTax in groupedLineTax)
+        {
+            var matchingSummary = taxLines.FirstOrDefault(taxLine => TaxRatesEqual(taxLine.Rate, lineTax.Rate));
+            if (matchingSummary is null)
+                return Result.Failure(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+
+            if (!FinancialInvariants.EqualsWithinTolerance(lineTax.TaxableAmount, FinancialInvariants.RoundMoney(matchingSummary.TaxableAmount)) ||
+                !FinancialInvariants.EqualsWithinTolerance(lineTax.TaxAmount, FinancialInvariants.RoundMoney(matchingSummary.TaxAmount)))
+            {
+                return Result.Failure(ReviewedDocumentErrors.FinancialBreakdownMismatch);
+            }
+        }
+
+        return Result.Success();
+    }
+
+    private static bool HasLineTax(ReviewedDocumentLineItem item) =>
+        item.TaxRate.HasValue || item.TaxableAmount > 0m || item.TaxAmount > 0m;
+
+    private static bool TaxRatesEqual(decimal? left, decimal? right)
+    {
+        if (!left.HasValue && !right.HasValue)
+            return true;
+
+        if (!left.HasValue || !right.HasValue)
+            return false;
+
+        return FinancialInvariants.EqualsWithinTolerance(
+            FinancialInvariants.RoundMoney(left.Value),
+            FinancialInvariants.RoundMoney(right.Value));
     }
 }

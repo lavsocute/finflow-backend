@@ -200,7 +200,7 @@ public sealed class SaveManualDraftCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ReturnsTotalAmountInvalid_WhenTotalAmountIsZero()
+    public async Task Handle_ReturnsSuccess_WhenTotalAmountIsZero()
     {
         var repository = new StubUploadedDocumentDraftRepository();
         var unitOfWork = new StubUnitOfWork();
@@ -225,8 +225,9 @@ public sealed class SaveManualDraftCommandHandlerTests
                 ]),
             CancellationToken.None);
 
-        Assert.True(result.IsFailure);
-        Assert.Equal("UploadedDocumentDraft.TotalAmountInvalid", result.Error.Code);
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Single(repository.AddedDrafts);
+        Assert.Equal(0m, repository.AddedDrafts[0].TotalAmount);
     }
 
     [Fact]

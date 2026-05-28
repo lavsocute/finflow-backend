@@ -8,7 +8,12 @@ public sealed record SaveReviewedOcrDraftLineItem(
     string ItemName,
     decimal Quantity,
     decimal UnitPrice,
-    decimal Total
+    decimal Total,
+    decimal? DiscountPercent = null,
+    decimal DiscountAmount = 0m,
+    decimal? TaxRate = null,
+    decimal TaxableAmount = 0m,
+    decimal TaxAmount = 0m
 );
 
 public sealed record SaveReviewedOcrDraftCommand(

@@ -16,7 +16,7 @@ public static class UploadedDocumentDraftErrors
     public static readonly Error VendorNameRequired = new("UploadedDocumentDraft.VendorNameRequired", "Vendor name is required.");
     public static readonly Error ReferenceRequired = new("UploadedDocumentDraft.ReferenceRequired", "Reference is required.");
     public static readonly Error CategoryRequired = new("UploadedDocumentDraft.CategoryRequired", "Expense category is required.");
-    public static readonly Error TotalAmountInvalid = new("UploadedDocumentDraft.TotalAmountInvalid", "Total amount must be greater than zero.");
+    public static readonly Error TotalAmountInvalid = new("UploadedDocumentDraft.TotalAmountInvalid", "Total amount must be greater than or equal to zero.");
     public static readonly Error LineItemRequired = new("UploadedDocumentDraft.LineItemRequired", "At least one line item is required.");
     public static readonly Error LineItemNameRequired = new("UploadedDocumentDraft.LineItemNameRequired", "Line item name is required.");
     public static readonly Error LineItemQuantityInvalid = new("UploadedDocumentDraft.LineItemQuantityInvalid", "Line item quantity must be greater than zero.");

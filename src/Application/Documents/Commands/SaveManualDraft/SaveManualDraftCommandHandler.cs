@@ -36,7 +36,16 @@ public sealed class SaveManualDraftCommandHandler
     public async Task<Result<Guid>> Handle(SaveManualDraftCommand request, CancellationToken cancellationToken)
     {
         var lineItemsResult = request.LineItems
-            .Select(item => UploadedDocumentDraftLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+            .Select(item => UploadedDocumentDraftLineItem.Create(
+                item.ItemName,
+                item.Quantity,
+                item.UnitPrice,
+                null,
+                0m,
+                item.Total,
+                item.TaxRate,
+                item.TaxableAmount,
+                item.TaxAmount))
             .ToList();
 
         var firstFailure = lineItemsResult.FirstOrDefault(r => r.IsFailure);

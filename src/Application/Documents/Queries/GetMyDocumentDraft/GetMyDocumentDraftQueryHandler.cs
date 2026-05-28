@@ -49,7 +49,16 @@ public sealed class GetMyDocumentDraftQueryHandler
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
             draft.LineItems
-                .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+                .Select(item => new DocumentOcrDraftLineItemResponse(
+                    item.ItemName,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.Total,
+                    item.DiscountPercent,
+                    item.DiscountAmount,
+                    item.TaxRate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
                 .ToList(),
             draft.TaxLines
                 .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))

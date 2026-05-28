@@ -72,6 +72,9 @@ internal sealed class ReviewedDocumentConfiguration : IEntityTypeConfiguration<R
             ownedBuilder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(18,2)").IsRequired();
             ownedBuilder.Property(x => x.DiscountPercent).HasColumnName("discount_percent").HasColumnType("numeric(5,2)");
             ownedBuilder.Property(x => x.DiscountAmount).HasColumnName("discount_amount").HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+            ownedBuilder.Property(x => x.TaxRate).HasColumnName("tax_rate").HasColumnType("numeric(5,2)");
+            ownedBuilder.Property(x => x.TaxableAmount).HasColumnName("taxable_amount").HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
+            ownedBuilder.Property(x => x.TaxAmount).HasColumnName("tax_amount").HasColumnType("numeric(18,2)").HasDefaultValue(0m).IsRequired();
             ownedBuilder.Property(x => x.Total).HasColumnName("total").HasColumnType("numeric(18,2)").IsRequired();
         });
 

@@ -9,6 +9,9 @@ public sealed class ReviewedDocumentLineItem
         decimal unitPrice,
         decimal? discountPercent,
         decimal discountAmount,
+        decimal? taxRate,
+        decimal taxableAmount,
+        decimal taxAmount,
         decimal total)
     {
         Id = id;
@@ -17,6 +20,9 @@ public sealed class ReviewedDocumentLineItem
         UnitPrice = unitPrice;
         DiscountPercent = discountPercent;
         DiscountAmount = discountAmount;
+        TaxRate = taxRate;
+        TaxableAmount = taxableAmount;
+        TaxAmount = taxAmount;
         Total = total;
     }
 
@@ -28,6 +34,9 @@ public sealed class ReviewedDocumentLineItem
     public decimal UnitPrice { get; private set; }
     public decimal? DiscountPercent { get; private set; }
     public decimal DiscountAmount { get; private set; }
+    public decimal? TaxRate { get; private set; }
+    public decimal TaxableAmount { get; private set; }
+    public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
 
     // Backward-compatible overload (no discount)
@@ -40,6 +49,9 @@ public sealed class ReviewedDocumentLineItem
         decimal unitPrice,
         decimal? discountPercent,
         decimal discountAmount,
-        decimal total) =>
-        new(Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, discountPercent, discountAmount, total);
+        decimal total,
+        decimal? taxRate = null,
+        decimal taxableAmount = 0m,
+        decimal taxAmount = 0m) =>
+        new(Guid.NewGuid(), itemName.Trim(), quantity, unitPrice, discountPercent, discountAmount, taxRate, taxableAmount, taxAmount, total);
 }

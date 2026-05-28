@@ -103,7 +103,16 @@ public sealed class SubmitReviewedDocumentCommandHandler
         }
 
         var lineItems = request.LineItems
-            .Select(item => ReviewedDocumentLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.DiscountPercent, item.DiscountAmount, item.Total))
+            .Select(item => ReviewedDocumentLineItem.Create(
+                item.ItemName,
+                item.Quantity,
+                item.UnitPrice,
+                item.DiscountPercent,
+                item.DiscountAmount,
+                item.Total,
+                item.TaxRate,
+                item.TaxableAmount,
+                item.TaxAmount))
             .ToList();
         var requestedTaxLines = (request.TaxLines ?? [])
             .Select(item => ReviewedDocumentTaxLine.Create(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))

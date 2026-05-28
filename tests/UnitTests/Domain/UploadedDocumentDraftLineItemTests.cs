@@ -12,7 +12,64 @@ public sealed class UploadedDocumentDraftLineItemTests
         Assert.True(result.IsSuccess);
         Assert.Null(result.Value.DiscountPercent);
         Assert.Equal(0m, result.Value.DiscountAmount);
+        Assert.Null(result.Value.TaxRate);
+        Assert.Equal(0m, result.Value.TaxableAmount);
+        Assert.Equal(0m, result.Value.TaxAmount);
         Assert.Equal(200m, result.Value.Total);
+    }
+
+    [Fact]
+    public void Create_WithLineVat_StoresTaxFields()
+    {
+        var result = UploadedDocumentDraftLineItem.Create(
+            "Coop Product",
+            1m,
+            100000m,
+            null,
+            0m,
+            100000m,
+            8m,
+            100000m,
+            8000m);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(8m, result.Value.TaxRate);
+        Assert.Equal(100000m, result.Value.TaxableAmount);
+        Assert.Equal(8000m, result.Value.TaxAmount);
+    }
+
+    [Fact]
+    public void Create_WithInvalidLineVatRate_Fails()
+    {
+        var result = UploadedDocumentDraftLineItem.Create(
+            "Coop Product",
+            1m,
+            100000m,
+            null,
+            0m,
+            100000m,
+            101m,
+            100000m,
+            8000m);
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public void Create_WithNegativeLineVatAmount_Fails()
+    {
+        var result = UploadedDocumentDraftLineItem.Create(
+            "Coop Product",
+            1m,
+            100000m,
+            null,
+            0m,
+            100000m,
+            8m,
+            100000m,
+            -1m);
+
+        Assert.True(result.IsFailure);
     }
 
     [Fact]
@@ -76,10 +133,19 @@ public sealed class UploadedDocumentDraftLineItemTests
     }
 
     [Fact]
-    public void Create_TotalLeqZero_Fails()
+    public void Create_FullDiscountWithZeroTotal_Succeeds()
     {
         // Q=1, UP=100, discount=100 → total = 0
         var result = UploadedDocumentDraftLineItem.Create("Item", 1m, 100m, null, 100m, 0m);
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(0m, result.Value.Total);
+    }
+
+    [Fact]
+    public void Create_DiscountGreaterThanGrossWithNegativeTotal_Fails()
+    {
+        var result = UploadedDocumentDraftLineItem.Create("Item", 1m, 100m, null, 101m, -1m);
 
         Assert.True(result.IsFailure);
         Assert.Equal(UploadedDocumentDraftErrors.LineItemTotalInvalid.Code, result.Error.Code);

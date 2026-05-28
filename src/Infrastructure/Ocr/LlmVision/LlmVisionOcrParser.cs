@@ -38,7 +38,10 @@ public static class LlmVisionOcrParser
                     DocumentTextNormalizer.NormalizeLineItemName(GetRequiredString(item, "itemName")),
                     GetRequiredDecimal(item, "quantity"),
                     GetRequiredDecimal(item, "unitPrice"),
-                    GetRequiredDecimal(item, "total")));
+                    GetRequiredDecimal(item, "total"),
+                    GetOptionalDecimal(item, "taxRate"),
+                    GetOptionalDecimal(item, "taxableAmount") ?? 0m,
+                    GetOptionalDecimal(item, "taxAmount") ?? 0m));
             }
 
             return Result.Success(new OcrExtractionResult(

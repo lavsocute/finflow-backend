@@ -110,22 +110,44 @@ var contentType = request.ContentType?.Trim() ?? string.Empty;
             quotaResult = Result.Success(quotaResult.Value with { ApprovedUnitCount = extracted.ProcessedPageCount });
         }
 
-        var validationResult = ValidateOcrPayload(extracted);
+        var reviewableOcrLineItems = extracted.LineItems?
+            .Where(item => item.Total >= 0m)
+            .ToList() ?? [];
+
+        var validationResult = ValidateOcrPayload(reviewableOcrLineItems);
         if (validationResult.IsFailure)
             return Result.Failure<DocumentOcrDraftResponse>(validationResult.Error);
 
-        var lineItems = extracted.LineItems
-            .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+        var lineItems = reviewableOcrLineItems
+            .Select(item => new DocumentOcrDraftLineItemResponse(
+                item.ItemName,
+                item.Quantity,
+                item.UnitPrice,
+                item.Total,
+                TaxRate: NormalizeOcrTaxRate(item.TaxRate),
+                TaxableAmount: item.TaxableAmount,
+                TaxAmount: item.TaxAmount))
             .ToList();
-        var taxLines = (extracted.TaxLines ?? [])
-            .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
+        var taxLines = BuildTaxLines(extracted.TaxLines, lineItems, extracted.Vat)
+            .Select(item => new DocumentTaxLineResponse(
+                item.TaxType,
+                NormalizeOcrTaxRate(item.Rate),
+                item.TaxableAmount,
+                item.TaxAmount))
             .ToList();
 
         var documentId = Guid.NewGuid();
         var uploadedAtUtc = DateTime.UtcNow;
 
         var draftLineItemsResult = lineItems
-            .Select(item => UploadedDocumentDraftLineItem.Create(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+            .Select(item => UploadedDocumentDraftLineItem.CreateLenient(
+                item.ItemName,
+                item.Quantity,
+                item.UnitPrice,
+                item.Total,
+                item.TaxRate,
+                item.TaxableAmount,
+                item.TaxAmount))
             .ToList();
 
         var firstFailure = draftLineItemsResult.FirstOrDefault(r => r.IsFailure);
@@ -225,7 +247,16 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
             draft.LineItems
-                .Select(item => new DocumentOcrDraftLineItemResponse(item.ItemName, item.Quantity, item.UnitPrice, item.Total))
+                .Select(item => new DocumentOcrDraftLineItemResponse(
+                    item.ItemName,
+                    item.Quantity,
+                    item.UnitPrice,
+                    item.Total,
+                    item.DiscountPercent,
+                    item.DiscountAmount,
+                    item.TaxRate,
+                    item.TaxableAmount,
+                    item.TaxAmount))
                 .ToList(),
             draft.TaxLines
                 .Select(item => new DocumentTaxLineResponse(item.TaxType, item.Rate, item.TaxableAmount, item.TaxAmount))
@@ -239,12 +270,12 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
         return Result.Success(response);
     }
 
-    private static Result ValidateOcrPayload(OcrExtractionResult extracted)
+    private static Result ValidateOcrPayload(IReadOnlyList<OcrExtractionLineItem> lineItems)
     {
-        if (extracted.LineItems is null || extracted.LineItems.Count == 0)
+        if (lineItems.Count == 0)
             return Result.Failure(UploadedDocumentDraftErrors.LineItemRequired);
 
-        foreach (var lineItem in extracted.LineItems)
+        foreach (var lineItem in lineItems)
         {
             if (string.IsNullOrWhiteSpace(lineItem.ItemName))
                 return Result.Failure(UploadedDocumentDraftErrors.LineItemNameRequired);
@@ -260,6 +291,54 @@ var draftResult = UploadedDocumentDraft.CreateSuggested(
         }
 
         return Result.Success();
+    }
+
+    private static IReadOnlyList<DocumentTaxLineResponse> BuildTaxLines(
+        IReadOnlyList<OcrExtractionTaxLine>? extractedTaxLines,
+        IReadOnlyList<DocumentOcrDraftLineItemResponse> lineItems,
+        decimal vat)
+    {
+        if (extractedTaxLines is { Count: > 0 })
+        {
+            return extractedTaxLines
+                .Select(item => new DocumentTaxLineResponse(
+                    item.TaxType,
+                    NormalizeOcrTaxRate(item.Rate),
+                    item.TaxableAmount,
+                    item.TaxAmount))
+                .ToList();
+        }
+
+        var lineTaxGroups = lineItems
+            .Where(item => item.TaxRate.HasValue || item.TaxableAmount > 0m || item.TaxAmount > 0m)
+            .GroupBy(item => item.TaxRate)
+            .Select(group => new DocumentTaxLineResponse(
+                "VAT",
+                group.Key,
+                group.Sum(item => item.TaxableAmount),
+                group.Sum(item => item.TaxAmount)))
+            .ToList();
+
+        if (lineTaxGroups.Count == 0)
+            return [];
+
+        var groupedTaxAmount = FinancialInvariants.RoundMoney(lineTaxGroups.Sum(item => item.TaxAmount));
+        if (!FinancialInvariants.EqualsWithinTolerance(groupedTaxAmount, FinancialInvariants.RoundMoney(vat)))
+            return [];
+
+        return lineTaxGroups;
+    }
+
+    private static decimal? NormalizeOcrTaxRate(decimal? rate)
+    {
+        if (!rate.HasValue)
+            return null;
+
+        var value = rate.Value;
+        if (value > 0m && value <= 1m)
+            value *= 100m;
+
+        return decimal.Round(value, 2, MidpointRounding.AwayFromZero);
     }
 
     private static string? BuildPreviewImageDataUrl(string? contentType, byte[]? imageData)

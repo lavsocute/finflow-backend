@@ -85,6 +85,26 @@ public sealed class LlmVisionOcrParserTests
     }
 
     [Fact]
+    public void Parse_ReturnsLineItemTaxFields_WhenLlmExtractsMultiRateVat()
+    {
+        const string json =
+            """
+            {"vendorName":"Co.op Mart","reference":"COOP-2026-0001","documentDate":"2026-05-27","extractedInvoiceDueDate":null,"category":"Groceries","vendorTaxId":"0312345678","subtotal":300000.00,"vat":25000.00,"totalAmount":325000.00,"taxLines":[{"taxType":"VAT","rate":5.00,"taxableAmount":100000.00,"taxAmount":5000.00},{"taxType":"VAT","rate":10.00,"taxableAmount":200000.00,"taxAmount":20000.00}],"lineItems":[{"itemName":"Fresh food","quantity":1,"unitPrice":100000.00,"taxRate":5.00,"taxableAmount":100000.00,"taxAmount":5000.00,"total":100000.00},{"itemName":"Household item","quantity":1,"unitPrice":200000.00,"taxRate":10.00,"taxableAmount":200000.00,"taxAmount":20000.00,"total":200000.00}]}
+            """;
+
+        var result = LlmVisionOcrParser.Parse(json, "groq");
+
+        Assert.True(result.IsSuccess, result.Error.Description);
+        Assert.Equal(2, result.Value.TaxLines.Count);
+        Assert.Equal(5.00m, result.Value.LineItems[0].TaxRate);
+        Assert.Equal(100000.00m, result.Value.LineItems[0].TaxableAmount);
+        Assert.Equal(5000.00m, result.Value.LineItems[0].TaxAmount);
+        Assert.Equal(10.00m, result.Value.LineItems[1].TaxRate);
+        Assert.Equal(200000.00m, result.Value.LineItems[1].TaxableAmount);
+        Assert.Equal(20000.00m, result.Value.LineItems[1].TaxAmount);
+    }
+
+    [Fact]
     public void Parse_Leaves_ExtractedInvoiceDueDate_Null_WhenMissing_AndUsesCategoryFallback()
     {
         const string json =

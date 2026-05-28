@@ -48,7 +48,15 @@ internal sealed class UpdateDocumentDraftCommandHandler
         foreach (var li in cmd.LineItems)
         {
             var r = UploadedDocumentDraftLineItem.Create(
-                li.ItemName, li.Quantity, li.UnitPrice, li.DiscountPercent, li.DiscountAmount, li.Total);
+                li.ItemName,
+                li.Quantity,
+                li.UnitPrice,
+                li.DiscountPercent,
+                li.DiscountAmount,
+                li.Total,
+                li.TaxRate,
+                li.TaxableAmount,
+                li.TaxAmount);
             if (r.IsFailure)
                 return Result.Failure<DocumentOcrDraftResponse>(r.Error);
             lineItems.Add(r.Value);
@@ -182,7 +190,16 @@ internal sealed class UpdateDocumentDraftCommandHandler
             draft.UploadedByStaff,
             draft.ConfidenceLabel,
             draft.LineItems
-                .Select(li => new DocumentOcrDraftLineItemResponse(li.ItemName, li.Quantity, li.UnitPrice, li.Total))
+                .Select(li => new DocumentOcrDraftLineItemResponse(
+                    li.ItemName,
+                    li.Quantity,
+                    li.UnitPrice,
+                    li.Total,
+                    li.DiscountPercent,
+                    li.DiscountAmount,
+                    li.TaxRate,
+                    li.TaxableAmount,
+                    li.TaxAmount))
                 .ToList(),
             draft.TaxLines
                 .Select(taxLine => new DocumentTaxLineResponse(taxLine.TaxType, taxLine.Rate, taxLine.TaxableAmount, taxLine.TaxAmount))
