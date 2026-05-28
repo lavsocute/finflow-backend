@@ -32,6 +32,7 @@ using FinFlow.Infrastructure.Ocr;
 using FinFlow.Infrastructure.Ocr.Groq;
 using FinFlow.Infrastructure.Ocr.OpenRouter;
 using FinFlow.Infrastructure.Ocr.Pdf;
+using FinFlow.Infrastructure.Middleware;
 using FinFlow.Infrastructure.Repositories;
 using FinFlow.Infrastructure.Subscriptions;
 using FinFlow.Infrastructure.Vendors;
@@ -56,6 +57,7 @@ public static class DependencyInjection
         services.Configure<EmailDeliveryOptions>(configuration.GetSection("EmailDelivery"));
         services.Configure<SmtpEmailSenderOptions>(configuration.GetSection("EmailSmtp"));
         services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.SectionName));
+        services.Configure<RequestTimeoutOptions>(configuration.GetSection(RequestTimeoutOptions.SectionName));
         services.Configure<GroqProviderOptions>(configuration.GetSection("Ocr:Groq"));
         services.Configure<OpenRouterProviderOptions>(configuration.GetSection("Ocr:OpenRouter"));
 

@@ -15,7 +15,7 @@ public sealed class OcrOptions
     /// <summary>
     /// Per-provider timeout. Beyond this, fall back to next in chain.
     /// </summary>
-    public int ProviderTimeoutSeconds { get; init; } = 30;
+    public int ProviderTimeoutSeconds { get; init; } = 60;
 
     /// <summary>
     /// When true, OCR results are cached by content hash to skip re-extraction

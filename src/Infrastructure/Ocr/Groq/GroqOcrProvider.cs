@@ -19,6 +19,7 @@ public sealed class GroqOcrProvider : IOcrProvider
     {
         PropertyNameCaseInsensitive = true
     };
+    private static readonly JsonElement InvoiceExtractionSchema = CreateInvoiceExtractionSchema();
 
     private readonly ResiliencePipeline<HttpResponseMessage> _retryPipeline;
     private readonly HttpClient _httpClient;
@@ -125,7 +126,8 @@ public sealed class GroqOcrProvider : IOcrProvider
                 parseResult.Value.LineItems,
                 processedPageCount,
                 wasTruncated,
-                parseResult.Value.CurrencyCode));
+                parseResult.Value.CurrencyCode,
+                parseResult.Value.TaxLines));
         }
         catch (HttpRequestException)
         {
@@ -175,7 +177,10 @@ public sealed class GroqOcrProvider : IOcrProvider
             _options.Model,
             [
                 new GroqChatMessage("user", userContent)
-            ]);
+            ],
+            ResponseFormat: new GroqResponseFormat(
+                "json_schema",
+                new GroqJsonSchema("invoice_extraction", false, InvoiceExtractionSchema)));
     }
 
     private static Uri BuildChatCompletionsUri(string baseUrl)
@@ -185,5 +190,76 @@ public sealed class GroqOcrProvider : IOcrProvider
             : baseUrl.TrimEnd('/') + "/";
 
         return new Uri(new Uri(normalizedBaseUrl, UriKind.Absolute), "chat/completions");
+    }
+
+    private static JsonElement CreateInvoiceExtractionSchema()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "vendorName": { "type": "string" },
+                "reference": { "type": "string" },
+                "documentDate": { "type": "string", "description": "ISO date formatted yyyy-MM-dd." },
+                "extractedInvoiceDueDate": { "type": ["string", "null"], "description": "ISO date formatted yyyy-MM-dd when present." },
+                "category": { "type": ["string", "null"] },
+                "vendorTaxId": { "type": ["string", "null"] },
+                "currencyCode": { "type": ["string", "null"], "description": "Three-letter ISO 4217 currency code when visible." },
+                "subtotal": { "type": "number" },
+                "vat": { "type": "number" },
+                "totalAmount": { "type": "number" },
+                "lineItems": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "itemName": { "type": "string" },
+                      "quantity": { "type": "number" },
+                      "unitPrice": { "type": "number" },
+                      "discountAmount": { "type": "number" },
+                      "taxRate": { "type": ["number", "null"] },
+                      "taxableAmount": { "type": "number" },
+                      "taxAmount": { "type": "number" },
+                      "total": { "type": "number" }
+                    },
+                    "required": ["itemName", "quantity", "unitPrice", "discountAmount", "taxRate", "taxableAmount", "taxAmount", "total"],
+                    "additionalProperties": false
+                  }
+                },
+                "taxLines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "taxType": { "type": "string" },
+                      "rate": { "type": ["number", "null"] },
+                      "taxableAmount": { "type": "number" },
+                      "taxAmount": { "type": "number" }
+                    },
+                    "required": ["taxType", "rate", "taxableAmount", "taxAmount"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "vendorName",
+                "reference",
+                "documentDate",
+                "extractedInvoiceDueDate",
+                "category",
+                "vendorTaxId",
+                "currencyCode",
+                "subtotal",
+                "vat",
+                "totalAmount",
+                "taxLines",
+                "lineItems"
+              ],
+              "additionalProperties": false
+            }
+            """);
+
+        return document.RootElement.Clone();
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace FinFlow.Infrastructure.Ocr.Groq;
@@ -5,7 +6,17 @@ namespace FinFlow.Infrastructure.Ocr.Groq;
 internal sealed record GroqChatCompletionRequest(
     [property: JsonPropertyName("model")] string Model,
     [property: JsonPropertyName("messages")] IReadOnlyList<GroqChatMessage> Messages,
-    [property: JsonPropertyName("temperature")] float Temperature = 0f);
+    [property: JsonPropertyName("temperature")] float Temperature = 0f,
+    [property: JsonPropertyName("response_format")] GroqResponseFormat? ResponseFormat = null);
+
+internal sealed record GroqResponseFormat(
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("json_schema")] GroqJsonSchema? JsonSchema = null);
+
+internal sealed record GroqJsonSchema(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("strict")] bool Strict,
+    [property: JsonPropertyName("schema")] JsonElement Schema);
 
 internal sealed record GroqChatMessage(
     [property: JsonPropertyName("role")] string Role,
