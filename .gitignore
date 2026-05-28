@@ -39,3 +39,4 @@ BenchmarkDotNet.Artifacts/
 api.log
 tests/Benchmarks/
 tools/
+src/Api/wwwroot/uploads/

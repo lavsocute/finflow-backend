@@ -10,6 +10,7 @@ using FinFlow.Api.GraphQL.Platform;
 using FinFlow.Api.GraphQL.Payments;
 using FinFlow.Api.GraphQL.Subscriptions;
 using FinFlow.Api.GraphQL.Vendors;
+using FinFlow.Api.Endpoints;
 using FinFlow.Api.Observability;
 using FinFlow.Domain.Settings;
 using FinFlow.Infrastructure;
@@ -17,6 +18,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
@@ -163,6 +165,10 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddGraphQLServer()
+    .ModifyRequestOptions(options =>
+    {
+        options.ExecutionTimeout = TimeSpan.FromSeconds(75);
+    })
     .AddQueryType<Query>()
     .AddType<RejectTypeType>()
     .AddTypeExtension<AuthQueries>()
@@ -259,6 +265,15 @@ app.UseCors("AllowAngular");
 
 app.UseForwardedHeaders();
 
+var webRootPath = app.Environment.WebRootPath;
+if (string.IsNullOrWhiteSpace(webRootPath))
+    webRootPath = System.IO.Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+Directory.CreateDirectory(webRootPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(webRootPath)
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -281,6 +296,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.UseWebSockets();
 app.MapGraphQL("/graphql");
+app.MapTenantBrandingAssetEndpoints();
 
 app.Run();
 

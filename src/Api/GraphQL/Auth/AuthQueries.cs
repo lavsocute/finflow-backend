@@ -19,7 +19,8 @@ public record CurrentWorkspacePayload(
     RoleType Role,
     Guid TenantId,
     string TenantCode,
-    string TenantName
+    string TenantName,
+    Guid? DepartmentId
 );
 
 public record PendingTenantApprovalPayload(
@@ -88,7 +89,8 @@ public sealed class AuthQueries
             result.Value.Role,
             result.Value.TenantId,
             result.Value.TenantCode,
-            result.Value.TenantName);
+            result.Value.TenantName,
+            result.Value.DepartmentId);
     }
 
     [Authorize]

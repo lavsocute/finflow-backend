@@ -5,6 +5,7 @@ using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
 using HotChocolate.Types;
 using MediatR;
+using System.Security.Claims;
 using DomainError = FinFlow.Domain.Abstractions.Error;
 
 namespace FinFlow.Api.GraphQL.Bank;
@@ -49,7 +50,8 @@ public sealed class BankExportMutations
     private static Guid GetRequiredGuidClaim(IResolverContext context, string claimType)
     {
         var user = context.Service<IHttpContextAccessor>().HttpContext?.User;
-        var raw = user?.FindFirst(claimType)?.Value;
+        var raw = user?.FindFirst(claimType)?.Value
+            ?? (claimType == "sub" ? user?.FindFirst(ClaimTypes.NameIdentifier)?.Value : null);
         if (Guid.TryParse(raw, out var value))
             return value;
 
@@ -60,7 +62,7 @@ public sealed class BankExportMutations
     private static void EnsureExportRole(IResolverContext context)
     {
         var user = context.Service<IHttpContextAccessor>().HttpContext?.User;
-        var rawRole = user?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+        var rawRole = user?.FindFirst(ClaimTypes.Role)?.Value
             ?? user?.FindFirst("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")?.Value;
 
         if (Enum.TryParse<RoleType>(rawRole, out var role)

@@ -49,7 +49,8 @@ public sealed class GetCurrentWorkspaceQueryHandler : MediatR.IRequestHandler<Ge
             membership.Role,
             tenant.Id,
             tenant.TenantCode,
-            tenant.Name));
+            tenant.Name,
+            membership.DepartmentId));
     }
 
     private async Task<Result<TenantMembershipSummary>> ResolveMembershipAsync(

@@ -52,6 +52,7 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
     public async Task<IReadOnlyList<TenantMembershipSummary>> GetByTenantIdAsync(Guid idTenant, CancellationToken cancellationToken = default) =>
         await _dbContext.Set<TenantMembership>()
             .AsNoTracking()
+            .IgnoreQueryFilters()
             .Where(m => m.IdTenant == idTenant)
             .Select(m => new TenantMembershipSummary(m.Id, m.AccountId, m.IdTenant, m.DepartmentId, m.Role, m.IsOwner, m.IsActive, m.CreatedAt, m.DeactivatedAt, m.DeactivatedBy, m.DeactivatedReason))
             .ToListAsync(cancellationToken);
@@ -76,7 +77,9 @@ internal sealed class TenantMembershipRepository : ITenantMembershipRepository
                 cancellationToken);
 
     public async Task<TenantMembership?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken = default) =>
-        await _dbContext.Set<TenantMembership>().FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        await _dbContext.Set<TenantMembership>()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
 
     public void Add(TenantMembership membership) => _dbContext.Set<TenantMembership>().Add(membership);
     public void Update(TenantMembership membership) => _dbContext.Set<TenantMembership>().Update(membership);

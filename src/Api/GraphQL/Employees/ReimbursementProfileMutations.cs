@@ -7,6 +7,7 @@ using HotChocolate.Authorization;
 using HotChocolate.Resolvers;
 using HotChocolate.Types;
 using MediatR;
+using System.Security.Claims;
 using DomainError = FinFlow.Domain.Abstractions.Error;
 
 namespace FinFlow.Api.GraphQL.Employees;
@@ -120,7 +121,8 @@ public sealed class ReimbursementProfileMutations
     private static Guid GetRequiredGuidClaim(IResolverContext context, string claimType)
     {
         var user = context.Service<IHttpContextAccessor>().HttpContext?.User;
-        var raw = user?.FindFirst(claimType)?.Value;
+        var raw = user?.FindFirst(claimType)?.Value
+            ?? (claimType == "sub" ? user?.FindFirst(ClaimTypes.NameIdentifier)?.Value : null);
         if (Guid.TryParse(raw, out var value))
             return value;
 
