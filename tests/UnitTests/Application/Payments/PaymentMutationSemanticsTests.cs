@@ -78,6 +78,25 @@ public sealed class PaymentMutationSemanticsTests
         Assert.Equal("Duplicate reimbursement request", fixture.ScheduledPayment.RejectionReason);
     }
 
+    [Fact]
+    public async Task RecordPayment_WhenExistingPaymentWasRejected_Should_RescheduleExistingPayment()
+    {
+        var fixture = MutationFixture.CreateWithRejectedPayment();
+        var handler = fixture.CreateRecordHandler();
+
+        var result = await handler.Handle(
+            new RecordPaymentCommand(fixture.Document.Id, "Cash", "retry payout"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(fixture.PaymentRepository.AddedPayment);
+        Assert.Equal(PaymentStatus.Pending, fixture.ScheduledPayment!.Status);
+        Assert.Equal(PaymentMethod.Cash, fixture.ScheduledPayment.Method);
+        Assert.Null(fixture.ScheduledPayment.RejectionReason);
+        Assert.Null(fixture.ScheduledPayment.RejectedAt);
+        Assert.Equal("retry payout", fixture.ScheduledPayment.Notes);
+    }
+
     private sealed class MutationFixture
     {
         private MutationFixture(
@@ -201,6 +220,17 @@ public sealed class PaymentMutationSemanticsTests
                 fixture.CurrentTenant,
                 fixture.UnitOfWork,
                 payment);
+        }
+
+        public static MutationFixture CreateWithRejectedPayment()
+        {
+            var fixture = CreateWithScheduledPayment();
+            var rejectResult = fixture.ScheduledPayment!.Reject(
+                fixture.MembershipId,
+                PaymentRejectType.Other,
+                "wrong payout details");
+            Assert.True(rejectResult.IsSuccess);
+            return fixture;
         }
 
         private static ReviewedDocument CreateApprovedDocument(Guid tenantId, Guid membershipId, Guid departmentId, decimal totalAmount)

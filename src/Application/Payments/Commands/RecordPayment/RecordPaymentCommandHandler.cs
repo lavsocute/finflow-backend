@@ -66,10 +66,6 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
         if (document.Status != ReviewedDocumentStatus.Approved)
             return Result.Failure<PaymentResponse>(PaymentErrors.DocumentNotApproved);
 
-        var hasPayment = await _paymentRepository.ExistsByDocumentIdAsync(request.DocumentId, cancellationToken);
-        if (hasPayment)
-            return Result.Failure<PaymentResponse>(PaymentErrors.DocumentAlreadyHasPayment);
-
         if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var paymentMethod))
             return Result.Failure<PaymentResponse>(new Error("Payment.InvalidMethod", $"Payment method '{request.PaymentMethod}' is not supported."));
 
@@ -85,6 +81,30 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
                 document.MembershipId, cancellationToken);
             if (profile is null || !profile.HasBankInfo)
                 return Result.Failure<PaymentResponse>(PaymentErrors.BankInfoMissing);
+        }
+
+        var existingPayment = await _paymentRepository.GetByDocumentIdAsync(request.DocumentId, cancellationToken);
+        if (existingPayment is not null)
+        {
+            if (existingPayment.Status is not (PaymentStatus.Rejected or PaymentStatus.Cancelled))
+                return Result.Failure<PaymentResponse>(PaymentErrors.DocumentAlreadyHasPayment);
+
+            var retryPayment = await _paymentRepository.GetEntityByIdAsync(existingPayment.Id, cancellationToken);
+            if (retryPayment is null)
+                return Result.Failure<PaymentResponse>(PaymentErrors.NotFound);
+
+            var retryResult = retryPayment.Reschedule(
+                _currentTenant.MembershipId.Value,
+                paymentMethod,
+                request.Notes);
+
+            if (retryResult.IsFailure)
+                return Result.Failure<PaymentResponse>(retryResult.Error);
+
+            _paymentRepository.Update(retryPayment);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            return Result.Success(ToResponse(retryPayment));
         }
 
         // Multi-currency: derive from document. Document carries its native currency
@@ -115,19 +135,20 @@ internal sealed class RecordPaymentCommandHandler : IRequestHandler<RecordPaymen
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(new PaymentResponse(
-            payment.Id,
-            payment.DocumentId,
-            payment.Amount,
-            payment.CurrencyCode,
-            payment.AmountInBaseCurrency,
-            payment.BaseCurrencyCode,
-            payment.ExchangeRate,
-            payment.Method.ToString(),
-            payment.Status.ToString(),
-            payment.RecordedAt,
-            payment.RecordedByMembershipId,
-            payment.Notes));
+        return Result.Success(ToResponse(payment));
     }
 
+    private static PaymentResponse ToResponse(Payment payment) => new(
+        payment.Id,
+        payment.DocumentId,
+        payment.Amount,
+        payment.CurrencyCode,
+        payment.AmountInBaseCurrency,
+        payment.BaseCurrencyCode,
+        payment.ExchangeRate,
+        payment.Method.ToString(),
+        payment.Status.ToString(),
+        payment.RecordedAt,
+        payment.RecordedByMembershipId,
+        payment.Notes);
 }
