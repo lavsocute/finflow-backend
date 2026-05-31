@@ -203,7 +203,7 @@ public sealed class ChatService : IChatService
         if (prepared.Intent.Mode == ChatExecutionMode.General)
         {
             var session = await ResolveSessionAsync(prepared.Request, ct);
-            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct);
+            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct, prepared.AuthorizationProfile);
             var generalAssistantMessage = await PersistConversationAsync(prepared.Request, session, general.Answer, ct);
             await RecordUsageAsync(prepared.Request, prepared.QuotaDecision, general.TokenUsage, ct);
 
@@ -690,7 +690,7 @@ public sealed class ChatService : IChatService
 
         if (prepared.Intent.Mode == ChatExecutionMode.General)
         {
-            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct);
+            var general = await ExecuteGeneralAsync(prepared.EffectiveQuery, prepared.Intent, session.SessionId, ct, prepared.AuthorizationProfile);
             yield return new ChatStreamEvent(ChatStreamEventKind.Token, TokenChunk: general.Answer);
 
             var generalAssistantMessage = await PersistConversationAsync(
@@ -891,12 +891,31 @@ public sealed class ChatService : IChatService
         };
 
         var jsonContent = JsonSerializer.Serialize(requestBody, SerializerOptions);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _chatCompletionsUri);
-        httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode)
+        // Streaming path: inline retry for transient 5xx/timeout (best-effort).
+        HttpResponseMessage? response = null;
+        var transientAttempts = 0;
+        while (true)
         {
+            // HttpRequestMessage cannot be re-sent, so build a fresh one each attempt.
+            using var perAttemptRequest = new HttpRequestMessage(HttpMethod.Post, _chatCompletionsUri)
+            {
+                Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
+            };
+            response = await _httpClient.SendAsync(perAttemptRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (response.IsSuccessStatusCode) break;
+
+            var status = (int)response.StatusCode;
+            var transient = status >= 500 || response.StatusCode == HttpStatusCode.RequestTimeout || response.StatusCode == HttpStatusCode.TooManyRequests;
+            if (transient && transientAttempts < 2)
+            {
+                transientAttempts++;
+                _logger.LogWarning("Groq stream returned transient {StatusCode}; retry attempt {Attempt}/2.", response.StatusCode, transientAttempts);
+                response.Dispose();
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * transientAttempts), ct);
+                continue;
+            }
+
             _logger.LogWarning("Groq API returned error status {StatusCode}", response.StatusCode);
             throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.");
         }
@@ -1007,11 +1026,18 @@ public sealed class ChatService : IChatService
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < maxAttempts)
+                    var status = (int)response.StatusCode;
+                    var transient = response.StatusCode == HttpStatusCode.TooManyRequests
+                                    || response.StatusCode == HttpStatusCode.RequestTimeout
+                                    || (status >= 500 && status <= 599);
+                    if (transient && attempt < maxAttempts)
                     {
-                        var delay = ResolveRetryDelay(response, responseText, attempt);
+                        var delay = response.StatusCode == HttpStatusCode.TooManyRequests
+                            ? ResolveRetryDelay(response, responseText, attempt)
+                            : TimeSpan.FromMilliseconds(400 * attempt);
                         _logger.LogWarning(
-                            "Groq API returned TooManyRequests; retrying attempt {Attempt}/{MaxAttempts} after {DelayMs} ms.",
+                            "Groq API returned transient {StatusCode}; retrying attempt {Attempt}/{MaxAttempts} after {DelayMs} ms.",
+                            response.StatusCode,
                             attempt + 1,
                             maxAttempts,
                             delay.TotalMilliseconds);
@@ -1039,6 +1065,17 @@ public sealed class ChatService : IChatService
             _logger.LogError(ex, "Failed to get response from Groq");
             throw new InvalidOperationException("Dịch vụ tạm thời gián đoạn. Vui lòng thử lại sau.", ex);
         }
+    }
+
+    private static HttpRequestMessage CloneRequestForRetry(HttpRequestMessage original, string jsonContent)
+    {
+        var clone = new HttpRequestMessage(original.Method, original.RequestUri);
+        clone.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+        foreach (var header in original.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+        return clone;
     }
 
     private static TimeSpan ResolveRetryDelay(HttpResponseMessage response, string responseText, int attempt)
@@ -1660,6 +1697,15 @@ public sealed class ChatService : IChatService
             return new ReportingExecutionResult(comparisonAnswer.Answer, comparisonAnswer.RecordCount);
         }
 
+        // OwnSummary must be checked BEFORE the Summary/Aggregate branch: an own-spending
+        // query ("tháng này tôi tiêu bao nhiêu") classifies as Family=OwnSummary with
+        // Task=Summary, and would otherwise fall into the tenant-wide scoped summary below.
+        if (intent.Family == ChatIntentFamily.OwnSummary)
+        {
+            var ownAnswer = await _chatReportingService.BuildOwnExpenseSummaryAsync(profile, from, to, ct);
+            return new ReportingExecutionResult(ownAnswer.Answer, ownAnswer.RecordCount);
+        }
+
         if (reportingTask == ChatReportingTask.Summary || intent.Family == ChatIntentFamily.Aggregate)
         {
             var aggregateAnswer = await _chatReportingService.BuildScopedExpenseSummaryAsync(profile, query, from, to, ct);
@@ -1807,7 +1853,8 @@ public sealed class ChatService : IChatService
         string query,
         ChatIntentClassification classification,
         Guid sessionId,
-        CancellationToken ct)
+        CancellationToken ct,
+        ChatAuthorizationProfile? actor = null)
     {
         var history = await _chatRepository.GetMessagesBySessionAsync(sessionId, ct);
         var limitedHistory = history
@@ -1815,14 +1862,15 @@ public sealed class ChatService : IChatService
             .Select(m => ChatMessage.Create(m.SessionId, m.SenderId, m.Role, ChatPromptSanitizer.Sanitize(m.Content)))
             .ToList();
 
-        return _promptBuilder.BuildGeneralPrompt(query, classification, limitedHistory);
+        return _promptBuilder.BuildGeneralPrompt(query, classification, limitedHistory, actor);
     }
 
     private async Task<GeneralExecutionResult> ExecuteGeneralAsync(
         string query,
         ChatIntentClassification classification,
         Guid sessionId,
-        CancellationToken ct)
+        CancellationToken ct,
+        ChatAuthorizationProfile? actor = null)
     {
         if (classification.Family == ChatIntentFamily.LowSignal)
             return new GeneralExecutionResult(LowSignalClarificationMessage, null);
@@ -1830,7 +1878,7 @@ public sealed class ChatService : IChatService
         if (classification.Family == ChatIntentFamily.Greeting)
             return new GeneralExecutionResult(GreetingMessage, null);
 
-        var prompt = await BuildGeneralPromptAsync(query, classification, sessionId, ct);
+        var prompt = await BuildGeneralPromptAsync(query, classification, sessionId, ct, actor);
         var (answer, totalTokens) = await CallOpenRouterAsync(prompt, ct);
 
         if (_outputFilter is not null)
@@ -2211,7 +2259,7 @@ public sealed class ChatService : IChatService
             }
             else if (subPrepared.Intent.Mode == ChatExecutionMode.General)
             {
-                var general = await ExecuteGeneralAsync(subQuery, subPrepared.Intent, prepared.Request.SessionId ?? Guid.NewGuid(), ct);
+                var general = await ExecuteGeneralAsync(subQuery, subPrepared.Intent, prepared.Request.SessionId ?? Guid.NewGuid(), ct, subPrepared.AuthorizationProfile);
                 answer = general.Answer;
             }
             else
@@ -2312,9 +2360,9 @@ public sealed class ChatService : IChatService
     );
 
     private record OpenRouterUsage(
-        int? PromptTokens,
-        int? CompletionTokens,
-        int? TotalTokens
+        [property: System.Text.Json.Serialization.JsonPropertyName("prompt_tokens")] int? PromptTokens,
+        [property: System.Text.Json.Serialization.JsonPropertyName("completion_tokens")] int? CompletionTokens,
+        [property: System.Text.Json.Serialization.JsonPropertyName("total_tokens")] int? TotalTokens
     );
 
     private sealed record PreparedChatExecution(

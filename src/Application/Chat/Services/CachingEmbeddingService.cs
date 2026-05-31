@@ -19,15 +19,21 @@ public sealed class CachingEmbeddingService : IEmbeddingService
     private readonly IEmbeddingService _inner;
     private readonly ICacheService _cache;
     private readonly ILogger<CachingEmbeddingService> _logger;
+    private readonly string _spaceId;
 
     public CachingEmbeddingService(
         IEmbeddingService inner,
         ICacheService cache,
-        ILogger<CachingEmbeddingService> logger)
+        ILogger<CachingEmbeddingService> logger,
+        string? embeddingSpaceId = null)
     {
         _inner = inner;
         _cache = cache;
         _logger = logger;
+        // Distinguishes embedding spaces (e.g. local-hashing vs a specific neural model).
+        // WITHOUT this, switching providers returns stale vectors from the prior space
+        // because the cache key was content-only — cross-space cache poisoning.
+        _spaceId = string.IsNullOrWhiteSpace(embeddingSpaceId) ? "default" : embeddingSpaceId;
     }
 
     public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
@@ -127,10 +133,10 @@ public sealed class CachingEmbeddingService : IEmbeddingService
         return resultArray;
     }
 
-    private static string BuildKey(string text)
+    private string BuildKey(string text)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return CacheKeyPrefix + Convert.ToHexString(bytes);
+        return CacheKeyPrefix + _spaceId + ":" + Convert.ToHexString(bytes);
     }
 
     private sealed record EmbeddingCacheEntry(float[] Vector);

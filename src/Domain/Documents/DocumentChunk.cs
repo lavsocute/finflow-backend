@@ -77,4 +77,16 @@ public class DocumentChunk : Entity, IMultiTenant
             CreatedAt = original.CreatedAt
         };
     }
+
+    /// <summary>
+    /// Replaces the embedding vector in place. Used by the bulk re-embed maintenance job
+    /// when the embedding provider/model changes and existing vectors must be regenerated
+    /// in the new embedding space.
+    /// </summary>
+    public void ReplaceEmbedding(float[] embedding)
+    {
+        if (embedding is null || embedding.Length == 0)
+            throw new ArgumentException("Embedding required.", nameof(embedding));
+        Embedding = embedding;
+    }
 }

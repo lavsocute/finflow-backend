@@ -1,3 +1,4 @@
+using FinFlow.Application.Chat.Cascade;
 using FinFlow.Application.Common.Audit;
 using FinFlow.Application.Common.Notifications;
 using FinFlow.Domain.Abstractions;
@@ -74,6 +75,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatIntentExemplar> ChatIntentExemplars => Set<ChatIntentExemplar>();
     public DbSet<FinFlow.Domain.ExchangeRates.ExchangeRateHistory> ExchangeRateHistory => Set<FinFlow.Domain.ExchangeRates.ExchangeRateHistory>();
     public DbSet<FinFlow.Domain.Employees.EmployeeReimbursementProfile> EmployeeReimbursementProfiles => Set<FinFlow.Domain.Employees.EmployeeReimbursementProfile>();
     public DbSet<FinFlow.Domain.Notifications.Notification> Notifications => Set<FinFlow.Domain.Notifications.Notification>();
@@ -364,5 +366,11 @@ public class ApplicationDbContext : DbContext, IUnitOfWork
                 value => value.ToArray()))
             .HasColumnType($"vector({DocumentChunkEmbeddingDimensions})");
 
+        var intentExemplar = builder.Entity<ChatIntentExemplar>();
+        intentExemplar.Property(x => x.Embedding)
+            .HasConversion(new ValueConverter<float[], Vector>(
+                value => new Vector(value),
+                value => value.ToArray()))
+            .HasColumnType($"vector({DocumentChunkEmbeddingDimensions})");
     }
 }

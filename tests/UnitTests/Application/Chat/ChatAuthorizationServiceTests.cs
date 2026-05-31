@@ -1,8 +1,11 @@
 using FinFlow.Application.Chat.Services;
+using FinFlow.Domain.Accounts;
+using FinFlow.Domain.Departments;
 using FinFlow.Domain.Documents;
 using FinFlow.Domain.Enums;
 using FinFlow.Domain.Interfaces;
 using FinFlow.Domain.TenantMemberships;
+using FinFlow.Domain.Tenants;
 using Moq;
 
 namespace FinFlow.UnitTests.Application.Chat;
@@ -25,7 +28,16 @@ public class ChatAuthorizationServiceTests
         currentTenant.SetupGet(x => x.Id).Returns(currentTenantId);
         currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(isSuperAdmin);
 
-        return new ChatAuthorizationService(repository.Object, currentTenant.Object);
+        var tenantRepository = new Mock<ITenantRepository>();
+        var accountRepository = new Mock<IAccountRepository>();
+        var departmentRepository = new Mock<IDepartmentRepository>();
+
+        return new ChatAuthorizationService(
+            repository.Object,
+            currentTenant.Object,
+            tenantRepository.Object,
+            accountRepository.Object,
+            departmentRepository.Object);
     }
 
     [Fact]

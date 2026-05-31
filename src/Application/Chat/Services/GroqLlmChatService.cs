@@ -51,31 +51,73 @@ public sealed class GroqLlmChatService : ILlmChatService
         };
 
         var jsonContent = JsonSerializer.Serialize(requestBody, SerializerOptions);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsUri());
-        httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-        using var response = await _httpClient.SendAsync(httpRequest, ct);
-        if (!response.IsSuccessStatusCode)
+        // Retry transient 429s (Groq enforces per-org tokens-per-minute). Honor Retry-After
+        // when present, else exponential backoff. Without this, a momentary TPM spike fails
+        // the whole classification instead of waiting out a sub-second window.
+        const int maxAttempts = 4;
+        for (var attempt = 1; ; attempt++)
         {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsUri());
+            httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+            using var response = await _httpClient.SendAsync(httpRequest, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                var okText = await response.Content.ReadAsStringAsync(ct);
+                var okJson = JsonSerializer.Deserialize<GroqChatResponse>(okText, SerializerOptions);
+                if (okJson?.Choices == null || okJson.Choices.Count == 0)
+                    throw new InvalidOperationException("No response from Groq");
+                return new LlmChatResult(
+                    okJson.Choices[0].Message.Content,
+                    okJson.Usage?.TotalTokens,
+                    okJson.Usage?.PromptTokens,
+                    okJson.Usage?.CompletionTokens);
+            }
+
             var error = await response.Content.ReadAsStringAsync(ct);
+            var isRateLimit = (int)response.StatusCode == 429;
+            if (isRateLimit && attempt < maxAttempts)
+            {
+                var wait = ResolveRetryDelay(response, error, attempt);
+                _logger.LogWarning(
+                    "Groq LLM 429 (attempt {Attempt}/{Max}); retrying after {DelayMs}ms.",
+                    attempt, maxAttempts, wait.TotalMilliseconds);
+                await Task.Delay(wait, ct);
+                continue;
+            }
+
             _logger.LogWarning("Groq LLM chat returned {StatusCode}: {Error}", response.StatusCode, error);
             throw new LlmProviderException(
                 $"Groq API error: {response.StatusCode}",
                 response.StatusCode,
                 error);
         }
+    }
 
-        var responseText = await response.Content.ReadAsStringAsync(ct);
-        var json = JsonSerializer.Deserialize<GroqChatResponse>(responseText, SerializerOptions);
+    private static TimeSpan ResolveRetryDelay(HttpResponseMessage response, string body, int attempt)
+    {
+        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+            return delta < TimeSpan.FromSeconds(10) ? delta : TimeSpan.FromSeconds(10);
 
-        if (json?.Choices == null || json.Choices.Count == 0)
-            throw new InvalidOperationException("No response from Groq");
+        // Groq embeds "Please try again in 3.75s" in the error body.
+        var marker = "try again in ";
+        var idx = body.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var start = idx + marker.Length;
+            var end = body.IndexOf('s', start);
+            if (end > start &&
+                double.TryParse(body.AsSpan(start, end - start),
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var secs) &&
+                secs > 0)
+            {
+                return TimeSpan.FromSeconds(Math.Min(secs + 0.5, 10));
+            }
+        }
 
-        return new LlmChatResult(
-            json.Choices[0].Message.Content,
-            json.Usage?.TotalTokens,
-            json.Usage?.PromptTokens,
-            json.Usage?.CompletionTokens);
+        return TimeSpan.FromMilliseconds(Math.Min(500 * Math.Pow(2, attempt - 1), 8000));
     }
 
     public async IAsyncEnumerable<LlmStreamEvent> ChatStreamAsync(

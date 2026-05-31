@@ -21,4 +21,8 @@
     <InternalsVisibleTo Include="FinFlow.UnitTests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Chat\Cascade\intent-exemplars.json" />
+  </ItemGroup>
+
 </Project>
