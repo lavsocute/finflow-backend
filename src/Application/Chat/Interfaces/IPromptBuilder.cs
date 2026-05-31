@@ -21,7 +21,8 @@ public interface IPromptBuilder
     Prompt BuildGeneralPrompt(
         string query,
         ChatIntentClassification classification,
-        IReadOnlyList<ChatMessage> conversationHistory);
+        IReadOnlyList<ChatMessage> conversationHistory,
+        ChatAuthorizationProfile? actor = null);
 }
 
 public record Prompt(
@@ -42,7 +43,10 @@ public record ChatAuthorizationProfile
         IEnumerable<Guid> allowedDepartmentIds,
         bool canAccessAllTenantData,
         IEnumerable<DocumentChunkType> allowedChunkTypes,
-        ChatCapabilities capabilities)
+        ChatCapabilities capabilities,
+        string? userEmail = null,
+        string? userFullName = null,
+        string? departmentName = null)
     {
         TenantId = tenantId;
         TenantName = tenantName;
@@ -53,6 +57,9 @@ public record ChatAuthorizationProfile
         CanAccessAllTenantData = canAccessAllTenantData;
         AllowedChunkTypes = CopySet(allowedChunkTypes);
         Capabilities = capabilities;
+        UserEmail = userEmail;
+        UserFullName = userFullName;
+        DepartmentName = departmentName;
     }
 
     public Guid TenantId { get; init; }
@@ -64,6 +71,18 @@ public record ChatAuthorizationProfile
     public bool CanAccessAllTenantData { get; init; }
     public IReadOnlySet<DocumentChunkType> AllowedChunkTypes { get; init; }
     public ChatCapabilities Capabilities { get; init; }
+
+    /// <summary>
+    /// Email of the chatting user. Used for prompt context so the bot can correctly
+    /// answer "what is my email/role/workspace" without going through RAG.
+    /// </summary>
+    public string? UserEmail { get; init; }
+
+    /// <summary>Optional friendly name of the chatting user.</summary>
+    public string? UserFullName { get; init; }
+
+    /// <summary>Friendly name of the user's department, if assigned.</summary>
+    public string? DepartmentName { get; init; }
 
     protected static IReadOnlySet<T> CopySet<T>(IEnumerable<T> values) =>
         values switch
@@ -125,7 +144,10 @@ public record ChatAccessScope : ChatAuthorizationProfile
         bool canAccessAllTenantData,
         IEnumerable<DocumentChunkType> allowedChunkTypes,
         BudgetAccessLevel budgetAccess,
-        ApprovalAccessLevel approvalAccess)
+        ApprovalAccessLevel approvalAccess,
+        string? userEmail = null,
+        string? userFullName = null,
+        string? departmentName = null)
         : base(
             tenantId,
             tenantName,
@@ -135,7 +157,10 @@ public record ChatAccessScope : ChatAuthorizationProfile
             permittedDepartmentIds,
             canAccessAllTenantData,
             allowedChunkTypes,
-            CreateCapabilities(role, budgetAccess, approvalAccess, canAccessAllTenantData))
+            CreateCapabilities(role, budgetAccess, approvalAccess, canAccessAllTenantData),
+            userEmail,
+            userFullName,
+            departmentName)
     {
         PermittedDepartmentIds = CopySet(permittedDepartmentIds);
         OwnerMembershipId = ownerMembershipId;

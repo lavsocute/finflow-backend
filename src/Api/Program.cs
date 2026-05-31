@@ -250,6 +250,55 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
 }
 
+// Maintenance CLI: `dotnet run -- reembed-chunks [batchSize]` regenerates all
+// DocumentChunk embeddings with the current provider, then exits without serving.
+if (args.Contains("reembed-chunks", StringComparer.OrdinalIgnoreCase))
+{
+    var batchSize = 50;
+    var sizeArg = args.SkipWhile(a => !string.Equals(a, "reembed-chunks", StringComparison.OrdinalIgnoreCase))
+        .Skip(1).FirstOrDefault();
+    if (int.TryParse(sizeArg, out var parsed) && parsed > 0)
+        batchSize = parsed;
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var job = scope.ServiceProvider.GetRequiredService<FinFlow.Infrastructure.Chat.DocumentChunkReembedJob>();
+    var updated = await job.RunAsync(batchSize, CancellationToken.None);
+    Console.WriteLine($"[reembed-chunks] Completed. Updated {updated} chunks.");
+    return;
+}
+
+// Offline eval CLI: `dotnet run -- eval-intents [casesDir] [outFile]` runs the real
+// cascade classifier against persona test cases and prints accuracy/F1/failures.
+// Does NOT hit the HTTP rate limiter or answer-gen LLM.
+if (args.Contains("eval-intents", StringComparer.OrdinalIgnoreCase))
+{
+    var rest = args.SkipWhile(a => !string.Equals(a, "eval-intents", StringComparison.OrdinalIgnoreCase)).Skip(1).ToArray();
+    var casesDir = rest.ElementAtOrDefault(0) ?? "docs/chatbot-rebuild/eval-cases";
+    var outFile = rest.ElementAtOrDefault(1);
+
+    await using var scope = app.Services.CreateAsyncScope();
+    // Hydrate exemplar registry before evaluating (startup hosted service may not have run in CLI path).
+    try
+    {
+        var sync = scope.ServiceProvider.GetRequiredService<FinFlow.Application.Chat.Cascade.IntentExemplarSyncService>();
+        var useLocal = app.Configuration.GetValue<bool>("Embedding:UseLocal");
+        var dims = app.Configuration.GetValue<int?>("Embedding:OpenRouter:ExpectedDimensions") ?? 2048;
+        var modelId = useLocal
+            ? $"local-hashing:{dims}"
+            : $"openrouter:{app.Configuration.GetValue<string>("Embedding:OpenRouter:Model")}:{dims}";
+        await sync.SyncAsync(modelId, CancellationToken.None);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[eval-intents] exemplar sync warning: {ex.Message}");
+    }
+
+    var harness = scope.ServiceProvider.GetRequiredService<FinFlow.Infrastructure.Chat.IntentEvalHarness>();
+    var embeddingOnly = rest.Contains("--embedding-only", StringComparer.OrdinalIgnoreCase);
+    var code = await harness.RunAsync(casesDir, outFile, CancellationToken.None, embeddingOnly);
+    return;
+}
+
 app.UseSerilogRequestLogging(options =>
 {
     options.EnrichDiagnosticContext = RequestLogEnricher.Enrich;

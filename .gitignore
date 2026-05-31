@@ -37,6 +37,9 @@ appsettings.*.json
 ## Local benchmark & runtime artifacts
 BenchmarkDotNet.Artifacts/
 api.log
+api-err.log
+api-out.log
+src/Api/logs/
 tests/Benchmarks/
 tools/
 src/Api/wwwroot/uploads/

@@ -1,5 +1,6 @@
 using FinFlow.Application.Common.Abstractions;
 using FinFlow.Application.Membership.Authorization;
+using FinFlow.Application.Chat.Cascade;
 using FinFlow.Application.Chat.Interfaces;
 using FinFlow.Application.Chat.Services;
 using FinFlow.Application.Budgets.Services;
@@ -29,6 +30,7 @@ using FinFlow.Infrastructure.Caching;
 using FinFlow.Infrastructure.Documents;
 using FinFlow.Infrastructure.Departments;
 using FinFlow.Infrastructure.Ocr;
+using FinFlow.Infrastructure.Ocr.Paddle;
 using FinFlow.Infrastructure.Ocr.Groq;
 using FinFlow.Infrastructure.Ocr.OpenRouter;
 using FinFlow.Infrastructure.Ocr.Pdf;
@@ -60,6 +62,7 @@ public static class DependencyInjection
         services.Configure<RequestTimeoutOptions>(configuration.GetSection(RequestTimeoutOptions.SectionName));
         services.Configure<GroqProviderOptions>(configuration.GetSection("Ocr:Groq"));
         services.Configure<OpenRouterProviderOptions>(configuration.GetSection("Ocr:OpenRouter"));
+        services.Configure<PaddleProviderOptions>(configuration.GetSection("Ocr:Paddle"));
 
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new ArgumentNullException(nameof(configuration));
@@ -123,6 +126,12 @@ public static class DependencyInjection
                     new AuthenticationHeaderValue("Bearer", apiKey);
             }
         });
+        services.AddHttpClient<PaddleOcrProvider>((sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<PaddleProviderOptions>>().Value;
+            client.BaseAddress = new Uri(options.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(options.RequestTimeoutSeconds);
+        });
         services.AddHttpClient<OpenRouterOcrProvider>((sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<OpenRouterProviderOptions>>().Value;
@@ -164,10 +173,22 @@ public static class DependencyInjection
         });
         services.AddScoped<IEmbeddingService>(sp =>
         {
-            var inner = sp.GetRequiredService<OpenRouterEmbeddingService>();
             var cache = sp.GetRequiredService<ICacheService>();
             var logger = sp.GetRequiredService<ILogger<Application.Chat.Services.CachingEmbeddingService>>();
-            return new Application.Chat.Services.CachingEmbeddingService(inner, cache, logger);
+
+            // Offline/seeded mode: use a fully local, deterministic embedder (no API calls).
+            // Enable via "Embedding:UseLocal": true. Both index + query share this space.
+            var useLocal = configuration.GetValue<bool>("Embedding:UseLocal");
+            var dimensions = configuration.GetValue<int?>("Embedding:OpenRouter:ExpectedDimensions") ?? 2048;
+            if (useLocal)
+            {
+                var local = new LocalHashingEmbeddingService(dimensions);
+                return new Application.Chat.Services.CachingEmbeddingService(local, cache, logger, $"local-hashing:{dimensions}");
+            }
+
+            var inner = sp.GetRequiredService<OpenRouterEmbeddingService>();
+            var model = configuration.GetValue<string>("Embedding:OpenRouter:Model") ?? "openrouter-default";
+            return new Application.Chat.Services.CachingEmbeddingService(inner, cache, logger, $"openrouter:{model}:{dimensions}");
         });
 
         services.Configure<Application.Chat.Services.GroqChatOptions>(configuration.GetSection("Chat"));
@@ -217,6 +238,7 @@ public static class DependencyInjection
         services.AddScoped<Domain.Interfaces.ICurrentTenant, Security.CurrentTenant>();
         services.AddScoped<Domain.Interfaces.ICurrentTenantWriter>(sp =>
             (Security.CurrentTenant)sp.GetRequiredService<Domain.Interfaces.ICurrentTenant>());
+        services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<PaddleOcrProvider>());
         services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<GroqOcrProvider>());
         services.AddScoped<IOcrProvider>(sp => sp.GetRequiredService<OpenRouterOcrProvider>());
         services.AddScoped<IPdfPageRenderer, PdfPageRenderer>();
@@ -256,7 +278,29 @@ public static class DependencyInjection
         services.AddScoped<IRateLimitService, RateLimitService>();
         services.AddScoped<IChatAuthorizationService, ChatAuthorizationService>();
         services.AddScoped<IChatIntentRouter, ChatIntentRouter>();
-        services.AddScoped<IChatIntentPlanner, EnterpriseChatIntentPlanner>();
+        services.AddScoped<EnterpriseChatIntentPlanner>();
+
+        services.Configure<CascadeOptions>(configuration.GetSection(CascadeOptions.SectionName));
+        services.Configure<LlmIntentClassifierOptions>(configuration.GetSection(LlmIntentClassifierOptions.SectionName));
+        services.AddScoped<IChatIntentExemplarRepository, ChatIntentExemplarRepository>();
+        services.AddSingleton<IntentExemplarRegistry>();
+        services.AddScoped<IntentExemplarSyncService>();
+        services.AddScoped<Stage0SafetyClassifier>();
+        services.AddScoped<IIntentEmbeddingClassifier, EmbeddingIntentClassifier>();
+        services.AddScoped<ILlmIntentClassifier, LlmFirstIntentClassifier>();
+        services.AddScoped<HybridCascadeIntentClassifier>();
+        services.AddSingleton<IIntentClassificationTelemetry, IntentClassificationTelemetry>();
+        services.AddHostedService<IntentExemplarStartupJob>();
+        services.AddScoped<Chat.DocumentChunkReembedJob>();
+        services.AddScoped<Chat.IntentEvalHarness>();
+
+        services.AddScoped<IChatIntentPlanner>(sp => new ShadowModeIntentPlanner(
+            legacy: sp.GetRequiredService<EnterpriseChatIntentPlanner>(),
+            cascade: sp.GetRequiredService<HybridCascadeIntentClassifier>(),
+            normalizer: new TextNormalizer(),
+            telemetry: sp.GetRequiredService<IIntentClassificationTelemetry>(),
+            options: sp.GetService<IOptions<CascadeOptions>>(),
+            logger: sp.GetService<ILogger<ShadowModeIntentPlanner>>()));
         services.AddScoped<IChatReportingService, ChatReportingService>();
         services.AddScoped<IChatOutputFilter, ChatOutputFilter>();
         services.AddScoped<IContentModerator, RegexContentModerator>();

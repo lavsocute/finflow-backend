@@ -27,6 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="Application\Chat\Cascade\golden-set.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Domain\FinFlow.Domain.csproj" />
     <ProjectReference Include="..\..\src\Application\FinFlow.Application.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\FinFlow.Infrastructure.csproj" />

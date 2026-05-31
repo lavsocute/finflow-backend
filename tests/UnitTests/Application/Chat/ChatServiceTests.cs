@@ -57,7 +57,7 @@ public class ChatServiceTests
         _rerankServiceMock = new Mock<IRerankService>();
         _promptBuilderMock = new Mock<IPromptBuilder>();
         _promptBuilderMock
-            .Setup(x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Setup(x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<ChatAuthorizationProfile?>()))
             .Returns(new Prompt("general-system", "general-user", []));
         _chatIntentRouterMock = new Mock<IChatIntentRouter>();
         _chatIntentRouterMock
@@ -3050,7 +3050,8 @@ var expectedSessions = new List<ChatSessionSummary>
             x => x.BuildGeneralPrompt(
                 "Viết lại câu này cho lịch sự hơn: gửi hóa đơn cho tôi",
                 It.Is<ChatIntentClassification>(c => c.Mode == ChatExecutionMode.General && c.Family == ChatIntentFamily.Productivity),
-                It.IsAny<IReadOnlyList<ChatMessage>>()),
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<ChatAuthorizationProfile?>()),
             Times.Once);
         _promptBuilderMock.Verify(
             x => x.BuildFullPrompt(It.IsAny<string>(), It.IsAny<IReadOnlyList<DocumentChunk>>(), It.IsAny<ChatAccessScope>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string?>()),
@@ -3100,7 +3101,7 @@ var expectedSessions = new List<ChatSessionSummary>
         Assert.Equal(ChatAnswerSource.General, response.AnswerSource);
         Assert.Contains("mã nguồn", response.Answer, StringComparison.OrdinalIgnoreCase);
         _promptBuilderMock.Verify(
-            x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>()),
+            x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<ChatAuthorizationProfile?>()),
             Times.Never);
         _embeddingServiceMock.Verify(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -3147,7 +3148,7 @@ var expectedSessions = new List<ChatSessionSummary>
         Assert.Equal(ChatAnswerSource.General, response.AnswerSource);
         Assert.Contains("gian lận", response.Answer, StringComparison.OrdinalIgnoreCase);
         _promptBuilderMock.Verify(
-            x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>()),
+            x => x.BuildGeneralPrompt(It.IsAny<string>(), It.IsAny<ChatIntentClassification>(), It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<ChatAuthorizationProfile?>()),
             Times.Never);
         _embeddingServiceMock.Verify(x => x.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -3950,7 +3951,7 @@ var expectedSessions = new List<ChatSessionSummary>
 
         Assert.DoesNotContain("[chunk-", prompt.System, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("general productivity", prompt.System, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("do not claim access to internal data", prompt.System, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Do NOT claim access to NEW internal data", prompt.System, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not generate code", prompt.System, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("do not present recommendations", prompt.System, StringComparison.OrdinalIgnoreCase);
     }
@@ -4026,7 +4027,7 @@ var expectedSessions = new List<ChatSessionSummary>
             []);
 
         Assert.Contains("machine-readable", prompt.System, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Never mention the word \"chunk\"", prompt.System, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Never use the words \"chunk\"", prompt.System, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Never say \"authorized context\"", prompt.System, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -4097,7 +4098,12 @@ var expectedSessions = new List<ChatSessionSummary>
         currentTenant.SetupGet(x => x.Id).Returns(tenantId);
         currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(false);
 
-        var service = new ChatAuthorizationService(membershipRepo.Object, currentTenant.Object);
+        var service = new ChatAuthorizationService(
+            membershipRepo.Object,
+            currentTenant.Object,
+            new Mock<FinFlow.Domain.Tenants.ITenantRepository>().Object,
+            new Mock<FinFlow.Domain.Accounts.IAccountRepository>().Object,
+            new Mock<FinFlow.Domain.Departments.IDepartmentRepository>().Object);
 
         var profile = await service.GetAuthorizationProfileAsync(membershipId, CancellationToken.None);
 
@@ -4190,7 +4196,12 @@ var expectedSessions = new List<ChatSessionSummary>
         currentTenant.SetupGet(x => x.Id).Returns(tenantId);
         currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(false);
 
-        var service = new ChatAuthorizationService(membershipRepo.Object, currentTenant.Object);
+        var service = new ChatAuthorizationService(
+            membershipRepo.Object,
+            currentTenant.Object,
+            new Mock<FinFlow.Domain.Tenants.ITenantRepository>().Object,
+            new Mock<FinFlow.Domain.Accounts.IAccountRepository>().Object,
+            new Mock<FinFlow.Domain.Departments.IDepartmentRepository>().Object);
 
         var profile = await service.GetAuthorizationProfileAsync(membershipId, CancellationToken.None);
         var scope = await service.GetChatAccessScopeAsync(membershipId, CancellationToken.None);
@@ -4234,7 +4245,12 @@ var expectedSessions = new List<ChatSessionSummary>
         currentTenant.SetupGet(x => x.Id).Returns(tenantId);
         currentTenant.SetupGet(x => x.IsSuperAdmin).Returns(false);
 
-        var service = new ChatAuthorizationService(membershipRepo.Object, currentTenant.Object);
+        var service = new ChatAuthorizationService(
+            membershipRepo.Object,
+            currentTenant.Object,
+            new Mock<FinFlow.Domain.Tenants.ITenantRepository>().Object,
+            new Mock<FinFlow.Domain.Accounts.IAccountRepository>().Object,
+            new Mock<FinFlow.Domain.Departments.IDepartmentRepository>().Object);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.GetChatAccessScopeAsync(membershipId, CancellationToken.None));

@@ -63,6 +63,15 @@ public sealed partial class ChatReportingService : IChatReportingService
     {
         var normalizedQuery = IntentTextNormalizer.Normalize(query);
         var scope = ResolveAggregateScope(profile, normalizedQuery);
+
+        // Cross-department ranking ("phòng ban nào chi nhiều nhất") must be evaluated
+        // at tenant scope so the department breakdown is available, not collapsed to
+        // the asker's own/department scope.
+        if (IsDepartmentRankingQuery(normalizedQuery) && profile.CanAccessAllTenantData)
+        {
+            scope = new AggregateScope("toàn công ty", null, null, true, false);
+        }
+
         var period = ReportingPeriod.Create(from, to);
         if (period.IsFailure)
             throw new InvalidOperationException(period.Error.Description);
@@ -83,7 +92,10 @@ public sealed partial class ChatReportingService : IChatReportingService
         if (dto.ByCategory.Count > 0)
         {
             var topCategory = dto.ByCategory[0];
-            lines.Add($"Hạng mục chi lớn nhất: {topCategory.KeyName} · {FormatAmount(topCategory.AmountInBaseCurrency)} {dto.BaseCurrencyCode} · {topCategory.ExpenseCount} khoản chi");
+            var sharePercent = dto.TotalInBaseCurrency > 0m
+                ? Math.Round(topCategory.AmountInBaseCurrency / dto.TotalInBaseCurrency * 100m, 1)
+                : 0m;
+            lines.Add($"Hạng mục chi lớn nhất: {topCategory.KeyName} · {FormatAmount(topCategory.AmountInBaseCurrency)} {dto.BaseCurrencyCode} · {topCategory.ExpenseCount} khoản chi · chiếm {sharePercent}% tổng chi");
         }
 
         if (scope.IsTenantScope && dto.ByDepartment.Count > 0)
@@ -431,8 +443,24 @@ public sealed partial class ChatReportingService : IChatReportingService
             throw new InvalidOperationException(currentPeriod.Error.Description);
 
         var days = to.DayNumber - from.DayNumber + 1;
-        var previousTo = from.AddDays(-1);
-        var previousFrom = previousTo.AddDays(-(days - 1));
+
+        // If the current period is a whole calendar month (1st → last day), the previous
+        // period should be the prior calendar MONTH, not a sliding window of the same day
+        // count. Otherwise "tháng trước" of May (31d) would yield Mar-31..Apr-30 instead of
+        // Apr-01..Apr-30. For non-calendar-month ranges, keep the equal-length sliding window.
+        DateOnly previousFrom;
+        DateOnly previousTo;
+        var isWholeCalendarMonth = from.Day == 1 && to.Day == DateTime.DaysInMonth(to.Year, to.Month) && from.Month == to.Month && from.Year == to.Year;
+        if (isWholeCalendarMonth)
+        {
+            previousFrom = from.AddMonths(-1);
+            previousTo = new DateOnly(previousFrom.Year, previousFrom.Month, DateTime.DaysInMonth(previousFrom.Year, previousFrom.Month));
+        }
+        else
+        {
+            previousTo = from.AddDays(-1);
+            previousFrom = previousTo.AddDays(-(days - 1));
+        }
         var previousPeriod = ReportingPeriod.Create(previousFrom, previousTo);
         if (previousPeriod.IsFailure)
             throw new InvalidOperationException(previousPeriod.Error.Description);
@@ -498,6 +526,24 @@ public sealed partial class ChatReportingService : IChatReportingService
         normalizedQuery.Contains("mọi người", StringComparison.Ordinal) ||
         normalizedQuery.Contains("compare", StringComparison.Ordinal) ||
         normalizedQuery.Contains("so sánh", StringComparison.Ordinal);
+
+    private static bool IsDepartmentRankingQuery(string normalizedQuery)
+    {
+        var padded = $" {normalizedQuery} ";
+        var mentionsDepartment = padded.Contains(" phong ban ", StringComparison.Ordinal)
+            || padded.Contains(" bo phan ", StringComparison.Ordinal)
+            || padded.Contains(" department ", StringComparison.Ordinal);
+        if (!mentionsDepartment)
+            return false;
+
+        var rankingTerms = new[]
+        {
+            "nhieu nhat", "chi nhieu", "cao nhat", "top", "ranking", "xep hang",
+            "chiem nhieu", "lon nhat", "dong gop nhieu", "nao chi", "nao chiem"
+        };
+        return rankingTerms.Any(t => padded.Contains($" {t} ", StringComparison.Ordinal)
+            || padded.Contains($" {t}", StringComparison.Ordinal));
+    }
 
     private static AggregateScope ResolveAggregateScope(ChatAuthorizationProfile profile, string normalizedQuery)
     {
